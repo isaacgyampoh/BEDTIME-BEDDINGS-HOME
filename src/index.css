@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+html, body, #root { min-height: 100vh; min-height: 100dvh; }
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif; font-size: 15px; background: #f6f6f5; color: #16181d; letter-spacing: -0.011em; transition: background .2s ease, color .2s ease; }
+/* Fill correctly in fullscreen/kiosk and on mobile browsers (handles the address bar). */
+.fill-screen { height: 100vh; height: 100dvh; }
+:fullscreen, :-webkit-full-screen { width: 100vw; height: 100vh; }
+h1, h2, h3, h4, h5, h6 { font-family: 'Inter', -apple-system, system-ui, sans-serif; letter-spacing: -0.022em; font-weight: 700; }
+@media (min-width: 768px) { body { font-size: 16px; } }
+
+::selection { background: #1a1a24; color: #fff; }
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { background: #d1d1d1; border-radius: 10px; }
+
+@layer utilities {
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .glass { background: rgba(245,245,243,.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* Refined surfaces — crisp hairline + whisper shadow on the common card
+   pattern, the way Square/Linear-class apps do it. */
+.bg-white.rounded-2xl { box-shadow: 0 1px 2px rgba(16,24,29,.04), 0 1px 1px rgba(16,24,29,.03); border: 1px solid rgba(16,24,29,.05); }
+body.dark .bg-white.rounded-2xl { box-shadow: none; border-color: rgba(255,255,255,.06); }
+
+@media print {
+  @page { size: 80mm auto; margin: 0 4mm; }
+  body * { visibility: hidden; }
+  #print-receipt, #print-receipt * { visibility: visible; }
+  #print-receipt { position: absolute; left: 0; top: 0; width: 72mm; }
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.animate-fade { animation: fadeIn .2s ease-out; }
+.animate-slide-up { animation: slideUp .25s ease-out; }
+
+/* Idle customer-screen motion — calm, classy breathing + drift */
+@keyframes idleBreath {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 1; }
+  50% { transform: translateY(-10px) scale(1.012); opacity: .94; }
+}
+@keyframes idleDrift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(8px); }
+}
+@keyframes idleRise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes idleHalo {
+  0%, 100% { opacity: .35; transform: scale(1); }
+  50% { opacity: .6; transform: scale(1.08); }
+}
+.idle-breath { animation: idleBreath 7s ease-in-out infinite; }
+.idle-drift { animation: idleDrift 9s ease-in-out infinite; }
+.idle-rise { animation: idleRise .9s ease-out both; }
+.idle-halo { animation: idleHalo 8s ease-in-out infinite; }
+
+/* ════════════════════════════════════════════════════════════
+   DARK THEME
+   Implemented as utility overrides scoped to body.dark so we get a
+   professional dark mode WITHOUT rewriting Tailwind classes across
+   ~100 components. Surgical: colors only, no layout changes.
+   ════════════════════════════════════════════════════════════ */
+body.dark {
+  background: #0e0f12;
+  color: #f0f0f1;
+}
+body.dark ::-webkit-scrollbar-thumb { background: #33363d; }
+body.dark ::selection { background: #e6e7eb; color: #0f1115; }
+
+/* surfaces */
+body.dark .bg-white { background-color: #191b1f !important; }
+body.dark .bg-stone-50,
+body.dark .bg-stone-100,
+body.dark .bg-gray-50,
+body.dark .bg-gray-100 { background-color: #212329 !important; }
+body.dark .bg-stone-200,
+body.dark .bg-gray-200 { background-color: #2c2f35 !important; }
+body.dark .bg-cream { background-color: #1a1d24 !important; }
+body.dark .bg-stone-100\/60,
+body.dark .bg-stone-100\/50,
+body.dark .bg-gray-50\/80,
+body.dark .bg-gray-50\/50,
+body.dark .bg-gray-50\/30 { background-color: rgba(255,255,255,.04) !important; }
+
+/* product image placeholders */
+body.dark .bg-stone-100.overflow-hidden { background-color: #21242c !important; }
+
+/* dark stays dark — keep the near-black accent surfaces, but lift slightly so they read on a dark bg */
+body.dark .bg-gray-900 { background-color: #2b2f3a !important; }
+body.dark .bg-gray-800 { background-color: #323743 !important; }
+
+/* text — brightened for readability */
+body.dark .text-gray-900,
+body.dark .text-gray-800,
+body.dark .text-black { color: #f4f5f7 !important; }
+body.dark .text-gray-700,
+body.dark .text-gray-600,
+body.dark .text-stone-700,
+body.dark .text-stone-600,
+body.dark .text-stone-500,
+body.dark .text-gray-500 { color: #c9ccd4 !important; }
+body.dark .text-stone-400,
+body.dark .text-stone-300,
+body.dark .text-gray-400,
+body.dark .text-gray-300 { color: #9499a3 !important; }
+body.dark .text-stone-200,
+body.dark .text-gray-200 { color: #6b7280 !important; }
+
+/* text that sits ON the accent (gray-900/800) surfaces must stay light */
+body.dark .bg-gray-900 .text-white,
+body.dark .bg-gray-800 .text-white,
+body.dark .bg-gray-900 .text-gray-900,
+body.dark .bg-gray-800 .text-gray-900 { color: #fff !important; }
+
+/* borders */
+body.dark .border-stone-200,
+body.dark .border-stone-200\/60,
+body.dark .border-stone-200\/30,
+body.dark .border-stone-100,
+body.dark .border-gray-100,
+body.dark .border-gray-200 { border-color: rgba(255,255,255,.08) !important; }
+body.dark .border-dashed.border-gray-200 { border-color: rgba(255,255,255,.14) !important; }
+
+/* inputs */
+body.dark input,
+body.dark textarea,
+body.dark select { background-color: #21242c !important; color: #e6e7eb !important; border-color: rgba(255,255,255,.08) !important; }
+body.dark input::placeholder,
+body.dark textarea::placeholder { color: #6b6f7a !important; }
+
+/* glass header/footer on mobile */
+body.dark .glass { background: rgba(20,22,28,.92) !important; }
+
+/* hover states */
+body.dark .hover\:bg-stone-100:hover,
+body.dark .hover\:bg-stone-50:hover,
+body.dark .hover\:bg-gray-100:hover,
+body.dark .hover\:bg-gray-50:hover { background-color: #262a33 !important; }
+
+/* keep colored accent chips readable (amber/red/green badges) — leave as-is, they work on dark */
+
+/* sidebar explicit surface (the dark-sidebar helper referenced in Navigation) */
+body.dark .dark-sidebar { background-color: #14161b !important; }
+.dark-sidebar { background: transparent; }
+
+/* shadows softer in dark */
+body.dark .shadow-lg,
+body.dark .shadow-md,
+body.dark .shadow-sm { box-shadow: 0 4px 20px rgba(0,0,0,.4) !important; }
+
+/* tinted info/alert backgrounds — muted in dark so they don't glare */
+body.dark .bg-green-50 { background-color: rgba(16,185,129,.12) !important; }
+body.dark .bg-blue-50 { background-color: rgba(59,130,246,.12) !important; }
+body.dark .bg-red-50 { background-color: rgba(239,68,68,.12) !important; }
+body.dark .bg-amber-50 { background-color: rgba(245,158,11,.12) !important; }
+body.dark .bg-violet-50 { background-color: rgba(139,92,246,.12) !important; }
+body.dark .bg-orange-50 { background-color: rgba(249,115,22,.12) !important; }
+body.dark .bg-green-50\/30,
+body.dark .bg-red-50\/30 { background-color: rgba(255,255,255,.03) !important; }
+/* tinted borders */
+body.dark .border-green-100,body.dark .border-green-200,body.dark .border-green-300 { border-color: rgba(16,185,129,.25) !important; }
+body.dark .border-blue-100,body.dark .border-blue-200 { border-color: rgba(59,130,246,.25) !important; }
+body.dark .border-red-100,body.dark .border-red-200,body.dark .border-red-300 { border-color: rgba(239,68,68,.25) !important; }
+body.dark .border-amber-100,body.dark .border-amber-200 { border-color: rgba(245,158,11,.25) !important; }
+body.dark .border-violet-100,body.dark .border-violet-200 { border-color: rgba(139,92,246,.25) !important; }
+/* keep colored TEXT vivid in dark (green-600, red-500 etc stay as-is — they read fine) */
