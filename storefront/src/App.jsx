@@ -37,7 +37,7 @@ function Card({ p, promo, onOpen, onAdd }) {
       <div className="aspect-[3/4] bg-stone-100 rounded-2xl overflow-hidden mb-2.5 relative">
         {p.image ? <img src={thumb(p.image, 500)} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" loading="lazy" /> : <div className="w-full h-full bg-stone-100" />}
         {promo && <span className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-[var(--color-promo)] text-white text-[8px] font-bold rounded-lg tracking-widest uppercase">Sale</span>}
-        <button onClick={add} className={`absolute bottom-2.5 right-2.5 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${ok ? 'bg-indigo-800 text-white scale-110' : 'bg-white shadow-md text-stone-600 md:translate-y-2 md:opacity-0 md:group-hover:opacity-100 md:group-hover:translate-y-0'}`}>
+        <button onClick={add} className={`absolute bottom-2.5 right-2.5 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${ok ? 'bg-blue-700 text-white scale-110' : 'bg-white shadow-md text-stone-600 md:translate-y-2 md:opacity-0 md:group-hover:opacity-100 md:group-hover:translate-y-0'}`}>
           {ok ? I.check : I.plus}
         </button>
       </div>
@@ -48,7 +48,7 @@ function Card({ p, promo, onOpen, onAdd }) {
           <span className="text-[14px] font-bold text-stone-900">{money(promo ? promo.price : p.price)}</span>
           {promo && <span className="text-[11px] text-stone-300 line-through">{money(p.price)}</span>}
         </div>
-        <button onClick={add} className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all duration-200 btn-press ${ok ? 'bg-indigo-800 text-white' : 'bg-indigo-900 text-white hover:bg-indigo-800'}`}>{ok ? '✓ Added' : 'Add'}</button>
+        <button onClick={add} className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all duration-200 btn-press ${ok ? 'bg-blue-700 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>{ok ? '✓ Added' : 'Add'}</button>
       </div>
       {!promo && Number(p.wholesale_price || 0) > 0 && Number(p.wholesale_min_qty || 0) > 0 && (
         <div className="text-[9px] text-stone-400 mt-1">Buy {p.wholesale_min_qty}+ for {money(p.wholesale_price)} each</div>
@@ -425,7 +425,7 @@ export default function App() {
 
   const activePromo = promos.find(p => p.end_date && new Date(p.end_date) > new Date())
 
-  if (loading) return <div className="min-h-screen bg-white flex items-center justify-center"><div className="w-7 h-7 border-[2.5px] border-stone-200 border-t-indigo-800 rounded-full animate-spin" /></div>
+  if (loading) return <div className="min-h-screen bg-white flex items-center justify-center"><div className="w-7 h-7 border-[2.5px] border-stone-200 border-t-blue-700 rounded-full animate-spin" /></div>
 
   // Shop turned OFF from the POS — show a closed screen, no ordering.
   if (shopChecked && !shopOpen) return (
@@ -456,35 +456,35 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <button onClick={() => go('home', '/')} className="font-bold text-base tracking-tight text-stone-900 shrink-0" style={{ fontFamily: 'var(--font-body)' }}>BEDTIME BEDDINGS HOME</button>
           <div className="hidden md:flex items-center gap-6">
-            {[['Home','home','/'],['Shop','shop','/shop'],['Track','track','/track']].map(([l,p,h]) => <button key={p} onClick={() => go(p,h)} className={`text-xs font-semibold transition ${page === p ? 'text-indigo-900' : 'text-stone-400 hover:text-stone-600'}`}>{l}</button>)}
+            {[['Home','home','/'],['Shop','shop','/shop'],['Track','track','/track']].map(([l,p,h]) => <button key={p} onClick={() => go(p,h)} className={`text-xs font-semibold transition ${page === p ? 'text-blue-600' : 'text-stone-400 hover:text-stone-600'}`}>{l}</button>)}
           </div>
           <div className="flex items-center gap-1">
             <button onClick={() => { setShowSearch(!showSearch); if (page !== 'shop') go('shop','/shop') }} className="w-10 h-10 flex items-center justify-center rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-50 transition">{I.search}</button>
-            <button onClick={() => go('cart','/cart')} className="relative w-10 h-10 flex items-center justify-center rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-50 transition"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>{cc > 0 && <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 bg-indigo-900 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-1">{cc}</span>}</button>
+            <button onClick={() => go('cart','/cart')} className="relative w-10 h-10 flex items-center justify-center rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-50 transition"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>{cc > 0 && <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 bg-blue-600 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-1">{cc}</span>}</button>
           </div>
         </div>
-        {showSearch && <div className="px-4 sm:px-6 pb-3 max-w-7xl mx-auto"><input autoFocus className="w-full h-11 px-4 bg-stone-50 rounded-xl text-sm focus:outline-none border border-stone-200 focus:border-indigo-700 transition" placeholder="What are you looking for?" value={search} onChange={e => setSearch(e.target.value)} /></div>}
+        {showSearch && <div className="px-4 sm:px-6 pb-3 max-w-7xl mx-auto"><input autoFocus className="w-full h-11 px-4 bg-stone-50 rounded-xl text-sm focus:outline-none border border-stone-200 focus:border-blue-600 transition" placeholder="What are you looking for?" value={search} onChange={e => setSearch(e.target.value)} /></div>}
       </nav>
 
       {/* ═══ HOME ═══ */}
       {page === 'home' && <>
         {/* Hero — rotating product images */}
-        <section className="relative overflow-hidden bg-indigo-950" style={{ height: 'min(65vh, 480px)' }}>
+        <section className="relative overflow-hidden bg-blue-700" style={{ height: 'min(65vh, 480px)' }}>
           {heroProducts.map((p, i) => (
             <div key={p.id} className="absolute inset-0 transition-opacity duration-1000 ease-in-out" style={{ opacity: i === heroIdx ? 1 : 0 }}>
-              <img src={thumb(p.image, 1200)} alt="" className="w-full h-full object-cover" style={{ filter: 'brightness(0.55) saturate(0.9)' }} />
+              <img src={thumb(p.image, 1200)} alt="" className="w-full h-full object-cover" style={{ filter: 'brightness(0.7) saturate(1.1)' }} />
             </div>
           ))}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent z-[1]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-blue-700/85 via-blue-700/40 to-blue-600/20 z-[1]" />
           <div className="relative z-10 h-full flex flex-col justify-end max-w-7xl mx-auto px-4 sm:px-6 pb-10">
-            <div className="inline-flex items-center gap-1.5 text-amber-300 text-[10px] font-semibold tracking-[0.25em] uppercase mb-3">
+            <div className="inline-flex items-center gap-1.5 text-blue-300 text-[10px] font-semibold tracking-[0.25em] uppercase mb-3">
               Bedtime Beddings Home
             </div>
             <h1 className="text-white text-3xl md:text-5xl font-bold leading-tight mb-3" style={{ fontFamily: 'var(--font-display)' }}>Sleep better,<br />every single night.</h1>
-            <p className="text-indigo-200/60 text-sm max-w-md mb-6">Soft bedsheets, warm duvets and everything that makes your bed a place you look forward to.</p>
+            <p className="text-blue-100/60 text-sm max-w-md mb-6">Soft bedsheets, warm duvets and everything that makes your bed a place you look forward to.</p>
             <div className="flex items-center gap-3">
-              <button onClick={() => go('shop', '/shop')} className="h-11 px-7 bg-white text-indigo-950 rounded-full text-xs font-bold hover:bg-indigo-50 transition btn-press flex items-center gap-2">Shop Collection {I.arrow}</button>
-              <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="h-11 px-5 border border-amber-300/30 text-amber-300 rounded-full text-xs font-medium hover:bg-white/5 transition flex items-center gap-1.5">{I.phone} Call Us</a>
+              <button onClick={() => go('shop', '/shop')} className="h-11 px-7 bg-white text-blue-700 rounded-full text-xs font-bold hover:bg-blue-50 transition btn-press flex items-center gap-2">Shop Collection {I.arrow}</button>
+              <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="h-11 px-5 border border-blue-300/30 text-blue-300 rounded-full text-xs font-medium hover:bg-white/5 transition flex items-center gap-1.5">{I.phone} Call Us</a>
             </div>
             <div className="flex gap-2 mt-6">
               {heroProducts.map((_, i) => (
@@ -500,6 +500,22 @@ export default function App() {
             {I.search} Search products...
           </button>
         </div>
+
+        {/* Big bold offer card — shows when there's an active promo */}
+        {activePromo && (
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+            <div className="relative overflow-hidden rounded-3xl bg-[#1a1d29] text-white px-6 py-8 sm:px-10 sm:py-10 text-center">
+              <div className="relative z-10">
+                <div className="text-[10px] font-bold tracking-[0.3em] uppercase text-blue-300 mb-2">Limited offer</div>
+                <div className="text-4xl sm:text-6xl font-black leading-none mb-2" style={{ fontFamily: 'var(--font-display)' }}>{activePromo.name}</div>
+                {activePromo.end_date && <div className="flex justify-center mb-5"><Timer endDate={activePromo.end_date} /></div>}
+                <button onClick={() => go('shop','/shop')} className="h-11 px-8 bg-[var(--color-brand)] text-white rounded-full text-sm font-bold hover:bg-[var(--color-brand-light)] transition inline-flex items-center gap-2">Shop the sale {I.arrow}</button>
+              </div>
+              <div className="absolute -left-10 -bottom-12 w-48 h-48 rounded-full bg-[var(--color-brand)]/20" />
+              <div className="absolute -right-8 -top-10 w-36 h-36 rounded-full bg-[var(--color-brand)]/15" />
+            </div>
+          </section>
+        )}
 
         {/* Category tiles — visual, tappable */}
         {catTiles.length > 0 && (
@@ -561,7 +577,7 @@ export default function App() {
                   <div key={b.id} className="bg-gray-50 rounded-xl overflow-hidden">
                     <div className="aspect-[4/3] bg-gray-100 relative">
                       {firstImg?.image && <img src={thumb(firstImg.image, 400)} className="w-full h-full object-cover" />}
-                      <span className="absolute top-2 left-2 px-2 py-0.5 bg-indigo-900 text-white text-[8px] font-bold rounded-md tracking-wide">BUNDLE</span>
+                      <span className="absolute top-2 left-2 px-2 py-0.5 bg-blue-600 text-white text-[8px] font-bold rounded-md tracking-wide">BUNDLE</span>
                     </div>
                     <div className="p-2.5">
                       <div className="text-[11px] font-semibold line-clamp-2">{b.name}</div>
@@ -569,7 +585,7 @@ export default function App() {
                         <span className="text-[13px] font-bold">{money(b.bundle_price)}</span>
                         {savings > 0 && <span className="text-[10px] text-gray-300 line-through">{money(normalTotal)}</span>}
                       </div>
-                      {savings > 0 && <div className="text-[9px] font-bold text-indigo-700 mt-0.5">Save {money(savings)}</div>}
+                      {savings > 0 && <div className="text-[9px] font-bold text-blue-600 mt-0.5">Save {money(savings)}</div>}
                     </div>
                   </div>
                 )
@@ -640,7 +656,7 @@ export default function App() {
       {/* ═══ SHOP ═══ */}
       {page === 'shop' && <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
         <div className="flex items-center justify-between mb-4"><h1 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>{cat === 'all' ? 'All Products' : cat}</h1><span className="text-xs text-gray-300">{filtered.length} items</span></div>
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide mb-5">{cats.map(c => <button key={c} onClick={() => setCat(c)} className={`h-8 px-4 rounded-lg text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${cat === c ? 'bg-indigo-900 text-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{c === 'all' ? 'All' : c}</button>)}</div>
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide mb-5">{cats.map(c => <button key={c} onClick={() => setCat(c)} className={`h-8 px-4 rounded-lg text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${cat === c ? 'bg-blue-600 text-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{c === 'all' ? 'All' : c}</button>)}</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-3 gap-y-5">{filtered.map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}</div>
         {filtered.length === 0 && <p className="text-center py-20 text-gray-300 text-sm">No products found</p>}
       </div>}
@@ -690,7 +706,7 @@ export default function App() {
                 <span className="w-8 text-center text-sm font-bold">{cart.find(x => x.id === sel.id)?.qty || 1}</span>
                 <button onClick={() => { const c = cart.find(x => x.id === sel.id); if (c) updQty(sel.id, 1); else addToCart(sel) }} className="w-9 h-11 flex items-center justify-center text-gray-400 hover:bg-gray-50">{I.plus}</button>
               </div>
-              <button onClick={() => addToCart(sel)} className="flex-1 h-11 bg-indigo-900 text-white rounded-lg text-sm font-semibold hover:bg-indigo-800 transition">Add to Cart</button>
+              <button onClick={() => addToCart(sel)} className="flex-1 h-11 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition">Add to Cart</button>
               <a href={`https://wa.me/${WA}?text=${encodeURIComponent(`Hi, I'm interested in: ${sel.name} — ${money(gp(sel))}`)}`} target="_blank" className="h-11 px-3 bg-gray-100 text-gray-600 rounded-lg text-xs font-semibold hover:bg-gray-200 transition flex items-center gap-1">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="#25d366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
               </a>
@@ -738,7 +754,7 @@ export default function App() {
       {page === 'cart' && <div className="max-w-xl mx-auto px-4 sm:px-6 py-6 page-enter">
         <h1 className="text-lg font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>Your Cart</h1>
         <p className="text-xs text-gray-400 mb-5">{cc > 0 ? `${cc} item${cc !== 1 ? 's' : ''} ready for checkout` : ''}</p>
-        {cart.length === 0 ? <div className="text-center py-16"><div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#166534" strokeWidth="1.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg></div><p className="text-stone-800 text-sm mb-1">Nothing here yet</p><p className="text-gray-400 text-xs mb-5">Browse our collection and add items you love</p><button onClick={() => go('shop','/shop')} className="h-10 px-6 bg-indigo-900 text-white rounded-full text-xs font-bold hover:bg-indigo-800 transition btn-press">Start Shopping</button></div> : <>
+        {cart.length === 0 ? <div className="text-center py-16"><div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-4"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#166534" strokeWidth="1.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg></div><p className="text-stone-800 text-sm mb-1">Nothing here yet</p><p className="text-gray-400 text-xs mb-5">Browse our collection and add items you love</p><button onClick={() => go('shop','/shop')} className="h-10 px-6 bg-blue-600 text-white rounded-full text-xs font-bold hover:bg-blue-700 transition btn-press">Start Shopping</button></div> : <>
           <div className="flex justify-end mb-3"><button onClick={clearCart} className="text-[11px] text-gray-400 hover:text-red-500 transition">Clear all</button></div>
           <div className="space-y-2.5 mb-5">{cart.map(c => <div key={c.id} className="flex gap-3 items-center p-3 rounded-xl bg-stone-50 border border-stone-100 relative group">
             <button onClick={() => removeFromCart(c.id)} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-300 hover:bg-red-500 text-white rounded-full flex items-center justify-center transition opacity-0 group-hover:opacity-100 md:opacity-0">
@@ -749,31 +765,31 @@ export default function App() {
               <div className="text-[12px] font-semibold truncate text-stone-800">{c.name}</div>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className="text-[13px] font-bold text-stone-900">{money(c.price)}</span>
-                {c.isWholesale && <span className="text-[8px] font-bold bg-indigo-50 text-indigo-800 px-1.5 py-0.5 rounded-full">WHOLESALE</span>}
+                {c.isWholesale && <span className="text-[8px] font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full">WHOLESALE</span>}
               </div>
             </div>
-            <div className="flex items-center gap-1"><button onClick={() => updQty(c.id,-1)} className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-stone-600 border border-stone-200 hover:border-indigo-700 transition">{I.minus}</button><span className="w-6 text-center text-[12px] font-bold text-stone-900">{c.qty}</span><button onClick={() => updQty(c.id,1)} className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-stone-600 border border-stone-200 hover:border-indigo-700 transition">{I.plus}</button></div>
+            <div className="flex items-center gap-1"><button onClick={() => updQty(c.id,-1)} className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-stone-600 border border-stone-200 hover:border-blue-600 transition">{I.minus}</button><span className="w-6 text-center text-[12px] font-bold text-stone-900">{c.qty}</span><button onClick={() => updQty(c.id,1)} className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-stone-600 border border-stone-200 hover:border-blue-600 transition">{I.plus}</button></div>
           </div>)}</div>
-          <div className="bg-indigo-950 text-white rounded-xl p-4 mb-4 flex justify-between items-center"><span className="text-sm text-indigo-200">Total</span><span className="text-lg font-bold">{money(ct)}</span></div>
-          <button onClick={() => { setCheckoutStep(1); setPage('checkout'); window.location.hash = '/checkout' }} className="w-full h-12 bg-indigo-900 text-white rounded-full text-sm font-bold hover:bg-indigo-800 transition btn-press flex items-center justify-center gap-2">Proceed to Checkout {I.arrow}</button>
+          <div className="bg-blue-700 text-white rounded-xl p-4 mb-4 flex justify-between items-center"><span className="text-sm text-blue-100">Total</span><span className="text-lg font-bold">{money(ct)}</span></div>
+          <button onClick={() => { setCheckoutStep(1); setPage('checkout'); window.location.hash = '/checkout' }} className="w-full h-12 bg-blue-600 text-white rounded-full text-sm font-bold hover:bg-blue-700 transition btn-press flex items-center justify-center gap-2">Proceed to Checkout {I.arrow}</button>
           <p className="text-[10px] text-gray-300 text-center mt-3">Delivery arranged after checkout</p>
         </>}
       </div>}
 
       {/* ═══ CHECKOUT ═══ */}
       {page === 'checkout' && <div className="max-w-md mx-auto px-4 sm:px-6 py-6">
-          <button onClick={() => go('cart','/cart')} className="text-[11px] text-gray-400 hover:text-indigo-900 mb-5 inline-flex items-center gap-1">&larr; Back to cart</button>
+          <button onClick={() => go('cart','/cart')} className="text-[11px] text-gray-400 hover:text-blue-600 mb-5 inline-flex items-center gap-1">&larr; Back to cart</button>
 
-          <h2 className="text-lg font-bold text-indigo-950 mb-5" style={{ fontFamily: 'var(--font-display)' }}>Checkout</h2>
+          <h2 className="text-lg font-bold text-blue-700 mb-5" style={{ fontFamily: 'var(--font-display)' }}>Checkout</h2>
 
           {/* Delivery only (no pickup location yet) */}
 
           {/* Form */}
           <div className="space-y-3 mb-5">
-            <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-indigo-700 transition" value={custName} onChange={e => setCustName(e.target.value)} placeholder="Full name" />
-            <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-indigo-700 transition" value={custPhone} onChange={e => setCustPhone(e.target.value)} placeholder="Phone number" type="tel" />
-            <textarea className="w-full h-16 px-3.5 py-2.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-indigo-700 transition resize-none" value={custAddress} onChange={e => setCustAddress(e.target.value)} placeholder="Delivery address (area, landmark)" />
-            <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-indigo-700 transition" value={custNotes} onChange={e => setCustNotes(e.target.value)} placeholder="Notes (optional)" />
+            <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-blue-600 transition" value={custName} onChange={e => setCustName(e.target.value)} placeholder="Full name" />
+            <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-blue-600 transition" value={custPhone} onChange={e => setCustPhone(e.target.value)} placeholder="Phone number" type="tel" />
+            <textarea className="w-full h-16 px-3.5 py-2.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-blue-600 transition resize-none" value={custAddress} onChange={e => setCustAddress(e.target.value)} placeholder="Delivery address (area, landmark)" />
+            <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-blue-600 transition" value={custNotes} onChange={e => setCustNotes(e.target.value)} placeholder="Notes (optional)" />
           </div>
 
           {/* Order summary */}
@@ -784,7 +800,7 @@ export default function App() {
 
           <p className="text-xs text-gray-500 text-center mb-3">{PAYMENTS_ENABLED ? 'A Mobile Money request will be sent to your phone to approve.' : "We'll call you to confirm your order and arrange payment."}</p>
 
-          <button onClick={placeOrder} disabled={!custName.trim() || !custPhone.trim() || (fulfillment === 'delivery' && !custAddress.trim()) || submitting} className="w-full h-12 bg-indigo-900 text-white rounded-full text-sm font-bold hover:bg-indigo-800 transition btn-press disabled:opacity-30 flex items-center justify-center gap-2">
+          <button onClick={placeOrder} disabled={!custName.trim() || !custPhone.trim() || (fulfillment === 'delivery' && !custAddress.trim()) || submitting} className="w-full h-12 bg-blue-600 text-white rounded-full text-sm font-bold hover:bg-blue-700 transition btn-press disabled:opacity-30 flex items-center justify-center gap-2">
             {submitting ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> {PAYMENTS_ENABLED ? 'Sending request…' : 'Placing order…'}</> : <>{PAYMENTS_ENABLED ? `Pay ${money(ct)}` : `Place Order · ${money(ct)}`}</>}
           </button>
         </div>}
@@ -798,7 +814,7 @@ export default function App() {
           {!PAYMENTS_ENABLED ? (
             <>
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-9 h-9 rounded-full bg-indigo-900 flex items-center justify-center flex-shrink-0">
+                <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg>
                 </div>
                 <div>
@@ -815,7 +831,7 @@ export default function App() {
           ) : paid ? (
             <>
               <div className="flex items-center gap-3 mb-6">
-                <div className="w-9 h-9 rounded-full bg-indigo-900 flex items-center justify-center flex-shrink-0">
+                <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg>
                 </div>
                 <div>
@@ -869,7 +885,7 @@ export default function App() {
                 <span className="text-2xl font-bold text-gray-900">{money(orderResult.total)}</span>
               </div>
 
-              <button onClick={resendPrompt} disabled={retrying || retryWait > 0} className="w-full h-11 bg-indigo-900 text-white rounded-lg text-sm font-medium disabled:opacity-40 mb-3">
+              <button onClick={resendPrompt} disabled={retrying || retryWait > 0} className="w-full h-11 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 mb-3">
                 {retrying ? 'Sending…' : retryWait > 0 ? `Send again in ${retryWait}s` : 'Send request again'}
               </button>
               <a href={`tel:*920*141*${orderResult.ussdCode}%23`} className="block w-full h-11 border border-gray-300 rounded-lg text-sm font-medium text-gray-800 flex items-center justify-center">
@@ -889,7 +905,7 @@ export default function App() {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Or online</span>
-              <a href="#/track" onClick={() => go('track','/track')} className="font-medium text-indigo-900">Track order</a>
+              <a href="#/track" onClick={() => go('track','/track')} className="font-medium text-blue-600">Track order</a>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Questions</span>
@@ -907,21 +923,21 @@ export default function App() {
       {page === 'track' && <div className="max-w-md mx-auto px-4 sm:px-6 py-10">
         <h1 className="text-base font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>Track Order</h1>
         <p className="text-xs text-gray-400 mb-5">Search by phone, order # or tracking #</p>
-        <div className="flex gap-2 mb-6"><input className="flex-1 h-10 px-3 bg-gray-50 border border-gray-100 rounded-lg text-sm focus:outline-none focus:border-gray-300" value={trackQuery} onChange={e => setTrackQuery(e.target.value)} placeholder="Search..." onKeyDown={e => e.key === 'Enter' && trackOrder()} /><button onClick={trackOrder} disabled={tracking} className="h-10 px-4 bg-indigo-900 text-white rounded-lg text-xs font-semibold">{tracking ? '...' : 'Find'}</button></div>
+        <div className="flex gap-2 mb-6"><input className="flex-1 h-10 px-3 bg-gray-50 border border-gray-100 rounded-lg text-sm focus:outline-none focus:border-gray-300" value={trackQuery} onChange={e => setTrackQuery(e.target.value)} placeholder="Search..." onKeyDown={e => e.key === 'Enter' && trackOrder()} /><button onClick={trackOrder} disabled={tracking} className="h-10 px-4 bg-blue-600 text-white rounded-lg text-xs font-semibold">{tracking ? '...' : 'Find'}</button></div>
         {trackResult?.length === 0 && <p className="text-xs text-gray-300 text-center">No orders found</p>}
-        {trackResult?.length > 0 && <div className="space-y-2">{trackResult.map(o => <div key={o.order_no} className="border border-gray-100 rounded-xl p-3.5"><div className="flex items-center justify-between mb-1.5"><span className="text-xs font-bold">{o.order_no}</span><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${o.status==='Paid'||o.status==='Completed'?'bg-gray-800 text-white':o.status==='Cancelled'?'bg-red-50 text-red-500':'bg-gray-100 text-gray-500'}`}>{o.status}</span></div><div className="text-xs text-gray-400">{money(o.total)}</div>{o.tracking_no && <div className="text-[10px] text-gray-300 font-mono mt-1">{o.tracking_no}</div>}{o.delivery_status && <div className="mt-2 pt-2 border-t border-gray-50"><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${o.delivery_status==='Delivered'||o.delivery_status==='Picked Up'?'bg-indigo-50 text-indigo-800':o.delivery_status==='Out for Delivery'?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-500'}`}>{o.delivery_status}</span></div>}</div>)}</div>}
+        {trackResult?.length > 0 && <div className="space-y-2">{trackResult.map(o => <div key={o.order_no} className="border border-gray-100 rounded-xl p-3.5"><div className="flex items-center justify-between mb-1.5"><span className="text-xs font-bold">{o.order_no}</span><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${o.status==='Paid'||o.status==='Completed'?'bg-gray-800 text-white':o.status==='Cancelled'?'bg-red-50 text-red-500':'bg-gray-100 text-gray-500'}`}>{o.status}</span></div><div className="text-xs text-gray-400">{money(o.total)}</div>{o.tracking_no && <div className="text-[10px] text-gray-300 font-mono mt-1">{o.tracking_no}</div>}{o.delivery_status && <div className="mt-2 pt-2 border-t border-gray-50"><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${o.delivery_status==='Delivered'||o.delivery_status==='Picked Up'?'bg-blue-50 text-blue-700':o.delivery_status==='Out for Delivery'?'bg-blue-50 text-blue-700':'bg-gray-100 text-gray-500'}`}>{o.delivery_status}</span></div>}</div>)}</div>}
       </div>}
 
       {/* ═══ FOOTER ═══ */}
-      <footer className="bg-indigo-950 mt-12 mb-16 md:mb-0">
+      <footer className="bg-blue-700 mt-12 mb-16 md:mb-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="py-8 grid grid-cols-2 sm:grid-cols-4 gap-6">
             <div className="col-span-2 sm:col-span-1">
               <div className="text-white text-sm font-bold tracking-tight mb-2">BEDTIME BEDDINGS HOME</div>
-              <p className="text-[11px] text-indigo-200/50 leading-relaxed">Better sleep starts with better bedding.</p>
+              <p className="text-[11px] text-blue-100/50 leading-relaxed">Better sleep starts with better bedding.</p>
             </div>
             <div>
-              <div className="text-[10px] text-amber-300/60 uppercase tracking-wider mb-3">Shop</div>
+              <div className="text-[10px] text-blue-300/60 uppercase tracking-wider mb-3">Shop</div>
               <div className="space-y-2">
                 <button onClick={() => go('shop','/shop')} className="block text-[12px] text-white/70 hover:text-white transition">All Products</button>
                 <button onClick={() => go('cart','/cart')} className="block text-[12px] text-white/70 hover:text-white transition">My Cart</button>
@@ -929,21 +945,21 @@ export default function App() {
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-amber-300/60 uppercase tracking-wider mb-3">Contact</div>
+              <div className="text-[10px] text-blue-300/60 uppercase tracking-wider mb-3">Contact</div>
               <div className="space-y-2">
                 <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="block text-[12px] text-white/70 hover:text-white transition">{SHOP.phone}</a>
                 <a href={`tel:${SHOP.phone2.replace(/\s/g,'')}`} className="block text-[12px] text-white/70 hover:text-white transition">{SHOP.phone2}</a>
-                <a href={`https://wa.me/${WA}`} target="_blank" className="block text-[12px] text-amber-300 hover:text-indigo-200 transition">WhatsApp Us</a>
+                <a href={`https://wa.me/${WA}`} target="_blank" className="block text-[12px] text-blue-300 hover:text-blue-100 transition">WhatsApp Us</a>
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-amber-300/60 uppercase tracking-wider mb-3">Contact</div>
+              <div className="text-[10px] text-blue-300/60 uppercase tracking-wider mb-3">Contact</div>
               <a href={`tel:${SHOP.phone}`} className="block text-[12px] text-white/70 hover:text-white transition leading-relaxed mb-2">{SHOP.phone}</a>
-              <a href={`https://wa.me/${(SHOP.whatsapp||SHOP.phone||'').replace(/[^0-9]/g,'').replace(/^0/,'233')}`} target="_blank" className="inline-flex items-center gap-1.5 text-[12px] text-amber-300 hover:text-indigo-200 transition font-medium">Chat on WhatsApp</a>
+              <a href={`https://wa.me/${(SHOP.whatsapp||SHOP.phone||'').replace(/[^0-9]/g,'').replace(/^0/,'233')}`} target="_blank" className="inline-flex items-center gap-1.5 text-[12px] text-blue-300 hover:text-blue-100 transition font-medium">Chat on WhatsApp</a>
             </div>
           </div>
-          <div className="border-t border-indigo-900/50 py-4">
-            <p className="text-[10px] text-indigo-800">&copy; {new Date().getFullYear()} BEDTIME BEDDINGS HOME. All rights reserved.</p>
+          <div className="border-t border-blue-600/50 py-4">
+            <p className="text-[10px] text-blue-700">&copy; {new Date().getFullYear()} BEDTIME BEDDINGS HOME. All rights reserved.</p>
           </div>
         </div>
       </footer>
@@ -957,10 +973,10 @@ export default function App() {
             ['Cart','cart','/cart',<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>],
             ['Track','track','/track',I.track]
           ].map(([l,p,h,ic]) => (
-            <button key={p} onClick={() => go(p,h)} className={`flex flex-col items-center gap-1 relative transition-colors ${page===p?'text-indigo-900':'text-stone-400'}`}>
-              <span className="relative">{ic}{p==='cart' && cc > 0 && <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 bg-indigo-900 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-1">{cc}</span>}</span>
+            <button key={p} onClick={() => go(p,h)} className={`flex flex-col items-center gap-1 relative transition-colors ${page===p?'text-blue-600':'text-stone-400'}`}>
+              <span className="relative">{ic}{p==='cart' && cc > 0 && <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 bg-blue-600 text-white text-[8px] font-bold rounded-full flex items-center justify-center px-1">{cc}</span>}</span>
               <span className={`text-[9px] ${page===p?'font-bold':'font-medium'}`}>{l}</span>
-              {page===p && <span className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-5 h-[2px] bg-indigo-900 rounded-full" />}
+              {page===p && <span className="absolute -top-[1px] left-1/2 -translate-x-1/2 w-5 h-[2px] bg-blue-600 rounded-full" />}
             </button>
           ))}
         </div>
