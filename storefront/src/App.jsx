@@ -446,7 +446,7 @@ export default function App() {
     <div className="min-h-screen bg-white pb-16 md:pb-0" style={{ fontFamily: 'var(--font-body)' }}>
 
       {/* PROMO BANNER */}
-      {activePromo && <div className="bg-[var(--color-promo)]"><div className="max-w-7xl mx-auto px-4 h-9 flex items-center justify-center gap-3 text-xs text-white"><span className="font-bold truncate">{activePromo.name}</span><Timer endDate={activePromo.end_date} /><button onClick={() => go('shop', '/shop')} className="hidden sm:block text-[10px] font-bold underline">Shop Now</button></div></div>}
+      {activePromo && <div className="bg-[var(--color-promo)] relative overflow-hidden"><div className="max-w-7xl mx-auto px-4 h-10 flex items-center justify-center gap-3 text-xs text-white relative z-10"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /><span className="font-bold uppercase tracking-wide truncate">{activePromo.name}</span><span className="hidden sm:inline text-white/70">ends in</span><Timer endDate={activePromo.end_date} /><button onClick={() => go('shop', '/shop')} className="ml-1 h-6 px-3 bg-white text-[var(--color-promo)] rounded-full text-[10px] font-bold hover:bg-white/90 transition">Shop Now</button></div></div>}
 
       {/* TOAST */}
       {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-2 rounded-full text-sm font-medium z-[100] shadow-lg" style={{ animation: 'fadeIn 0.2s ease' }}>{toast}</div>}
