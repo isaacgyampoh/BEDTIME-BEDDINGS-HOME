@@ -178,7 +178,7 @@ export default function App() {
   useEffect(() => { window.scrollTo(0, 0) }, [page])
 
   useEffect(() => {
-    supabase.from('products').select('id,name,category,price,wholesale_price,wholesale_min_qty,quantity,image').order('name').then(({ data }) => {
+    supabase.from('products').select('id,name,category,price,wholesale_price,wholesale_min_qty,quantity,image,created_at').order('created_at', { ascending: false }).then(({ data }) => {
       setProducts((data || []).filter(p => p.quantity > 0))
       setLoading(false)
     })
@@ -233,6 +233,14 @@ export default function App() {
     })
   }
   const cats = useMemo(() => ['all', ...[...new Set(products.filter(p => p.category).map(p => p.category))].sort()], [products])
+  // Category tiles: each category with the first in-stock product image as its cover.
+  const catTiles = useMemo(() => {
+    const seen = {}
+    for (const p of products) {
+      if (p.category && p.image && !seen[p.category]) seen[p.category] = p.image
+    }
+    return Object.entries(seen).map(([name, img]) => ({ name, img })).slice(0, 12)
+  }, [products])
   const filtered = useMemo(() => { const q = search.toLowerCase(); return products.filter(p => (!q || p.name.toLowerCase().includes(q)) && (cat === 'all' || p.category === cat)) }, [products, search, cat])
 
   const addToCart = p => {
@@ -486,6 +494,19 @@ export default function App() {
           </div>
         </section>
 
+        {/* Bold promo banner */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-5">
+          <div className="relative overflow-hidden rounded-2xl bg-[var(--color-brand)] text-white px-6 py-5 sm:px-8 sm:py-6 flex items-center justify-between gap-4">
+            <div className="relative z-10">
+              <div className="text-[10px] font-bold tracking-[0.2em] uppercase text-[var(--color-leaf)] mb-1">Limited time</div>
+              <div className="text-xl sm:text-3xl font-bold leading-tight" style={{ fontFamily: 'var(--font-display)' }}>Free delivery on orders<br className="hidden sm:block" /> over {money(300)}</div>
+              <button onClick={() => go('shop','/shop')} className="mt-3 h-9 px-5 bg-white text-[var(--color-brand)] rounded-full text-xs font-bold hover:bg-green-50 transition inline-flex items-center gap-1.5">Shop now {I.arrow}</button>
+            </div>
+            <div className="absolute -right-6 -bottom-8 w-40 h-40 rounded-full bg-white/5" />
+            <div className="absolute right-10 -top-10 w-28 h-28 rounded-full bg-white/5" />
+          </div>
+        </div>
+
         {/* Search bar on mobile */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 md:hidden">
           <button onClick={() => { setShowSearch(true); go('shop','/shop') }} className="w-full h-10 px-4 bg-gray-50 rounded-xl text-sm text-gray-400 text-left flex items-center gap-2 border border-gray-100">
@@ -493,12 +514,24 @@ export default function App() {
           </button>
         </div>
 
-        {/* Categories */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-            {cats.map(c => <button key={c} onClick={() => { setCat(c); setTimeout(() => go('shop','/shop'), 0) }} className="h-8 px-4 rounded-lg text-[11px] font-semibold whitespace-nowrap bg-gray-50 text-gray-500 hover:bg-gray-100 transition shrink-0 capitalize">{c === 'all' ? 'All Products' : c}</button>)}
-          </div>
-        </div>
+        {/* Category tiles — visual, tappable */}
+        {catTiles.length > 0 && (
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold">Shop by category</h2>
+              <button onClick={() => go('shop','/shop')} className="text-[11px] text-gray-400 font-medium flex items-center gap-0.5">All {I.arrow}</button>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
+              {catTiles.map(({ name, img }) => (
+                <button key={name} onClick={() => { setCat(name); setTimeout(() => go('shop','/shop'), 0) }} className="group relative aspect-square rounded-2xl overflow-hidden bg-gray-100">
+                  {img && <img src={thumb(img, 300)} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+                  <span className="absolute bottom-2 left-2 right-2 text-white text-[11px] font-bold leading-tight capitalize text-left">{name}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Promo products — horizontal scroll */}
         {promoProducts.length > 0 && (
@@ -570,6 +603,19 @@ export default function App() {
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+        {/* New Arrivals */}
+        {products.length > 0 && (
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-8">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold">New arrivals</h2>
+              <button onClick={() => go('shop','/shop')} className="text-[11px] text-gray-400 font-medium flex items-center gap-0.5">See all {I.arrow}</button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-5">
+              {products.slice(0, 10).map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}
             </div>
           </section>
         )}
