@@ -1,7 +1,7 @@
 import { useStore } from '../hooks/useStore'
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { money, today, weekStartDate, monthStart, isoDate, fmtDate } from '../lib/utils'
+import { money, today, weekStartDate, monthStart, isoDate, fmtDate, ECOMMERCE_ENABLED } from '../lib/utils'
 
 export default function Dashboard() {
   const { sales, expenses, products, customers, refunds, stockAdjustments, user, setPage, shopOpen, shopSettingLoaded, fetchShopOpen, setShopOpen } = useStore()
@@ -76,21 +76,21 @@ export default function Dashboard() {
       </div>
 
       {/* Online shop on/off */}
-      <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 flex items-center gap-4">
+      {ECOMMERCE_ENABLED && (<div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 flex items-center gap-4">
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${shopOpen ? 'bg-[#16181d]' : 'bg-gray-200'}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={shopOpen ? '#fff' : '#8a8d92'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18"/></svg>
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-[15px] font-bold text-gray-900">Online Shop</div>
           <div className="text-[13px] text-gray-400">
-            {!shopSettingLoaded ? 'Checking…' : shopOpen ? 'Open — customers can order on erbliving.shop' : 'Closed — customers see a "back soon" page'}
+            {!shopSettingLoaded ? 'Checking…' : shopOpen ? 'Open — customers can order online' : 'Closed — customers see a "back soon" page'}
           </div>
         </div>
         <button onClick={onToggleShop} disabled={toggling || !shopSettingLoaded}
           className={`relative w-14 h-8 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${shopOpen ? 'bg-[#16181d]' : 'bg-gray-300'}`}>
           <span className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-all ${shopOpen ? 'left-7' : 'left-1'}`} />
         </button>
-      </div>
+      </div>)}
 
       {/* Alerts */}
 

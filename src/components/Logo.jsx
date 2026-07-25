@@ -67,7 +67,7 @@ export function LogoMark({ size = 40, bg = INK, fg = '#ffffff', accent = GOLD, r
       <rect width="48" height="48" rx={rounded} fill={bg} />
       <text x="24" y="33" textAnchor="middle" fill={fg}
         fontFamily="'Inter', system-ui, sans-serif" fontWeight="700" fontSize="26"
-        style={{ fontOpticalSizing: 'auto' }}>E</text>
+        style={{ fontOpticalSizing: 'auto' }}>B</text>
       <line x1="17" y1="37" x2="31" y2="37" stroke={accent} strokeWidth="1.6" />
     </svg>
   )

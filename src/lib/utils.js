@@ -49,3 +49,8 @@ export const ADMIN_PIN = null
 // Cash-only until the NaloPay keys are connected. Flip to true (and set the
 // edge-function secrets) to enable MoMo direct-prompt + USSD + Split payments.
 export const PAYMENTS_ENABLED = false
+
+// This brand has no e-commerce website yet. Hides the Online Shop toggle,
+// the WhatsApp online-order features, and website references. Flip to true
+// when the storefront is built.
+export const ECOMMERCE_ENABLED = false

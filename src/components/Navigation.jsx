@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../hooks/useStore'
 import { LogoMark } from './Logo'
+import { ECOMMERCE_ENABLED } from '../lib/utils'
 import { getRegisterId, openCustomerScreenManual } from '../hooks/useCustomerDisplay'
 import toast from 'react-hot-toast'
 
@@ -120,7 +121,7 @@ export default function Navigation({ onOpenCart }) {
           <span className="flex-shrink-0 w-5 flex justify-center"><I d="M2 3h20v14H2zM8 21h8M12 17v4" /></span>
           <span className={`text-[13px] font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${expanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>Customer Screen</span>
         </button>
-        {isAdmin && <button onClick={toggleShop} disabled={!shopSettingLoaded} className="w-full flex items-center gap-3 h-10 px-3 rounded-xl text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition disabled:opacity-50">
+        {ECOMMERCE_ENABLED && isAdmin && <button onClick={toggleShop} disabled={!shopSettingLoaded} className="w-full flex items-center gap-3 h-10 px-3 rounded-xl text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition disabled:opacity-50">
           <span className="flex-shrink-0 w-5 flex justify-center"><I d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18" /></span>
           <span className={`flex-1 flex items-center justify-between text-[13px] font-medium whitespace-nowrap overflow-hidden transition-all duration-300 ${expanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>
             <span>Online Shop</span>
@@ -194,7 +195,7 @@ export default function Navigation({ onOpenCart }) {
         </div>
       </div>
       <div className="p-3 safe-bottom space-y-2 border-t border-stone-100">
-        {isAdmin && <button onClick={toggleShop} disabled={!shopSettingLoaded} className="w-full py-3 bg-stone-100 rounded-xl text-sm font-semibold flex items-center justify-between px-4 disabled:opacity-50">
+        {ECOMMERCE_ENABLED && isAdmin && <button onClick={toggleShop} disabled={!shopSettingLoaded} className="w-full py-3 bg-stone-100 rounded-xl text-sm font-semibold flex items-center justify-between px-4 disabled:opacity-50">
           <span className="flex items-center gap-2"><I d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18" /> Online Shop {shopOpen ? 'Open' : 'Closed'}</span>
           <span className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${shopOpen ? 'bg-[#16181d]' : 'bg-stone-300'}`}>
             <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${shopOpen ? 'left-[18px]' : 'left-0.5'}`} />
