@@ -56,9 +56,9 @@ export default function ReceiptPreview({ sale, onClose }) {
 
       <div class="hdr">
         <div class="shop-name">BEDTIME BEDDINGS HOME</div>
-        <div class="shop-info">${SHOP.address}</div>
+        ${SHOP.address ? `<div class="shop-info">${SHOP.address}</div>` : ''}
         <div class="shop-info">Tel: ${SHOP.phone}</div>
-        <div class="shop-info">${SHOP.website}</div>
+        ${SHOP.website ? `<div class="shop-info">${SHOP.website}</div>` : ''}
       </div>
 
       <div class="title">SALES RECEIPT</div>
@@ -98,7 +98,7 @@ export default function ReceiptPreview({ sale, onClose }) {
 
       <div class="footer">
         <p>Thank you for shopping with us!</p>
-        <p>${SHOP.website}</p>
+        ${SHOP.website ? `<p>${SHOP.website}</p>` : ''}
         <p style="color:#999!important;margin-top:2mm;">Goods sold are not returnable</p>
       </div>
 
@@ -129,9 +129,9 @@ export default function ReceiptPreview({ sale, onClose }) {
           {/* Header */}
           <div className="text-center pb-4 border-b-2 border-dashed border-gray-800">
             <div className="text-lg font-black tracking-wide uppercase">{SHOP.name}</div>
-            <div className="text-[11px] font-bold text-gray-600">{SHOP.address}</div>
+            {SHOP.address && <div className="text-[11px] font-bold text-gray-600">{SHOP.address}</div>}
             <div className="text-[11px] font-bold text-gray-600">Tel: {SHOP.phone}</div>
-            <div className="text-[11px] font-bold text-gray-600">{SHOP.website}</div>
+            {SHOP.website && <div className="text-[11px] font-bold text-gray-600">{SHOP.website}</div>}
           </div>
 
           {/* Title */}
@@ -176,7 +176,7 @@ export default function ReceiptPreview({ sale, onClose }) {
           {/* Footer */}
           <div className="text-center border-t-2 border-dashed border-gray-800 pt-3 mt-4">
             <p className="text-[12px] font-bold">Thank you for shopping with us!</p>
-            <p className="text-[11px] text-gray-500 mt-1">{SHOP.website}</p>
+            {SHOP.website && <p className="text-[11px] text-gray-500 mt-1">{SHOP.website}</p>}
             <p className="text-[10px] text-gray-400 mt-1">Goods sold are not returnable</p>
           </div>
         </div>

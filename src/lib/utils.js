@@ -36,12 +36,16 @@ export const SHOP = {
   name: 'BEDTIME BEDDINGS HOME',
   tagline: '',
   phone: '059 908 4552',
-  address: 'Adenta Aviation Road, Accra',
+  address: '',
   addressFull: 'Aviation Road J382, Adenta, Accra, Ghana',
   mapsUrl: 'https://maps.google.com/?q=Everytinroom+Adenta+Aviation+Road+Accra+Ghana',
   yango: 'Aviation Road J382',
-  website: 'www.erbliving.shop',
+  website: '',
   promoMsg: '',
 }
 
 export const ADMIN_PIN = null
+
+// Cash-only until the NaloPay keys are connected. Flip to true (and set the
+// edge-function secrets) to enable MoMo direct-prompt + USSD + Split payments.
+export const PAYMENTS_ENABLED = false

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../hooks/useStore'
 import { getSupabase } from '../lib/supabase'
-import { money, num } from '../lib/utils'
+import { money, num, PAYMENTS_ENABLED } from '../lib/utils'
 import { broadcastDisplay } from '../hooks/useCustomerDisplay'
 import Modal from './Modal'
 import toast from 'react-hot-toast'
@@ -354,7 +354,8 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
     if (cnt === 0) return
     // Reset selection each time the payment sheet opens.
     setSplitMode(false); setSplitCash(''); setPhone(''); setCashReceived('')
-    setPayMethod(isWhatsApp ? 'WhatsApp' : '') // no method pre-selected for walk-in
+    // Cash-only mode: pre-select Cash so there's no empty method screen.
+    setPayMethod(!PAYMENTS_ENABLED ? 'Cash' : (isWhatsApp ? 'WhatsApp' : ''))
     setPayOpen(true)
   }
 
@@ -425,6 +426,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
             </div>
           </div>
 
+          {PAYMENTS_ENABLED && (<>
           {/* WhatsApp order toggle — tags the order + prepares an address-form link to send */}
           <button onClick={() => setIsWhatsApp(v => !v)} className={`w-full flex items-center gap-3 h-11 px-4 rounded-xl border mb-3 transition ${isWhatsApp ? 'border-[#0e7c86] bg-[#0e7c86]/5' : 'border-gray-200 bg-gray-50'}`}>
             <div className={`w-5 h-5 rounded-md flex items-center justify-center ${isWhatsApp ? 'bg-[#0e7c86]' : 'border-2 border-gray-300'}`}>
@@ -433,6 +435,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
             <span className={`text-sm font-semibold ${isWhatsApp ? 'text-[#0e7c86]' : 'text-gray-500'}`}>WhatsApp delivery order</span>
             <span className="ml-auto text-[10px] text-gray-400">{isWhatsApp ? 'send code + address link' : 'walk-in'}</span>
           </button>
+          </>)}
 
           <button onClick={handleOpenPayment} disabled={cnt === 0}
             className="w-full h-12 bg-gray-900 hover:bg-gray-800 rounded-xl text-white text-base font-bold disabled:opacity-30 active:scale-[.98] transition-all ">
@@ -465,7 +468,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
                       icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg> },
                     { id: 'Momo', label: 'MoMo', sub: 'Direct prompt',
                       icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2.5"/><path d="M11 18h2"/></svg> },
-                  ].map(m => {
+                  ].filter(m => PAYMENTS_ENABLED || m.id === 'Cash').map(m => {
                     const active = m.id === 'Split' ? splitMode : (!splitMode && payMethod === m.id)
                     return (
                       <button key={m.id} onClick={() => { if (m.id === 'Split') { setSplitMode(true); setSplitCash('') } else { setPayMethod(m.id); setSplitMode(false) } }}
