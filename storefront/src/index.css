@@ -3,13 +3,13 @@
 @theme {
   --font-display: "Playfair Display", Georgia, serif;
   --font-body: "DM Sans", system-ui, sans-serif;
-  --color-brand: #14532d;
-  --color-brand-light: #166534;
-  --color-cream: #fafaf8;
-  --color-cream-dark: #f0f0ec;
-  --color-leaf: #86efac;
-  --color-accent: #166534;
-  --color-promo: #c0392b;
+  --color-brand: #1e2749;
+  --color-brand-light: #2d3a68;
+  --color-cream: #faf9f7;
+  --color-cream-dark: #efedea;
+  --color-leaf: #c9b98f;
+  --color-accent: #2d3a68;
+  --color-promo: #b0813b;
 }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
