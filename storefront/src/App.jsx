@@ -303,7 +303,7 @@ export default function App() {
   // Share product
   const shareProduct = (p) => {
     const url = `${window.location.origin}/#/product/${p.id}`
-    const text = `Check out ${p.name} — ${money(gp(p))} at BEDTIME BEDDINGS HOME`
+    const text = `Check out ${p.name} — ${money(gp(p))} at BEDTIME BEDDINGS & HOME`
     if (navigator.share) {
       navigator.share({ title: p.name, text, url }).catch(() => {})
     } else {
@@ -454,7 +454,7 @@ export default function App() {
       {/* NAV */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-zinc-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <button onClick={() => go('home', '/')} className="font-bold text-[15px] tracking-[0.12em] text-zinc-900 shrink-0 uppercase" style={{ fontFamily: 'var(--font-body)' }}>Bedtime<span className="text-zinc-400"> Beddings</span></button>
+          <button onClick={() => go('home', '/')} className="font-bold text-[15px] tracking-[0.12em] text-zinc-900 shrink-0 uppercase" style={{ fontFamily: 'var(--font-body)' }}>Bedtime<span className="text-zinc-400"> Beddings & Home</span></button>
           <div className="hidden md:flex items-center gap-6">
             {[['Home','home','/'],['Shop','shop','/shop'],['Track','track','/track']].map(([l,p,h]) => <button key={p} onClick={() => go(p,h)} className={`text-xs font-semibold transition ${page === p ? 'text-black' : 'text-zinc-400 hover:text-zinc-600'}`}>{l}</button>)}
           </div>
@@ -941,7 +941,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="py-8 grid grid-cols-2 sm:grid-cols-4 gap-6">
             <div className="col-span-2 sm:col-span-1">
-              <div className="text-white text-sm font-bold tracking-tight mb-2">BEDTIME BEDDINGS HOME</div>
+              <div className="text-white text-sm font-bold tracking-tight mb-2">BEDTIME BEDDINGS & HOME</div>
               <p className="text-[11px] text-zinc-200/50 leading-relaxed">Better sleep starts with better bedding.</p>
             </div>
             <div>
@@ -961,7 +961,7 @@ export default function App() {
             </div>
           </div>
           <div className="border-t border-white/15 py-4">
-            <p className="text-[10px] text-white/40">&copy; {new Date().getFullYear()} BEDTIME BEDDINGS HOME. All rights reserved.</p>
+            <p className="text-[10px] text-white/40">&copy; {new Date().getFullYear()} BEDTIME BEDDINGS & HOME. All rights reserved.</p>
           </div>
         </div>
       </footer>

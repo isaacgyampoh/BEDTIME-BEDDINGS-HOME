@@ -24,7 +24,7 @@ export function Logo({ height = 96, color = INK, accent = GOLD, tagline = false,
   const arcPath = `M ${pad} ${arcY} Q ${cx} ${arcY - arcLift} ${W - pad} ${arcY}`
   const ruleY = arcY + 22
   return (
-    <svg className={className} height={height} viewBox={`0 0 ${W} ${H}`} fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BEDTIME BEDDINGS HOME">
+    <svg className={className} height={height} viewBox={`0 0 ${W} ${H}`} fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BEDTIME BEDDINGS & HOME">
       <defs><path id={id} d={arcPath} /></defs>
       <text fill={color} fontFamily="'Inter', system-ui, sans-serif" fontWeight="700" fontSize="40" letterSpacing="3" style={{ fontOpticalSizing: 'auto' }}>
         <textPath href={`#${id}`} startOffset="50%" textAnchor="middle">BEDTIME BEDDINGS</textPath>
@@ -46,7 +46,7 @@ export function LogoFlat({ height = 44, color = INK, accent = GOLD, tagline = fa
   const cx = W / 2
   const ruleY = 58
   return (
-    <svg className={className} height={height} viewBox={`0 0 ${W} ${H}`} fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BEDTIME BEDDINGS HOME">
+    <svg className={className} height={height} viewBox={`0 0 ${W} ${H}`} fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BEDTIME BEDDINGS & HOME">
       <text x={cx} y={tagline ? 38 : 44} textAnchor="middle" fill={color}
         fontFamily="'Inter', system-ui, sans-serif" fontWeight="700" fontSize="38" letterSpacing="3.5"
         style={{ fontOpticalSizing: 'auto' }}>BEDTIME BEDDINGS</text>
@@ -63,7 +63,7 @@ export function LogoFlat({ height = 44, color = INK, accent = GOLD, tagline = fa
 
 export function LogoMark({ size = 40, bg = INK, fg = '#ffffff', accent = GOLD, rounded = 12, className = '' }) {
   return (
-    <svg className={className} width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BEDTIME BEDDINGS HOME">
+    <svg className={className} width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BEDTIME BEDDINGS & HOME">
       <rect width="48" height="48" rx={rounded} fill={bg} />
       <text x="24" y="33" textAnchor="middle" fill={fg}
         fontFamily="'Inter', system-ui, sans-serif" fontWeight="700" fontSize="26"

@@ -11,7 +11,7 @@ export const thumb = (url, w = 600) => {
   return url
 }
 export const SHOP = {
-  name: 'BEDTIME BEDDINGS HOME',
+  name: 'BEDTIME BEDDINGS & HOME',
   phone: '059 908 4552',
 
   address: '',

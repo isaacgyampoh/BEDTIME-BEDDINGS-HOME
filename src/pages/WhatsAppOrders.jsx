@@ -165,7 +165,7 @@ export default function WhatsAppOrders() {
 
   const resendInvoice = (o) => {
     const link = window.location.origin + '/#/pay/' + o.id
-    const lines = [`Hi${o.customerName ? ' ' + o.customerName : ''}, just a reminder about your order from BEDTIME BEDDINGS HOME.`, '']
+    const lines = [`Hi${o.customerName ? ' ' + o.customerName : ''}, just a reminder about your order from BEDTIME BEDDINGS & HOME.`, '']
     o.items.forEach(it => lines.push(`${it.qty}x ${it.name} - ${money(it.lineTotal || it.price * it.qty)}`))
     lines.push('', `Total: ${money(o.total)}`, '', 'Please click the link below to make payment:', link, '', 'Thank you.')
     const msg = lines.join('\n')

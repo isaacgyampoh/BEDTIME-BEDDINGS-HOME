@@ -93,7 +93,7 @@ export default function Navigation({ onOpenCart }) {
       <div className="relative z-10 flex items-center gap-3 px-4 h-16 flex-shrink-0">
         <LogoMark size={32} rounded={9} />
         <div className={`overflow-hidden transition-all duration-300 ${expanded ? 'opacity-100 w-auto' : 'opacity-0 w-0'}`}>
-          <div className="font-heading text-[13px] font-bold tracking-tight whitespace-nowrap">BEDTIME BEDDINGS HOME</div>
+          <div className="font-heading text-[13px] font-bold tracking-tight whitespace-nowrap">BEDTIME BEDDINGS & HOME</div>
         </div>
       </div>
 
@@ -151,7 +151,7 @@ export default function Navigation({ onOpenCart }) {
     {/* Mobile Header */}
     <header className="flex md:hidden fixed top-0 left-0 right-0 h-14 safe-top glass px-4 items-center gap-2 z-[100] border-b border-stone-200/30">
       <div className="flex items-center gap-2 font-heading text-base font-bold tracking-tight flex-1">
-        <LogoMark size={28} rounded={7} /><span className="font-heading text-[15px] font-semibold tracking-tight">BEDTIME BEDDINGS HOME</span>
+        <LogoMark size={28} rounded={7} /><span className="font-heading text-[15px] font-semibold tracking-tight">BEDTIME BEDDINGS & HOME</span>
       </div>
       <button onClick={() => setMobileOpen(true)} className="w-9 h-9 rounded-xl bg-gray-900 flex items-center justify-center text-white">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>

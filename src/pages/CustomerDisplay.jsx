@@ -104,7 +104,7 @@ export default function CustomerDisplay() {
         <p className="text-lg text-white/55 mb-1 tracking-wide">Payment received</p>
         <div className="text-5xl font-semibold mt-5 tabular-nums">{money(s.total)}</div>
         {s.receiptNo && <p className="text-white/35 mt-4 text-sm tracking-wide">Receipt {s.receiptNo}</p>}
-        <p className="text-white/30 mt-12 text-xs tracking-[0.2em] uppercase">BEDTIME BEDDINGS HOME &middot; Adenta</p>
+        <p className="text-white/30 mt-12 text-xs tracking-[0.2em] uppercase">BEDTIME BEDDINGS & HOME &middot; Adenta</p>
       </div>
     )
   }

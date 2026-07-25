@@ -55,7 +55,7 @@ export default function ReceiptPreview({ sale, onClose }) {
       <div class="rc">
 
       <div class="hdr">
-        <div class="shop-name">BEDTIME BEDDINGS HOME</div>
+        <div class="shop-name">BEDTIME BEDDINGS & HOME</div>
         ${SHOP.address ? `<div class="shop-info">${SHOP.address}</div>` : ''}
         <div class="shop-info">Tel: ${SHOP.phone}</div>
         ${SHOP.website ? `<div class="shop-info">${SHOP.website}</div>` : ''}
