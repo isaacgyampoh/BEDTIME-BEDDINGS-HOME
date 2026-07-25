@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Playfair Display", Georgia, serif;
-  --font-body: "DM Sans", system-ui, sans-serif;
-  --color-brand: #6b5544;
-  --color-brand-light: #8a7059;
-  --color-cream: #f7f4ef;
-  --color-cream-dark: #ece6dc;
-  --color-leaf: #cbb99f;
-  --color-accent: #a8734f;
-  --color-promo: #2a2521;
+  --font-display: "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --color-brand: #111111;
+  --color-brand-light: #333333;
+  --color-cream: #ffffff;
+  --color-cream-dark: #f4f4f5;
+  --color-leaf: #a1a1aa;
+  --color-accent: #111111;
+  --color-promo: #111111;
 }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
