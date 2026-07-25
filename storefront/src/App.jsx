@@ -454,7 +454,7 @@ export default function App() {
       {/* NAV */}
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-zinc-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
-          <button onClick={() => go('home', '/')} className="font-bold text-base tracking-tight text-zinc-900 shrink-0" style={{ fontFamily: 'var(--font-body)' }}>BEDTIME BEDDINGS HOME</button>
+          <button onClick={() => go('home', '/')} className="font-bold text-[15px] tracking-[0.12em] text-zinc-900 shrink-0 uppercase" style={{ fontFamily: 'var(--font-body)' }}>Bedtime<span className="text-zinc-400"> Beddings</span></button>
           <div className="hidden md:flex items-center gap-6">
             {[['Home','home','/'],['Shop','shop','/shop'],['Track','track','/track']].map(([l,p,h]) => <button key={p} onClick={() => go(p,h)} className={`text-xs font-semibold transition ${page === p ? 'text-black' : 'text-zinc-400 hover:text-zinc-600'}`}>{l}</button>)}
           </div>
