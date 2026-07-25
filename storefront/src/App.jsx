@@ -330,7 +330,7 @@ export default function App() {
   const placeOrder = async () => {
     const name = custName.trim().replace(/[<>]/g, '')
     const phone = custPhone.trim().replace(/[^0-9+\s]/g, '')
-    const addr = fulfillment === 'pickup' ? 'PICKUP - ' + SHOP.address : custAddress.trim().replace(/[<>]/g, '')
+    const addr = custAddress.trim().replace(/[<>]/g, '')
     const notes = custNotes.trim().replace(/[<>]/g, '')
     if (!name || !phone) return
     if (phone.length < 10) { setToast('Enter a valid phone number'); setTimeout(() => setToast(''), 2000); return }
@@ -379,7 +379,7 @@ export default function App() {
     const items = cart.map(c => ({ name: c.name.replace(/[<>]/g, ''), qty: c.qty, price: c.price, lineTotal: c.price * c.qty, productId: c.id }))
     const { data: mc } = await supabase.from('whatsapp_orders').select('ussd_code').order('ussd_code', { ascending: false }).limit(1)
     const uc = (mc?.[0]?.ussd_code || 0) + 1
-    const orderNotes = [fulfillment === 'pickup' ? 'PICKUP' : 'DELIVERY', notes || '', ''].filter(Boolean).join(' | ')
+    const orderNotes = ['DELIVERY', notes || ''].filter(Boolean).join(' | ')
 
     // Create order (Pending) and show USSD code
     const { data: inserted, error } = await supabase.from('whatsapp_orders').insert({ order_no: orderNo, date: new Date().toISOString(), customer_name: name, customer_phone: phone, items: JSON.stringify(items), subtotal: ct, total: ct, address: addr || null, notes: orderNotes, status: 'Pending', ussd_code: uc, source: 'web', details_filled: true }).select('id').single()
@@ -469,11 +469,11 @@ export default function App() {
           ))}
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent z-[1]" />
           <div className="relative z-10 h-full flex flex-col justify-end max-w-7xl mx-auto px-4 sm:px-6 pb-10">
-            <a href={SHOP.mapsUrl} target="_blank" className="inline-flex items-center gap-1.5 text-green-400 text-[10px] font-semibold tracking-[0.2em] uppercase mb-3 hover:text-green-300 transition">
-              {I.pin} {SHOP.address}
-            </a>
+            <div className="inline-flex items-center gap-1.5 text-green-400 text-[10px] font-semibold tracking-[0.25em] uppercase mb-3">
+              Bedtime Beddings Home
+            </div>
             <h1 className="text-white text-3xl md:text-5xl font-bold leading-tight mb-3" style={{ fontFamily: 'var(--font-display)' }}>Home essentials,<br />delivered to you.</h1>
-            <p className="text-green-300/60 text-sm max-w-md mb-6">Quality cookware, curtains, bedding and more. Nationwide delivery across Ghana.</p>
+            <p className="text-green-300/60 text-sm max-w-md mb-6">Bedsheets, duvets, curtains and home comfort — delivered to your door.</p>
             <div className="flex items-center gap-3">
               <button onClick={() => go('shop', '/shop')} className="h-11 px-7 bg-white text-green-900 rounded-full text-xs font-bold hover:bg-green-50 transition btn-press flex items-center gap-2">Shop Collection {I.arrow}</button>
               <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="h-11 px-5 border border-green-400/30 text-green-400 rounded-full text-xs font-medium hover:bg-white/5 transition flex items-center gap-1.5">{I.phone} Call Us</a>
@@ -670,7 +670,7 @@ export default function App() {
             </button>
 
             <div className="mt-5 pt-5 border-t border-gray-100 space-y-2 text-xs text-gray-400">
-              <p className="flex items-center gap-1.5">{I.check} Nationwide delivery</p>
+              <p className="flex items-center gap-1.5">{I.check} Fast delivery</p>
               <p className="flex items-center gap-1.5">{I.check} Secure MoMo payment</p>
               <p className="flex items-center gap-1.5">{I.phone} Call {SHOP.phone}</p>
             </div>
@@ -733,33 +733,13 @@ export default function App() {
 
           <h2 className="text-lg font-bold text-green-900 mb-5" style={{ fontFamily: 'var(--font-display)' }}>Checkout</h2>
 
-          {/* Delivery / Pickup */}
-          <div className="mb-5">
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setFulfillment('delivery')} className={`h-12 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${fulfillment === 'delivery' ? 'bg-green-800 text-white' : 'bg-white text-stone-400 border border-stone-200'}`}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-                Delivery
-              </button>
-              <button onClick={() => setFulfillment('pickup')} className={`h-12 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${fulfillment === 'pickup' ? 'bg-green-800 text-white' : 'bg-white text-stone-400 border border-stone-200'}`}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
-                Pickup
-              </button>
-            </div>
-          </div>
+          {/* Delivery only (no pickup location yet) */}
 
           {/* Form */}
           <div className="space-y-3 mb-5">
             <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-green-600 transition" value={custName} onChange={e => setCustName(e.target.value)} placeholder="Full name" />
             <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-green-600 transition" value={custPhone} onChange={e => setCustPhone(e.target.value)} placeholder="Phone number" type="tel" />
-            {fulfillment === 'delivery' && (
-              <textarea className="w-full h-16 px-3.5 py-2.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-green-600 transition resize-none" value={custAddress} onChange={e => setCustAddress(e.target.value)} placeholder="Delivery address (city, area, landmark)" />
-            )}
-            {fulfillment === 'pickup' && (
-              <div className="bg-stone-50 rounded-xl p-3 border border-stone-100">
-                <div className="text-[11px] font-semibold text-green-800 mb-0.5">Pickup at</div>
-                <div className="text-[11px] text-gray-500">{SHOP.address}</div>
-              </div>
-            )}
+            <textarea className="w-full h-16 px-3.5 py-2.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-green-600 transition resize-none" value={custAddress} onChange={e => setCustAddress(e.target.value)} placeholder="Delivery address (area, landmark)" />
             <input className="w-full h-11 px-3.5 bg-white border border-stone-200 rounded-xl text-sm text-stone-800 focus:outline-none focus:border-green-600 transition" value={custNotes} onChange={e => setCustNotes(e.target.value)} placeholder="Notes (optional)" />
           </div>
 
@@ -795,7 +775,7 @@ export default function App() {
               </div>
               <div className="border-t border-gray-100 pt-5 mb-6">
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  Thank you. We've received your order and will call you on <span className="text-gray-900 font-medium">{custPhone}</span> shortly to confirm and arrange {orderResult.fulfillment === 'pickup' ? 'pickup' : 'payment and delivery'}.
+                  Thank you. We've received your order and will call you on <span className="text-gray-900 font-medium">{custPhone}</span> shortly to confirm and arrange payment and delivery.
                 </p>
               </div>
             </>
@@ -814,7 +794,7 @@ export default function App() {
               <div className="border-t border-gray-100 pt-5 mb-6">
                 <p className="text-sm text-gray-600 leading-relaxed">
                   {orderResult.fulfillment === 'pickup'
-                    ? <>We're preparing your order. You can pick it up at <span className="text-gray-900 font-medium">{SHOP.address}</span> — we'll call you when it's ready.</>
+                    ? <>We're preparing your order. Our delivery team will call you on <span className="text-gray-900 font-medium">{custPhone}</span> to arrange delivery.</>
                     : <>We're preparing your order. Our delivery team will call you on <span className="text-gray-900 font-medium">{custPhone}</span> to arrange delivery.</>}
                 </p>
                 <p className="text-sm text-gray-600 mt-3">We've sent your order details by SMS.</p>
@@ -905,7 +885,7 @@ export default function App() {
           <div className="py-8 grid grid-cols-2 sm:grid-cols-4 gap-6">
             <div className="col-span-2 sm:col-span-1">
               <div className="text-white text-sm font-bold tracking-tight mb-2">BEDTIME BEDDINGS HOME</div>
-              <p className="text-[11px] text-green-300/50 leading-relaxed">Quality home furnishings.<br />Delivered across Ghana.</p>
+              <p className="text-[11px] text-green-300/50 leading-relaxed">Quality home furnishings,<br />delivered to your door.</p>
             </div>
             <div>
               <div className="text-[10px] text-green-400/60 uppercase tracking-wider mb-3">Shop</div>
@@ -924,9 +904,9 @@ export default function App() {
               </div>
             </div>
             <div>
-              <div className="text-[10px] text-green-400/60 uppercase tracking-wider mb-3">Visit Us</div>
-              <a href={SHOP.mapsUrl} target="_blank" className="block text-[12px] text-white/70 hover:text-white transition leading-relaxed mb-2">{SHOP.address}</a>
-              <a href={SHOP.mapsUrl} target="_blank" className="inline-flex items-center gap-1.5 text-[12px] text-green-400 hover:text-green-300 transition font-medium">{I.pin} Open in Google Maps</a>
+              <div className="text-[10px] text-green-400/60 uppercase tracking-wider mb-3">Contact</div>
+              <a href={`tel:${SHOP.phone}`} className="block text-[12px] text-white/70 hover:text-white transition leading-relaxed mb-2">{SHOP.phone}</a>
+              <a href={`https://wa.me/${(SHOP.whatsapp||SHOP.phone||'').replace(/[^0-9]/g,'').replace(/^0/,'233')}`} target="_blank" className="inline-flex items-center gap-1.5 text-[12px] text-green-400 hover:text-green-300 transition font-medium">Chat on WhatsApp</a>
             </div>
           </div>
           <div className="border-t border-green-800/50 py-4">

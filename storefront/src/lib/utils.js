@@ -15,7 +15,7 @@ export const SHOP = {
   phone: '059 908 4552',
   phone2: '024 936 5339',
   address: '',
-  mapsUrl: 'https://maps.google.com/?q=Everytinroom+Adenta+Aviation+Road+Accra+Ghana',
-  whatsapp: '233245315581',
+  mapsUrl: '',
+  whatsapp: '233599084552',
   domain: '',
 }
