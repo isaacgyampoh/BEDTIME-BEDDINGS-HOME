@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://bedtime-beddings.vercel.app/sitemap.xml
+Sitemap: https://bedtimehome.com/sitemap.xml
