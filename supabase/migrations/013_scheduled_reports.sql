@@ -9,7 +9,7 @@ SELECT cron.schedule(
   'morning-report',
   '0 6 * * *',
   $$SELECT net.http_post(
-    url := 'https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/charge-momo?action=report&type=daily',
+    url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=report&type=daily',
     body := '{}',
     headers := '{"Content-Type": "application/json"}'::jsonb
   )$$
@@ -20,7 +20,7 @@ SELECT cron.schedule(
   'afternoon-report',
   '0 13 * * *',
   $$SELECT net.http_post(
-    url := 'https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/charge-momo?action=report&type=today',
+    url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=report&type=today',
     body := '{}',
     headers := '{"Content-Type": "application/json"}'::jsonb
   )$$
@@ -31,7 +31,7 @@ SELECT cron.schedule(
   'evening-report',
   '0 20 * * *',
   $$SELECT net.http_post(
-    url := 'https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/charge-momo?action=report&type=evening',
+    url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=report&type=evening',
     body := '{}',
     headers := '{"Content-Type": "application/json"}'::jsonb
   )$$
@@ -42,7 +42,7 @@ SELECT cron.schedule(
   'weekly-report',
   '0 6 * * 1',
   $$SELECT net.http_post(
-    url := 'https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/charge-momo?action=report&type=weekly',
+    url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=report&type=weekly',
     body := '{}',
     headers := '{"Content-Type": "application/json"}'::jsonb
   )$$
@@ -53,7 +53,7 @@ SELECT cron.schedule(
   'monthly-report',
   '0 6 1 * *',
   $$SELECT net.http_post(
-    url := 'https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/charge-momo?action=report&type=monthly',
+    url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=report&type=monthly',
     body := '{}',
     headers := '{"Content-Type": "application/json"}'::jsonb
   )$$

@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const PAYSTACK_SECRET = Deno.env.get('PAYSTACK_SECRET_KEY') || ''
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://noiiuwkovoojkcwzupye.supabase.co'
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevlnp.supabase.co'
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const SHOP = 'EVERYTINROOM'
 
@@ -227,7 +227,7 @@ serve(async (req) => {
         else if (/^(23|28|58)/.test(num)) network = 'AIRTELTIGO'
 
         const chargeAmount = Number((Number(order.total) * 1.015).toFixed(2)) // 1.5% processing fee (invisible to customer)
-        const callbackUrl = `https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/charge-momo?action=nalopay-callback`
+        const callbackUrl = `https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=nalopay-callback`
 
         try {
           console.log(`NaloPay charge: phone=${naloPhone} amount=${chargeAmount} network=${network} ref=${ref}`)

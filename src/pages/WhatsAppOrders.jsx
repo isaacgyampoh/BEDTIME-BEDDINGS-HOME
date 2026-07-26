@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../hooks/useStore'
 import { getSupabase } from '../lib/supabase'
-import { money, fmtDateTime } from '../lib/utils'
+import { money, fmtDateTime, PAYMENTS_ENABLED } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 
@@ -14,9 +14,10 @@ export default function WhatsAppOrders() {
   // that actually paid (covers payments where NaloPay's callback never arrived).
   // Runs on load and every 30s while the orders page is open.
   useEffect(() => {
+    if (!PAYMENTS_ENABLED) return
     const run = async () => {
       try {
-        const r = await fetch('https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/charge-momo?action=reconcile-payments', { method: 'POST' })
+        const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=reconcile-payments', { method: 'POST' })
         const j = await r.json()
         if (j?.confirmed > 0) { refreshWAOrders(); toast.success(`${j.confirmed} payment(s) confirmed`) }
       } catch {}

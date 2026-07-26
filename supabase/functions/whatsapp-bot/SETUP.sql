@@ -11,7 +11,7 @@
 --         Add these 4 secrets:
 --         WHAPI_TOKEN = xfykKAIsRnay4mSY7iV6NOWIJAhLbtY3
 --         OPENAI_API_KEY = (your OpenAI key)
---         SUPABASE_URL = https://noiiuwkovoojkcwzupye.supabase.co
+--         SUPABASE_URL = https://wqkgfvmvuljzexhevlnp.supabase.co
 --         SUPABASE_SERVICE_ROLE_KEY = (find in Supabase → Settings → API → service_role key)
 --
 -- STEP 3: Deploy the edge function
@@ -23,7 +23,7 @@
 --
 -- STEP 4: Set webhook in Whapi.Cloud
 --         Go to whapi.cloud → your channel → Settings
---         Webhook URL: https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/whatsapp-bot
+--         Webhook URL: https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/whatsapp-bot
 --         Enable events: messages (POST)
 --         Mode: Body
 --         Click Save

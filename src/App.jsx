@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { getSupabase } from './lib/supabase'
+import { PAYMENTS_ENABLED } from './lib/utils'
 import { useStore } from './hooks/useStore'
 import { useCustomerDisplayBroadcast, broadcastDisplay } from './hooks/useCustomerDisplay'
 import Loader from './components/Loader'
@@ -97,10 +98,10 @@ export default function App() {
   // ask NaloPay which recent pending orders actually paid, and mark them Paid.
   // This means orders confirm themselves — staff shouldn't need to mark manually.
   useEffect(() => {
-    if (!user) return
+    if (!user || !PAYMENTS_ENABLED) return
     const run = async () => {
       try {
-        const r = await fetch('https://noiiuwkovoojkcwzupye.supabase.co/functions/v1/charge-momo?action=reconcile-payments', { method: 'POST' })
+        const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=reconcile-payments', { method: 'POST' })
         const j = await r.json()
         if (j?.confirmed > 0) { try { loadAll() } catch {} }
       } catch {}
