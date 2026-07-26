@@ -7,6 +7,11 @@ export const PAYMENTS_ENABLED = false
 export const EDGE_URL = 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo'
 export const thumb = (url, w = 600) => {
   if (!url) return ''
+  // Supabase storage: serve a resized/compressed version via the image transform
+  // endpoint instead of the full-size upload (big load-speed win).
+  if (url.includes('/storage/v1/object/public/')) {
+    return url.replace('/object/public/', '/render/image/public/') + `?width=${w}&quality=70&resize=contain`
+  }
   if (url.includes('cloudinary')) return url.replace('/upload/', `/upload/w_${w},c_fill,f_auto,q_auto/`)
   return url
 }

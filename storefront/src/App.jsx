@@ -35,7 +35,7 @@ function Card({ p, promo, onOpen, onAdd }) {
   return (
     <div className="cursor-pointer group card-lift" onClick={onOpen}>
       <div className="aspect-[3/4] bg-zinc-100 rounded-2xl overflow-hidden mb-2.5 relative">
-        {p.image ? <img src={thumb(p.image, 500)} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" loading="lazy" /> : <div className="w-full h-full bg-zinc-100" />}
+        {p.image ? <img src={thumb(p.image, 500)} alt={p.name} onError={e => { if (!e.target.dataset.fb) { e.target.dataset.fb = 1; e.target.src = p.image } }} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" loading="lazy" /> : <div className="w-full h-full bg-zinc-100" />}
         {promo && <span className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-[var(--color-promo)] text-white text-[8px] font-bold rounded-lg tracking-widest uppercase">Sale</span>}
         <button onClick={add} className={`absolute bottom-2.5 right-2.5 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${ok ? 'bg-black text-white scale-110' : 'bg-white shadow-md text-zinc-600 md:translate-y-2 md:opacity-0 md:group-hover:opacity-100 md:group-hover:translate-y-0'}`}>
           {ok ? I.check : I.plus}
