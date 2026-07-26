@@ -5,6 +5,31 @@ import { money, num, thumb } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 
+// Shrink an image file client-side to a max width, re-encoded as JPEG. Keeps
+// stored product photos small and uploads fast. Falls back to the original
+// file if anything goes wrong.
+function resizeImage(file, maxW = 1400, quality = 0.82) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const scale = Math.min(1, maxW / img.width)
+        if (scale === 1 && file.size < 500 * 1024) { resolve(file); return } // already small
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(img.width * scale)
+        canvas.height = Math.round(img.height * scale)
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob((blob) => resolve(blob && blob.size < file.size ? blob : file), 'image/jpeg', quality)
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+      img.src = url
+    } catch { resolve(file) }
+  })
+}
+
 export default function Products() {
   const { products, refreshProducts, setLoading } = useStore()
   const [query, setQuery] = useState('')
@@ -27,15 +52,16 @@ export default function Products() {
     if (!form.name.trim()) { toast.error('Enter name'); return }
     setLoading(true, 'Saving...'); const sb = getSupabase(); let imageUrl = form.existingImage || ''
     if (form.file) {
-      // Upload the image directly to this project's storage bucket. (The
-      // service-role edge upload is only used once the payment edge function is
-      // deployed for this brand; until then we upload straight from the browser.)
+      // Upload the image directly to this project's storage bucket, after
+      // shrinking it client-side to a sensible max width so we never store a
+      // multi-MB phone photo (keeps uploads fast + storage small; the /render
+      // transform still serves smaller thumbnails on top of this).
       try {
-        const file = form.file
-        if (file.size > 6 * 1024 * 1024) { toast.error('Image too large (max 6MB)'); setLoading(false); return }
-        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-        const path = `products/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-        const { error: upErr } = await sb.storage.from('product-images').upload(path, file, { cacheControl: '31536000', upsert: true, contentType: file.type || 'image/jpeg' })
+        const rawFile = form.file
+        if (rawFile.size > 15 * 1024 * 1024) { toast.error('Image too large (max 15MB)'); setLoading(false); return }
+        const file = await resizeImage(rawFile, 1400, 0.82)
+        const path = `products/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
+        const { error: upErr } = await sb.storage.from('product-images').upload(path, file, { cacheControl: '31536000', upsert: true, contentType: 'image/jpeg' })
         if (upErr) { toast.error('Upload failed: ' + (upErr.message || 'create a public "product-images" bucket in Supabase')); setLoading(false); return }
         imageUrl = `https://wqkgfvmvuljzexhevlnp.supabase.co/storage/v1/object/public/product-images/${path}`
       } catch (e) { console.error('Image upload failed:', e); toast.error('Image upload failed: ' + (e?.message || '')); setLoading(false); return }
