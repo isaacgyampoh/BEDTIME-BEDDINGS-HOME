@@ -6,7 +6,7 @@ import { broadcastDisplay } from '../hooks/useCustomerDisplay'
 import Modal from './Modal'
 import toast from 'react-hot-toast'
 
-const CHARGE_URL = 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo'
+const CHARGE_URL = 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service'
 
 export default function CartDrawer({ open, onClose, onReceipt }) {
   const { cart, updateCartQty, removeFromCart, clearCart, deductStock, user, mode, products } = useStore()
@@ -96,7 +96,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
     if (!moolreCtx || !otpValue.trim()) return
     setOtpSubmitting(true)
     try {
-      const mr = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=moolre-charge', {
+      const mr = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=moolre-charge', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: moolreCtx.phone, amount: moolreCtx.amount, orderNo: moolreCtx.orderNo, externalref: moolreCtx.externalref || moolreCtx.orderNo, otpcode: otpValue.trim() })
       })
@@ -187,7 +187,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       if (insErr || !inserted?.id) { setMomoStep('failed'); setMomoMessage('Could not create order: ' + (insErr?.message || '')); setProcessing(false); return }
       setPromptOrderId(inserted.id)
 
-      const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=nalopay-charge', {
+      const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=nalopay-charge', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: phone.trim(), amount, reference: ref, orderNo: ref, orderId: inserted.id, customerName: 'Customer', description: 'POS sale ' + ref })
       })
@@ -210,7 +210,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
           if (st === 'Paid' || st === 'Completed') {
             clearInterval(pollRef.current)
             const saleData = await recordSale(isSplit ? 'Split' : 'Momo', isSplit ? { splitCash: num(splitCash), splitMomo: amount } : {})
-            try { fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=thankyou-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone.trim() }) }) } catch {}
+            try { fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=thankyou-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone.trim() }) }) } catch {}
             if (saleData) { toast.success('Paid! ' + saleData.receiptNo); finishSale(saleData) }
           }
         } catch {}
@@ -248,7 +248,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       let smsOk = false
       if (localStorage.getItem('ussd-sms') === '1') {
         try {
-          const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=send-ussd-code', {
+          const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=send-ussd-code', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ orderNo })
           })
@@ -266,7 +266,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       let moolreRef = orderNo
       if (!isWhatsApp && localStorage.getItem('use-moolre') === '1') {
         try {
-          const mr = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=moolre-charge', {
+          const mr = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=moolre-charge', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ phone: phone.trim(), amount, orderNo, externalref: orderNo })
           })

@@ -3,8 +3,8 @@ export const money = v => 'GHS ' + Number(v || 0).toFixed(2)
 // No online payment yet for this brand. When false, checkout places the order
 // and the shop contacts the customer to arrange payment (pay on delivery /
 // pickup). Flip to true + point EDGE_URL at the new project to enable MoMo.
-export const PAYMENTS_ENABLED = false
-export const EDGE_URL = 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo'
+export const PAYMENTS_ENABLED = true
+export const EDGE_URL = 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service'
 export const thumb = (url, w = 600) => {
   if (!url) return ''
   // Supabase storage: serve a resized/compressed version via the image transform

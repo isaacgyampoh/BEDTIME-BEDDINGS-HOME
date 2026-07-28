@@ -17,7 +17,7 @@ export default function WhatsAppOrders() {
     if (!PAYMENTS_ENABLED) return
     const run = async () => {
       try {
-        const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=reconcile-payments', { method: 'POST' })
+        const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=reconcile-payments', { method: 'POST' })
         const j = await r.json()
         if (j?.confirmed > 0) { refreshWAOrders(); toast.success(`${j.confirmed} payment(s) confirmed`) }
       } catch {}

@@ -68,7 +68,7 @@ export default function InvoicePay() {
     setPaying(true)
     setError('')
     try {
-      const res = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=initialize', {
+      const res = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=initialize', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: phone.trim() || order.customer_phone,
