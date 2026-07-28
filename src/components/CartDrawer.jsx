@@ -354,6 +354,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
     if (cnt === 0) return
     // Reset selection each time the payment sheet opens.
     setSplitMode(false); setSplitCash(''); setPhone(''); setCashReceived('')
+    setMomoStep('idle'); setMomoMessage(''); setProcessing(false)
     // Cash-only mode: pre-select Cash so there's no empty method screen.
     setPayMethod(!PAYMENTS_ENABLED ? 'Cash' : (isWhatsApp ? 'WhatsApp' : ''))
     setPayOpen(true)
