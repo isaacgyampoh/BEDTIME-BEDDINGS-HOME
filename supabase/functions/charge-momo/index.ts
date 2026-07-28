@@ -334,8 +334,13 @@ serve(async (req) => {
           const naloId = o.nalopay_order_id
           if (!naloId) { results.push(`${o.order_no}: no nalopay id (awaiting dial)`); continue }
           const sr = await fetch('https://api.nalopay.com/clientapi/collection-status/', { method: 'POST', headers: { 'token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ merchant_id: NALOPAY_MERCHANT_ID, order_id: naloId }) })
-          const sd = await sr.json(); const st = String(sd.data?.status || sd.status || '').toUpperCase()
-          if (st === 'PAID' || st === 'SUCCESS' || st === 'SUCCESSFUL' || st === 'COMPLETED') {
+          const sd = await sr.json()
+          console.log(`RECONCILE status for ${o.order_no} (naloId=${naloId}):`, JSON.stringify(sd))
+          const rawStatus = sd.data?.status ?? sd.status ?? sd.data?.transaction_status ?? ''
+          const st = String(rawStatus).toUpperCase()
+          const paidWords = ['PAID', 'SUCCESS', 'SUCCESSFUL', 'COMPLETED', 'COMPLETE', 'APPROVED', 'CONFIRMED']
+          const isPaid = paidWords.includes(st) || st === '0000' || st === '000' || sd.data?.paid === true
+          if (isPaid) {
             const isWalkin = (o.source === 'walkin') || (!o.source && o.order_no.startsWith('POS-'))
             await supabase.from('whatsapp_orders').update({ status: isWalkin ? 'Completed' : 'Paid', paid_at: new Date().toISOString() }).eq('id', o.id)
             try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch (e) { console.error('deduct_order_stock:', e) }
@@ -345,7 +350,7 @@ serve(async (req) => {
               try { await sendSMS('0599084552', `Online Payment! ${o.order_no} GHS ${amount}. Process & deliver ASAP.`) } catch {}
               if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${firstName}, we have received your payment of GHS ${amount}.\n\nOrder: ${o.order_no}\n\nWe are preparing your order and will contact you shortly.\n\nCheck your order anytime: dial *920*141*${o.ussd_code}#\nCall us: 059 908 4552\n\nBEDTIME BEDDINGS & HOME`) } catch {} }
             }
-          } else { results.push(`${o.order_no}: ${st || 'PENDING'}`) }
+          } else { results.push(`${o.order_no}: ${st || 'PENDING'} (raw: ${JSON.stringify(rawStatus)})`) }
         } catch (e) { results.push(`${o.order_no}: ERR ${(e as Error).message}`) }
       }
       return new Response(JSON.stringify({ success: true, checked: pending.length, confirmed, results }, null, 2), { headers: CORS })
@@ -356,7 +361,7 @@ serve(async (req) => {
       try {
         const { phone } = await req.json()
         if (!phone) return new Response(JSON.stringify({ success: false, error: 'phone required' }), { headers: CORS })
-        await sendSMS(phone, `Hi, thank you for shopping at everytinroom. We hope to see you next time. All the best.`)
+        await sendSMS(phone, `Hi, thank you for shopping at BEDTIME BEDDINGS & HOME. We hope to see you next time. All the best.`)
         return new Response(JSON.stringify({ success: true }), { headers: CORS })
       } catch (e) { return new Response(JSON.stringify({ success: false, error: (e as Error).message }), { headers: CORS }) }
     }
