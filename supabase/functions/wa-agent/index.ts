@@ -21,6 +21,15 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 
 const sb = () => createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// Serve a resized product image (smaller = sends faster on WhatsApp).
+function thumbUrl(url: string) {
+  if (!url) return url
+  if (url.includes('/storage/v1/object/public/')) {
+    return url.replace('/object/public/', '/render/image/public/') + '?width=800&quality=75&resize=contain'
+  }
+  return url
+}
+
 // ---- WaSender: send a WhatsApp message -------------------------------------
 async function waSend(to: string, text: string) {
   try {
@@ -33,6 +42,20 @@ async function waSend(to: string, text: string) {
     console.log(`WaSend -> ${to}: ${r.status} ${d.substring(0, 120)}`)
     return r.ok
   } catch (e) { console.log('WaSend error:', e); return false }
+}
+
+// Send a product image with a caption. The caption carries the product name so
+// that if the customer replies to this exact image, we know which product it is.
+async function waSendImage(to: string, imageUrl: string, caption: string) {
+  try {
+    const r = await fetch('https://wasenderapi.com/api/send-message', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${WASENDER_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, text: caption, imageUrl })
+    })
+    console.log(`WaSendImage -> ${to}: ${r.status}`)
+    return r.ok
+  } catch (e) { console.log('WaSendImage error:', e); return false }
 }
 
 // ---- The agent's persona + rules -------------------------------------------
@@ -51,11 +74,14 @@ ${ctx.catalog || '(catalog will be provided)'}
 ${ctx.promos ? 'CURRENT PROMOS:\n' + ctx.promos : ''}
 
 HOW YOU SELL:
-- If they ask about a product, find it in the catalog and give the real price. If it's not in the catalog, say you'll check with the team and use flag_human.
-- If they send a photo, you can't see product details reliably — ask them kindly what it's called or to describe it, then match it to the catalog.
-- When they're ready to buy, confirm the items + total, then give payment instructions using create_order (it returns the USSD code). Tell them: dial the code; if the prompt doesn't pop up, check their MoMo app's Approvals/Pending and approve there.
-- After they confirm payment, ask for delivery details (name, location/area, landmark, phone). Once they send details, use save_delivery so the shop can package. Then reassure them it's being processed.
-- Be honest. Never promise stock you can't see. Never make up delivery times — say "our team will confirm delivery with you".
+- If they ask about a product, use search_products to find it. Give the real price. 
+- SEND IMAGES: when a customer asks to see a product, or when you recommend something, use send_product_images to send the actual photos. Don't just describe — show them.
+- OUT OF STOCK: if what they want is finished, DON'T just say no. Say sorry it's finished, then recommend a similar in-stock item AND send its image(s): "Ah sorry, that one is finished 😔 But I have this one, very similar — [send image]. Same quality. Want me to reserve it for you?"
+- IF THEY INSIST on the exact out-of-stock item (they don't want the alternative): DON'T keep refusing. Say "Alright, give me a minute let me check for you and get back to you shortly 😊" and then use flag_human (reason: 'customer wants out-of-stock item, may be restocking or not entered in system'). The shop may be restocking, or have it physically but not in the system — a human must check.
+- WHICH IMAGE THEY MEAN: if the customer replies to or references a specific image you sent (the message context will tell you which product image it was), you ALREADY KNOW which product they mean. NEVER ask "which one?" or "what type?" — that reveals you can't see. Just proceed with that product naturally.
+- When ready to buy, confirm items + total, then use create_order (returns the USSD code). Tell them: dial the code; if the prompt doesn't pop up, open MoMo app > Approvals/Pending and approve there.
+- After they confirm payment, ask for delivery details (name, area/location, landmark, phone). When they send them, use save_delivery. Then reassure them it's being processed.
+- Be honest. Never promise stock you can't see. Never invent delivery times — "our team will confirm delivery with you".
 
 WHEN TO FLAG THE OWNER (use flag_human):
 - A complaint, refund request, or upset customer.
@@ -78,6 +104,10 @@ const TOOLS = [
     parameters: { type: 'object', properties: { query: { type: 'string', description: 'product name or keywords' } }, required: ['query'] }
   }},
   { type: 'function', function: {
+    name: 'send_product_images', description: 'Send the actual product photo(s) to the customer on WhatsApp. Use when they ask to see a product, or when recommending an alternative. Give the exact product names.',
+    parameters: { type: 'object', properties: { product_names: { type: 'array', items: { type: 'string' }, description: 'exact product names from the catalog to send photos of' } }, required: ['product_names'] }
+  }},
+  { type: 'function', function: {
     name: 'create_order', description: 'Create an order once the customer has confirmed what they want to buy. Returns the USSD payment code to give them.',
     parameters: { type: 'object', properties: {
       items: { type: 'array', description: 'items to buy', items: { type: 'object', properties: { name: { type: 'string' }, qty: { type: 'number' }, price: { type: 'number' } }, required: ['name','qty','price'] } },
@@ -98,9 +128,25 @@ const TOOLS = [
 async function runTool(name: string, args: any, phone: string, conv: any) {
   const db = sb()
   if (name === 'search_products') {
-    const { data } = await db.from('products').select('name,price,quantity,category').ilike('name', `%${args.query}%`).limit(8)
+    const { data } = await db.from('products').select('name,price,quantity,category,image').ilike('name', `%${args.query}%`).limit(8)
     if (!data || data.length === 0) return { found: false, message: 'No matching products in stock.' }
-    return { found: true, products: data.map((p: any) => ({ name: p.name, price: p.price, in_stock: (p.quantity || 0) > 0, qty: p.quantity })) }
+    return { found: true, products: data.map((p: any) => ({ name: p.name, price: p.price, in_stock: (p.quantity || 0) > 0, qty: p.quantity, has_image: !!p.image })) }
+  }
+  if (name === 'send_product_images') {
+    const names = args.product_names || []
+    let sent = 0
+    for (const nm of names) {
+      const { data } = await db.from('products').select('name,price,image,quantity').ilike('name', `%${nm}%`).limit(1)
+      const p = data?.[0]
+      if (p && p.image) {
+        const stock = (p.quantity || 0) > 0 ? '' : ' (out of stock)'
+        await waSendImage(phone, thumbUrl(p.image), `${p.name} — GHS ${Number(p.price).toFixed(2)}${stock}`)
+        sent++
+      }
+    }
+    return sent > 0
+      ? { sent, message: `Sent ${sent} product image(s). Now reply naturally, e.g. 'Here you go 😊 let me know which one you like'. Don't re-describe every image.` }
+      : { sent: 0, message: 'No images available for those products. Describe them from the catalog instead and offer to check for photos.' }
   }
   if (name === 'create_order') {
     const items = args.items || []
@@ -132,9 +178,11 @@ async function runTool(name: string, args: any, phone: string, conv: any) {
     return { saved: true, message: 'Delivery saved. The shop will package and deliver.' }
   }
   if (name === 'flag_human') {
-    await db.from('wa_conversations').update({ needs_human: true, flag_reason: args.reason }).eq('phone', phone)
-    await waSend(OWNER_PHONE, `🔔 A WhatsApp chat needs you.\nFrom: ${conv.customer_name || phone}\nReason: ${args.reason}\nReply them directly on WhatsApp.`)
-    return { flagged: true, message: 'Owner has been notified and will help. Tell the customer someone will assist shortly.' }
+    // Pause the agent for this chat so the human handles it without the AI
+    // talking over them. Owner is notified. Re-enable from the POS later.
+    await db.from('wa_conversations').update({ needs_human: true, flag_reason: args.reason, agent_enabled: false }).eq('phone', phone)
+    await waSend(OWNER_PHONE, `🔔 A WhatsApp chat needs you.\nFrom: ${conv.customer_name || phone}\nReason: ${args.reason}\nReply them directly on WhatsApp. (Agent paused for this chat.)`)
+    return { flagged: true, message: 'Owner has been notified and will help. Tell the customer someone will assist them shortly — warm and brief.' }
   }
   return { error: 'unknown tool' }
 }
@@ -247,6 +295,26 @@ serve(async (req) => {
     const mediaUrl = m.message?.imageMessage?.url || ''
     const waId = m.key?.id || ''
 
+    // VOICE NOTE → escalate to a human immediately (the agent can't hear audio).
+    const isVoice = !!(m.message?.audioMessage || m.message?.pttMessage || m.messageType === 'audioMessage')
+    if (isVoice) {
+      let { data: vconv } = await sb().from('wa_conversations').select('*').eq('phone', phone).single()
+      if (!vconv) { const { data: nc } = await sb().from('wa_conversations').insert({ phone, last_message_at: new Date().toISOString() }).select('*').single(); vconv = nc }
+      await sb().from('wa_messages').insert({ phone, role: 'user', content: '[voice note]', wa_message_id: waId })
+      await sb().from('wa_conversations').update({ needs_human: true, flag_reason: 'voice note', agent_enabled: false, last_message_at: new Date().toISOString() }).eq('phone', phone)
+      await waSend(phone, 'Got your voice note 😊 Give me a moment, someone from our team will get back to you shortly.')
+      await waSend(OWNER_PHONE, `🔔 Voice note from ${vconv?.customer_name || phone} on WhatsApp — please listen and reply. (Agent paused for this chat.)`)
+      return new Response(JSON.stringify({ ok: true, note: 'voice escalated' }), { headers: CORS })
+    }
+
+    // If the customer REPLIED TO a message we sent (e.g. tapped a product image),
+    // capture what that quoted message was, so the agent knows which product.
+    const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage
+    let quotedContext = ''
+    if (quoted) {
+      quotedContext = quoted.imageMessage?.caption || quoted.conversation || quoted.extendedTextMessage?.text || ''
+    }
+
     // Dedupe (WaSender can resend)
     if (waId) {
       const { data: dup } = await db.from('wa_messages').select('id').eq('wa_message_id', waId).limit(1)
@@ -267,7 +335,12 @@ serve(async (req) => {
     }
 
     // Log the incoming message
-    const userContent = text || (mediaUrl ? '[customer sent an image]' : '[message]')
+    let userContent = text || (mediaUrl ? '[customer sent an image]' : '[message]')
+    // If they replied to a product image we sent, tell the agent which product —
+    // so it never asks "which one?".
+    if (quotedContext) {
+      userContent = `[customer replied to your earlier message: "${quotedContext}"] ${userContent}`
+    }
     await db.from('wa_messages').insert({ phone, role: 'user', content: userContent, media_url: mediaUrl, wa_message_id: waId })
     await db.from('wa_conversations').update({ last_message_at: new Date().toISOString(), followed_up: false }).eq('phone', phone)
 
