@@ -501,7 +501,7 @@ export default function App() {
 
         {/* Big bold offer card — shows when there's an active promo */}
         {activePromo && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
             <div className="relative overflow-hidden rounded-3xl bg-[#1a1d29] text-white px-6 py-8 sm:px-10 sm:py-10 text-center">
               <div className="relative z-10">
                 <div className="text-[10px] font-bold tracking-[0.3em] uppercase text-zinc-500 mb-2">Limited offer</div>
@@ -517,10 +517,10 @@ export default function App() {
 
         {/* Category tiles — visual, tappable */}
         {catTiles.length > 0 && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold">Shop by category</h2>
-              <button onClick={() => go('shop','/shop')} className="text-[11px] text-gray-400 font-medium flex items-center gap-0.5">All {I.arrow}</button>
+              <h2 className="text-lg sm:text-xl font-bold tracking-tight">Shop by category</h2>
+              <button onClick={() => go('shop','/shop')} className="text-xs text-zinc-500 font-semibold hover:text-black transition flex items-center gap-0.5">See all {I.arrow}</button>
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2.5">
               {catTiles.map(({ name, img }) => (
@@ -536,10 +536,10 @@ export default function App() {
 
         {/* Promo products — horizontal scroll */}
         {promoProducts.length > 0 && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
             <div className="flex items-center gap-2 mb-3">
               
-              <h2 className="text-sm font-bold">Promo Deals</h2>
+              <h2 className="text-lg sm:text-xl font-bold tracking-tight">Promo Deals</h2>
               <button onClick={() => go('shop','/shop')} className="ml-auto text-[11px] text-gray-400 font-medium">See All {I.arrow}</button>
             </div>
             <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
@@ -559,9 +559,9 @@ export default function App() {
 
         {/* Promo & Bundle Showcase — replaces trending */}
         {(promoProducts.length > 0 || bundles.length > 0) && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold">Deals For You</h2>
+              <h2 className="text-lg sm:text-xl font-bold tracking-tight">Deals For You</h2>
               <button onClick={() => go('shop','/shop')} className="text-[11px] text-gray-400 font-medium flex items-center gap-0.5">See All {I.arrow}</button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -610,10 +610,10 @@ export default function App() {
 
         {/* New Arrivals */}
         {products.length > 0 && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-8">
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold">New arrivals</h2>
-              <button onClick={() => go('shop','/shop')} className="text-[11px] text-gray-400 font-medium flex items-center gap-0.5">See all {I.arrow}</button>
+              <h2 className="text-lg sm:text-xl font-bold tracking-tight">New arrivals</h2>
+              <button onClick={() => go('shop','/shop')} className="text-xs text-zinc-500 font-semibold hover:text-black transition flex items-center gap-0.5">See all {I.arrow}</button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-5">
               {products.slice(0, 10).map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}
@@ -623,8 +623,8 @@ export default function App() {
 
         {/* Recently Viewed on Home */}
         {recentlyViewed.length > 0 && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
-            <h2 className="text-sm font-bold mb-3">Recently Viewed</h2>
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-4">Recently viewed</h2>
             <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
               {recentlyViewed.map(r => {
                 const p = products.find(x => x.id === r.id)
@@ -642,7 +642,7 @@ export default function App() {
         )}
 
         {/* All products */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 pb-6">
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12 pb-16">
           {products.length === 0 ? (
             <div className="text-center py-20">
               <div className="w-14 h-14 rounded-2xl bg-[var(--color-cream-dark)] flex items-center justify-center mx-auto mb-4">
@@ -653,7 +653,7 @@ export default function App() {
               <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="inline-flex items-center gap-2 mt-5 h-10 px-6 bg-[var(--color-brand)] text-white rounded-full text-xs font-bold">{I.phone} {SHOP.phone}</a>
             </div>
           ) : (<>
-          <h2 className="text-sm font-bold mb-3">All Products</h2>
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-4">All products</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-3 gap-y-5">
             {products.slice(0, 20).map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}
           </div>
@@ -697,7 +697,7 @@ export default function App() {
             <h1 className="text-lg md:text-xl font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>{sel.name}</h1>
             <div className="flex items-baseline gap-2 mb-6">
               <span className="text-xl font-bold">{money(gp(sel))}</span>
-              {promoMap[sel.id] && <><span className="text-sm text-gray-300 line-through">{money(sel.price)}</span><span className="text-[10px] font-bold text-[var(--color-promo)] bg-red-50 px-1.5 py-0.5 rounded">PROMO</span></>}
+              {promoMap[sel.id] && <><span className="text-sm text-gray-300 line-through">{money(sel.price)}</span><span className="text-[10px] font-bold text-black bg-zinc-100 px-1.5 py-0.5 rounded">PROMO</span></>}
             </div>
 
             {/* Wholesale info */}
@@ -736,12 +736,12 @@ export default function App() {
         </div>
 
         {/* Similar products */}
-        {products.filter(p => p.category === sel.category && p.id !== sel.id).length > 0 && <div className="mt-12"><h2 className="text-sm font-bold mb-3">Similar</h2><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-5">{products.filter(p => p.category === sel.category && p.id !== sel.id).slice(0, 5).map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}</div></div>}
+        {products.filter(p => p.category === sel.category && p.id !== sel.id).length > 0 && <div className="mt-12"><h2 className="text-lg sm:text-xl font-bold tracking-tight mb-4">You may also like</h2><div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-5">{products.filter(p => p.category === sel.category && p.id !== sel.id).slice(0, 5).map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}</div></div>}
 
         {/* Recently Viewed */}
         {recentlyViewed.filter(r => r.id !== sel.id).length > 0 && (
           <div className="mt-12">
-            <h2 className="text-sm font-bold mb-3">Recently Viewed</h2>
+            <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-4">Recently viewed</h2>
             <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
               {recentlyViewed.filter(r => r.id !== sel.id).map(r => {
                 const p = products.find(x => x.id === r.id)
@@ -763,7 +763,7 @@ export default function App() {
       {page === 'cart' && <div className="max-w-xl mx-auto px-4 sm:px-6 py-6 page-enter">
         <h1 className="text-lg font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>Your Cart</h1>
         <p className="text-xs text-gray-400 mb-5">{cc > 0 ? `${cc} item${cc !== 1 ? 's' : ''} ready for checkout` : ''}</p>
-        {cart.length === 0 ? <div className="text-center py-16"><div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#166534" strokeWidth="1.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg></div><p className="text-zinc-900 text-sm mb-1">Nothing here yet</p><p className="text-gray-400 text-xs mb-5">Browse our collection and add items you love</p><button onClick={() => go('shop','/shop')} className="h-10 px-6 bg-black text-white rounded-full text-xs font-bold hover:bg-black transition btn-press">Start Shopping</button></div> : <>
+        {cart.length === 0 ? <div className="text-center py-16"><div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="1.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg></div><p className="text-zinc-900 text-sm mb-1">Nothing here yet</p><p className="text-gray-400 text-xs mb-5">Browse our collection and add items you love</p><button onClick={() => go('shop','/shop')} className="h-10 px-6 bg-black text-white rounded-full text-xs font-bold hover:bg-black transition btn-press">Start Shopping</button></div> : <>
           <div className="flex justify-end mb-3"><button onClick={clearCart} className="text-[11px] text-gray-400 hover:text-red-500 transition">Clear all</button></div>
           <div className="space-y-2.5 mb-5">{cart.map(c => <div key={c.id} className="flex gap-3 items-center p-3 rounded-xl bg-zinc-50 border border-zinc-100 relative group">
             <button onClick={() => removeFromCart(c.id)} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-300 hover:bg-red-500 text-white rounded-full flex items-center justify-center transition opacity-0 group-hover:opacity-100 md:opacity-0">
@@ -818,7 +818,8 @@ export default function App() {
       {page === 'success' && orderResult && (() => {
         const paid = orderResult.status === 'Paid' || orderResult.status === 'Completed'
         return (
-        <div className="max-w-sm mx-auto px-5 py-12">
+        <div className="max-w-md mx-auto px-5 py-10 sm:py-16">
+          <div className="bg-white border border-zinc-100 rounded-2xl shadow-sm p-6 sm:p-8">
 
           {!PAYMENTS_ENABLED ? (
             <>
@@ -925,12 +926,13 @@ export default function App() {
           <button onClick={() => go('home','/')} className="w-full h-11 mt-7 text-sm font-medium text-gray-500 hover:text-gray-900 transition">
             Continue shopping
           </button>
+          </div>
         </div>
       )})()}
 
       {/* ═══ TRACK ═══ */}
       {page === 'track' && <div className="max-w-md mx-auto px-4 sm:px-6 py-10">
-        <h1 className="text-base font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>Track Order</h1>
+        <h1 className="text-2xl font-bold tracking-tight mb-1">Track your order</h1>
         <p className="text-xs text-gray-400 mb-5">Search by phone, order # or tracking #</p>
         <div className="flex gap-2 mb-6"><input className="flex-1 h-10 px-3 bg-gray-50 border border-gray-100 rounded-lg text-sm focus:outline-none focus:border-gray-300" value={trackQuery} onChange={e => setTrackQuery(e.target.value)} placeholder="Search..." onKeyDown={e => e.key === 'Enter' && trackOrder()} /><button onClick={trackOrder} disabled={tracking} className="h-10 px-4 bg-black text-white rounded-lg text-xs font-semibold">{tracking ? '...' : 'Find'}</button></div>
         {trackResult?.length === 0 && <p className="text-xs text-gray-300 text-center">No orders found</p>}
