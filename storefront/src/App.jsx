@@ -443,7 +443,7 @@ export default function App() {
   )
 
   return (
-    <div className="min-h-screen bg-white pb-16 md:pb-0" style={{ fontFamily: 'var(--font-body)' }}>
+    <div className="min-h-screen bg-white pb-16 md:pb-0 flex flex-col" style={{ fontFamily: 'var(--font-body)' }}>
 
       {/* PROMO BANNER */}
       {activePromo && <div className="bg-[var(--color-promo)] relative overflow-hidden"><div className="max-w-7xl mx-auto px-4 h-10 flex items-center justify-center gap-3 text-xs text-white relative z-10"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /><span className="font-bold uppercase tracking-wide truncate">{activePromo.name}</span><span className="hidden sm:inline text-white/70">ends in</span><Timer endDate={activePromo.end_date} /><button onClick={() => go('shop', '/shop')} className="ml-1 h-6 px-3 bg-white text-[var(--color-promo)] rounded-full text-[10px] font-bold hover:bg-white/90 transition">Shop Now</button></div></div>}
@@ -466,6 +466,7 @@ export default function App() {
         {showSearch && <div className="px-4 sm:px-6 pb-3 max-w-7xl mx-auto"><input autoFocus className="w-full h-11 px-4 bg-zinc-50 rounded-xl text-sm focus:outline-none border border-zinc-200 focus:border-black transition" placeholder="What are you looking for?" value={search} onChange={e => setSearch(e.target.value)} /></div>}
       </nav>
 
+      <main className="flex-1 w-full">
       {/* ═══ HOME ═══ */}
       {page === 'home' && <>
         {/* Hero — rotating product images */}
@@ -936,8 +937,10 @@ export default function App() {
         {trackResult?.length > 0 && <div className="space-y-2">{trackResult.map(o => <div key={o.order_no} className="border border-gray-100 rounded-xl p-3.5"><div className="flex items-center justify-between mb-1.5"><span className="text-xs font-bold">{o.order_no}</span><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${o.status==='Paid'||o.status==='Completed'?'bg-gray-800 text-white':o.status==='Cancelled'?'bg-red-50 text-red-500':'bg-gray-100 text-gray-500'}`}>{o.status}</span></div><div className="text-xs text-gray-400">{money(o.total)}</div>{o.tracking_no && <div className="text-[10px] text-gray-300 font-mono mt-1">{o.tracking_no}</div>}{o.delivery_status && <div className="mt-2 pt-2 border-t border-gray-50"><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${o.delivery_status==='Delivered'||o.delivery_status==='Picked Up'?'bg-zinc-100 text-black':o.delivery_status==='Out for Delivery'?'bg-zinc-100 text-black':'bg-gray-100 text-gray-500'}`}>{o.delivery_status}</span></div>}</div>)}</div>}
       </div>}
 
+      </main>
+
       {/* ═══ FOOTER ═══ */}
-      <footer className="bg-black mt-12 mb-16 md:mb-0">
+      <footer className="bg-black mb-16 md:mb-0">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="py-8 grid grid-cols-2 sm:grid-cols-4 gap-6">
             <div className="col-span-2 sm:col-span-1">
