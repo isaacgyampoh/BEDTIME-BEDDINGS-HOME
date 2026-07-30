@@ -17,6 +17,13 @@ const SHOP = 'BEDTIME BEDDINGS & HOME'
 const SHOP_PHONE = '059 908 4552'
 const USSD_PREFIX = '*920*141*'   // NaloPay USSD; order code appended
 
+// Shop location (fill in real values). If SHOP_LAT/LNG are set, the agent sends
+// a native WhatsApp location pin; it always sends the Maps link + plain address.
+const SHOP_ADDRESS = Deno.env.get('SHOP_ADDRESS') || ''        // e.g. "Adenta, near ..."
+const SHOP_MAPS_LINK = Deno.env.get('SHOP_MAPS_LINK') || ''    // Google Maps share link
+const SHOP_LAT = parseFloat(Deno.env.get('SHOP_LAT') || '0')
+const SHOP_LNG = parseFloat(Deno.env.get('SHOP_LNG') || '0')
+
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Content-Type': 'application/json' }
 
 const sb = () => createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -58,6 +65,20 @@ async function waSendImage(to: string, imageUrl: string, caption: string) {
   } catch (e) { console.log('WaSendImage error:', e); return false }
 }
 
+// Send a native WhatsApp location pin.
+async function waSendLocation(to: string) {
+  if (!SHOP_LAT || !SHOP_LNG) return false
+  try {
+    const r = await fetch('https://wasenderapi.com/api/send-message', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${WASENDER_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, text: SHOP, location: { latitude: SHOP_LAT, longitude: SHOP_LNG, name: SHOP, address: SHOP_ADDRESS } })
+    })
+    console.log(`WaSendLocation -> ${to}: ${r.status}`)
+    return r.ok
+  } catch (e) { console.log('WaSendLocation error:', e); return false }
+}
+
 // ---- The agent's persona + rules -------------------------------------------
 function systemPrompt(ctx: { name: string; summary: string; stage: string; catalog: string; promos: string }) {
   return `You are a real person working at ${SHOP}, a Ghanaian bedding & home shop. You handle customer chats on WhatsApp. You are NOT an AI, bot, or assistant — you are a human sales person, full stop.
@@ -83,6 +104,7 @@ HOW YOU SELL:
 - OUT OF STOCK: if what they want is finished, don't just say no. Say it's finished, then offer a similar in-stock item AND send its image: "ahh that one is finished ooh. but i have this one, very similar [send image]. same quality. you want it?"
 - IF THEY INSIST on the exact out-of-stock item: don't keep refusing. Say "okay give me a minute let me check for you, i'll get back to you shortly" then use flag_human (reason: 'customer wants out-of-stock item, may be restocking or not entered'). A human checks.
 - WHICH IMAGE THEY MEAN: if the customer replies to / references a specific image you sent (the message context tells you which product), you ALREADY KNOW which product. NEVER ask "which one?" or "what type?" — that exposes you. Just continue with that product.
+- LOCATION: if they ask where you're located / for directions / can they come to the shop, use send_location (it sends a map pin + Google Maps link). Then say plainly you've sent the location and they can tap the link to find you. We also deliver, so you can mention that too if relevant.
 - When ready to buy, confirm items + total plainly, then use create_order (returns the USSD code). Tell them: dial the code; if the prompt doesn't pop up, open MoMo app, go to approvals/pending and approve there.
 - After they say they've paid, ask for delivery details (name, area, landmark, phone). When they send them, use save_delivery. Then tell them it's being processed, someone will call them.
 - Be honest. Never promise stock you can't see. Never invent delivery times — "our rider will call you to arrange it".
@@ -121,6 +143,10 @@ const TOOLS = [
   { type: 'function', function: {
     name: 'save_delivery', description: 'Save the delivery details the customer provided, onto their most recent order, so the shop can package and deliver.',
     parameters: { type: 'object', properties: { address: { type: 'string' }, name: { type: 'string' }, notes: { type: 'string' } }, required: ['address'] }
+  }},
+  { type: 'function', function: {
+    name: 'send_location', description: 'Send the shop location (a WhatsApp map pin + Google Maps link) when a customer asks where you are located or how to get there.',
+    parameters: { type: 'object', properties: {}, required: [] }
   }},
   { type: 'function', function: {
     name: 'flag_human', description: 'Flag this chat for the shop owner to handle personally (complaints, unusual requests, out-of-catalog items, anything you are unsure about).',
@@ -180,6 +206,14 @@ async function runTool(name: string, args: any, phone: string, conv: any) {
     // Alert the owner that an order is ready to package
     await waSend(OWNER_PHONE, `📦 New WhatsApp order ready to package.\nOrder: ${orderNo}\nDeliver to: ${args.address}\nCustomer: ${args.name || conv.customer_name || phone}`)
     return { saved: true, message: 'Delivery saved. The shop will package and deliver.' }
+  }
+  if (name === 'send_location') {
+    if (!SHOP_MAPS_LINK && !SHOP_LAT) {
+      return { sent: false, message: 'Location not configured. Tell the customer the area in words and that a colleague will share the exact pin, then flag_human.' }
+    }
+    await waSendLocation(phone)  // native pin (if coords set)
+    if (SHOP_MAPS_LINK) await waSend(phone, `here's our location, tap to open in maps: ${SHOP_MAPS_LINK}`)
+    return { sent: true, message: `Location sent (pin + maps link). Now reply plainly, e.g. 'sent you our location, tap the link to locate us. ${SHOP_ADDRESS ? 'we are at ' + SHOP_ADDRESS : ''}'. No emojis.` }
   }
   if (name === 'flag_human') {
     // Pause the agent for this chat so the human handles it without the AI
