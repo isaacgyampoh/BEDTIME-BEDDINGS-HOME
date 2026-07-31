@@ -71,3 +71,8 @@ RETURNS TABLE(role text, content text, created_at timestamptz) AS $$
   ORDER BY m.created_at DESC
   LIMIT p_limit;
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+-- Safety: ensure whatsapp_orders has agent columns (harmless if already present).
+ALTER TABLE whatsapp_orders ADD COLUMN IF NOT EXISTS ussd_code integer;
+ALTER TABLE whatsapp_orders ADD COLUMN IF NOT EXISTS source text DEFAULT '';
+ALTER TABLE whatsapp_orders ADD COLUMN IF NOT EXISTS details_filled boolean DEFAULT false;
