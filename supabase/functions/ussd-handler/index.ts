@@ -15,7 +15,7 @@ serve(async (req) => {
   console.log('CONTENT-TYPE:', req.headers.get('content-type'))
 
   // Try plain text response - just the message, nothing else
-  return new Response("Welcome to EVERYTINROOM\n1. Continue\n2. Exit", {
+  return new Response("Welcome to BEDTIME BEDDINGS & HOME\n1. Continue\n2. Exit", {
     status: 200,
     headers: { 'Content-Type': 'text/plain' }
   })

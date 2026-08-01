@@ -10,7 +10,7 @@ const IDLE_PANELS = [
   { k: 'welcome', title: 'Welcome', sub: 'Your items will appear here as they are scanned' },
   { k: 'pay', title: 'Pay your way', sub: 'Cash  ·  Mobile Money (USSD)' },
   { k: 'hours', title: 'Open daily', sub: 'Mon – Sat  ·  8:00am – 7:00pm' },
-  { k: 'location', title: 'Find us', sub: 'McCarthy Hills, near McCarthy Junction, Accra' },
+  { k: 'location', title: 'Find us', sub: 'McCarthy Hills Junction, Accra' },
   { k: 'contact', title: 'Talk to us', sub: '059 908 4552' },
 ]
 
@@ -109,7 +109,7 @@ export default function CustomerDisplay() {
         <p className="text-lg text-white/55 mb-1 tracking-wide">Payment received</p>
         <div className="text-5xl font-semibold mt-5 tabular-nums">{money(s.total)}</div>
         {s.receiptNo && <p className="text-white/35 mt-4 text-sm tracking-wide">Receipt {s.receiptNo}</p>}
-        <p className="text-white/30 mt-12 text-xs tracking-[0.2em] uppercase">BEDTIME BEDDINGS & HOME &middot; McCarthy Hills</p>
+        <p className="text-white/30 mt-12 text-xs tracking-[0.2em] uppercase">BEDTIME BEDDINGS & HOME &middot; McCarthy Hills Junction</p>
       </div>
     )
   }

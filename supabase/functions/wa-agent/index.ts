@@ -19,7 +19,7 @@ const USSD_PREFIX = '*920*141*'   // NaloPay USSD; order code appended
 
 // Shop location (fill in real values). If SHOP_LAT/LNG are set, the agent sends
 // a native WhatsApp location pin; it always sends the Maps link + plain address.
-const SHOP_ADDRESS = Deno.env.get('SHOP_ADDRESS') || 'McCarthy Hills, near McCarthy Junction (last stop), Accra'
+const SHOP_ADDRESS = Deno.env.get('SHOP_ADDRESS') || 'McCarthy Hills Junction, Accra'
 const SHOP_MAPS_LINK = Deno.env.get('SHOP_MAPS_LINK') || 'https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6'
 const SHOP_LAT = parseFloat(Deno.env.get('SHOP_LAT') || '5.5653011')
 const SHOP_LNG = parseFloat(Deno.env.get('SHOP_LNG') || '-0.2885045')

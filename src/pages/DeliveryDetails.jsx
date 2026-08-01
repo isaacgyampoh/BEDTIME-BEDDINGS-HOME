@@ -56,7 +56,7 @@ export default function DeliveryDetails() {
     <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
       <Logo height={64} color="#16181d" accent="#9a9da3" className="mb-6" />
       <h1 className="text-xl font-bold text-gray-900 mb-2">Order not found</h1>
-      <p className="text-gray-500 text-sm">Please check the link, or contact us on 024 531 5581.</p>
+      <p className="text-gray-500 text-sm">Please check the link, or contact us on 059 908 4552.</p>
     </div>
   )
 
@@ -72,7 +72,7 @@ export default function DeliveryDetails() {
         <div className="text-sm font-semibold text-gray-900 mt-1">{form.name}</div>
         <div className="text-sm text-gray-600 whitespace-pre-line mt-0.5">{form.address}{form.landmark ? `\nLandmark: ${form.landmark}` : ''}</div>
       </div>
-      <p className="text-gray-400 text-xs mt-6">BEDTIME BEDDINGS & HOME · 024 531 5581</p>
+      <p className="text-gray-400 text-xs mt-6">BEDTIME BEDDINGS & HOME · 059 908 4552</p>
     </div>
   )
 

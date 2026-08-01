@@ -946,7 +946,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12 grid md:grid-cols-2 gap-8 items-center">
           <div>
             <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-2">Visit our shop</h2>
-            <p className="text-sm text-zinc-600 leading-relaxed mb-1">McCarthy Hills, near McCarthy Junction (last stop), Accra.</p>
+            <p className="text-sm text-zinc-600 leading-relaxed mb-1">McCarthy Hills Junction, Accra.</p>
             <p className="text-sm text-zinc-600 leading-relaxed mb-4">Come see and feel the quality in person, or we deliver straight to you.</p>
             <div className="flex flex-wrap gap-3">
               <a href="https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6" target="_blank" rel="noreferrer" className="inline-flex items-center h-10 px-5 bg-black text-white text-sm font-medium rounded-full hover:bg-zinc-800 transition">Open in Maps</a>
@@ -984,7 +984,7 @@ export default function App() {
               <div className="space-y-2">
                 <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="block text-[12px] text-white/70 hover:text-white transition">{SHOP.phone}</a>
                 <a href={`https://wa.me/${WA}`} target="_blank" className="block text-[12px] text-white hover:text-white/80 transition font-medium">Chat on WhatsApp</a>
-                <a href="https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6" target="_blank" rel="noreferrer" className="block text-[12px] text-white/70 hover:text-white transition">McCarthy Hills, Accra — find us on map</a>
+                <a href="https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6" target="_blank" rel="noreferrer" className="block text-[12px] text-white/70 hover:text-white transition">McCarthy Hills Junction, Accra — find us on map</a>
               </div>
             </div>
           </div>

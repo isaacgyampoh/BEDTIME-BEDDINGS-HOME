@@ -1,5 +1,5 @@
 /**
- * EVERYTINROOM — typographic logo system (SVG, sharp at any size).
+ * BEDTIME BEDDINGS & HOME — typographic logo system (SVG, sharp at any size).
  *   <Logo />      arched "crest" wordmark (default) — EVERYTINROOM on a
  *                 gentle arc, "& BEDTIME" straight beneath.
  *   <LogoFlat />  straight one-line wordmark (clipping fixed).

@@ -264,10 +264,10 @@ export default function WhatsAppOrders() {
 <div class="s">
 
   <div class="hd">
-    <div class="hd-name">EverytnRoom</div>
+    <div class="hd-name">BEDTIME BEDDINGS & HOME</div>
     <div class="hd-tag">Your One Stop Shop</div>
     <div class="hd-line"></div>
-    <div class="hd-contact">024 531 5581 &nbsp;&bull;&nbsp; 024 936 5339</div>
+    <div class="hd-contact">059 908 4552</div>
   </div>
 
   <div class="trk">
@@ -279,7 +279,7 @@ export default function WhatsAppOrders() {
   <div class="ship">
     <div class="from">
       <div class="from-label">From Sender</div>
-      <div class="from-val">EverytnRoom &bull; Aviation Road J382, Adenta, Accra</div>
+      <div class="from-val">BEDTIME BEDDINGS & HOME &bull; McCarthy Hills Junction, Accra</div>
     </div>
 
     <div class="to-label">Deliver To Recipient</div>
@@ -299,7 +299,7 @@ export default function WhatsAppOrders() {
   </div>
 
   <div class="ft">
-    <div class="ft-text">Handle With Care &nbsp;&bull;&nbsp; EverytnRoom</div>
+    <div class="ft-text">Handle With Care &nbsp;&bull;&nbsp; BEDTIME BEDDINGS & HOME</div>
   </div>
 
 </div>

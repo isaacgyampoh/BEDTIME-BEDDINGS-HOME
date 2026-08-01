@@ -5,9 +5,9 @@ const WAWP_INSTANCE = Deno.env.get('WAWP_INSTANCE_ID') || ''
 const WAWP_TOKEN = Deno.env.get('WAWP_ACCESS_TOKEN') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-const CATALOG = 'https://www.everytinroom.store/#/catalog'
-const PHONE = '024 531 5581 / 024 936 5339'
-const SHOP = 'EVERYTINROOM'
+const CATALOG = 'https://bedtimehome.com/#/shop'
+const PHONE = '059 908 4552'
+const SHOP = 'BEDTIME BEDDINGS & HOME'
 const WAWP_V1 = 'https://wawp.net/wp-json/awp/v1'
 const WAWP_V2 = 'https://api.wawp.net/v2'
 
@@ -98,7 +98,7 @@ serve(async (req) => {
         const { data: o } = await db.from('whatsapp_orders').select('total,items').eq('id', id).single()
         if (o) {
           const lines = ((o.items||[]) as any[]).map((i:any) => `${i.qty}x ${i.name} - GHS ${Number(i.lineTotal||i.price*i.qty).toFixed(2)}`).join('\n')
-          reply = `Thank you for your order${hi}!\n\n${lines}\n\nTotal: GHS ${Number(o.total).toFixed(2)}\n\nPlease click below to fill in your delivery details and make payment:\n\nhttps://www.everytinroom.store/#/pay/${id}\n\nOnce payment is confirmed, we'll package your order and our delivery team will contact you.\n\nNeed help? Call ${PHONE}.`
+          reply = `Thank you for your order${hi}!\n\n${lines}\n\nTotal: GHS ${Number(o.total).toFixed(2)}\n\nPlease click below to fill in your delivery details and make payment:\n\nhttps://bedtimehome.com/#/pay/${id}\n\nOnce payment is confirmed, we'll package your order and our delivery team will contact you.\n\nNeed help? Call ${PHONE}.`
         } else { reply = `Thank you for your order${hi}! We're preparing your invoice and will send it shortly.` }
       } catch { reply = `Thank you for your order${hi}! We're preparing your invoice and will send it shortly.` }
     }
@@ -116,7 +116,7 @@ serve(async (req) => {
     }
     // PAYMENT
     else if (/cash on delivery|pay on delivery|cod|how.*(to|do).*(pay|payment)|walk.?in|pick.?up|payment method/i.test(lower)) {
-      reply = `Hi${hi}! We offer two options:\n\n1. Online Payment - Mobile Money or card, then we deliver.\n2. Walk-in - Adenta Aviation Road.\n\nWe don't do cash on delivery.\n\nBrowse products: ${CATALOG}`
+      reply = `Hi${hi}! We offer two options:\n\n1. Online Payment - Mobile Money or card, then we deliver.\n2. Walk-in - McCarthy Hills Junction, Accra.\n\nWe don't do cash on delivery.\n\nBrowse products: ${CATALOG}`
     }
     // THANKS
     else if (/^(thank|thanks|thank you|God bless|appreciate)/i.test(lower)) {

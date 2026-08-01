@@ -42,7 +42,7 @@ serve(async (req) => {
       if (updateErr) console.error('USSD update error:', updateErr)
       else console.log('USSD payment OK:', metadata.order_no)
 
-      try { await sendSMS('0533547740,0203600855,0554808341', `USSD Payment! ${metadata.order_no || ''} GHS ${(paymentData.amount / 100).toFixed(2)} Paid via MoMo`) } catch {}
+      try { await sendSMS('0599084552', `USSD Payment! ${metadata.order_no || ''} GHS ${(paymentData.amount / 100).toFixed(2)} Paid via MoMo`) } catch {}
 
       return new Response(JSON.stringify({ success: true, type: 'ussd' }), { headers: { 'Content-Type': 'application/json' } })
     }
@@ -59,7 +59,7 @@ serve(async (req) => {
         }).eq('id', existingOrder.id)
 
         console.log('USSD ref match OK:', existingOrder.order_no)
-        try { await sendSMS('0533547740,0203600855,0554808341', `USSD Payment! ${existingOrder.order_no} GHS ${(paymentData.amount / 100).toFixed(2)} Paid`) } catch {}
+        try { await sendSMS('0599084552', `USSD Payment! ${existingOrder.order_no} GHS ${(paymentData.amount / 100).toFixed(2)} Paid`) } catch {}
 
         return new Response(JSON.stringify({ success: true, type: 'ussd-ref' }), { headers: { 'Content-Type': 'application/json' } })
       }
@@ -77,7 +77,7 @@ serve(async (req) => {
         }).eq('id', refOrder.id)
 
         console.log('Ref match OK:', refOrder.order_no)
-        try { await sendSMS('0533547740,0203600855,0554808341', `Payment! ${refOrder.order_no} GHS ${(paymentData.amount / 100).toFixed(2)} Paid`) } catch {}
+        try { await sendSMS('0599084552', `Payment! ${refOrder.order_no} GHS ${(paymentData.amount / 100).toFixed(2)} Paid`) } catch {}
 
         return new Response(JSON.stringify({ success: true, type: 'ref-match' }), { headers: { 'Content-Type': 'application/json' } })
       }
@@ -126,7 +126,7 @@ serve(async (req) => {
 
     if (error) throw error
 
-    try { await sendSMS('0533547740,0203600855,0554808341', `New Order! ${orderNo} GHS ${total.toFixed(2)} Paystack Paid`) } catch {}
+    try { await sendSMS('0599084552', `New Order! ${orderNo} GHS ${total.toFixed(2)} Paystack Paid`) } catch {}
 
     return new Response(JSON.stringify({ success: true, orderNo, total }), {
       headers: { 'Content-Type': 'application/json' }
@@ -141,7 +141,7 @@ serve(async (req) => {
 })
 
 const MNOTIFY_API_KEY = Deno.env.get('MNOTIFY_API_KEY') || ''
-const MNOTIFY_SENDER_ID = Deno.env.get('MNOTIFY_SENDER_ID') || 'EverytinRM'
+const MNOTIFY_SENDER_ID = Deno.env.get('MNOTIFY_SENDER_ID') || 'BEDTIMEHOME'
 
 async function sendSMS(to: string, message: string) {
   if (!MNOTIFY_API_KEY) return

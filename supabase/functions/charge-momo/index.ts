@@ -562,7 +562,7 @@ serve(async (req) => {
       const isPOS = order.order_no.startsWith('POS-') || order.order_no.startsWith('WA-')
       let msg = ''
       if (isPOS) {
-        msg = `Thank you for shopping with us, ${firstName}!\n\nYour payment of GHS ${amount} has been received.\n\nWe appreciate your patronage.\n\nBEDTIME BEDDINGS & HOME\nAviation Road J382, Adenta\n059 908 4552\nwww.bedtimehome.com`
+        msg = `Thank you for shopping with us, ${firstName}!\n\nYour payment of GHS ${amount} has been received.\n\nWe appreciate your patronage.\n\nBEDTIME BEDDINGS & HOME\nMcCarthy Hills Junction, Accra\n059 908 4552\nwww.bedtimehome.com`
       } else {
         msg = `Hi ${firstName}, thank you for your purchase of GHS ${amount}!\n\nOrder: ${order.order_no}\n\nYour order has been confirmed and is being processed. Our delivery team will contact you shortly.\n\nTrack your order: bedtimehome.com/#/track\n\nBEDTIME BEDDINGS & HOME\n059 908 4552\nwww.bedtimehome.com`
       }
@@ -682,7 +682,7 @@ serve(async (req) => {
       try { await supabase.rpc('deduct_order_stock', { p_order_id: order.id }) } catch {}
       const amount = Number(order.total).toFixed(2); const firstName = (order.customer_name || 'Customer').split(' ')[0]
       try { await sendSMS(ADMIN_PHONES, `Payment received (Moolre). ${order.order_no} GHS ${amount}. ${order.customer_phone || ''}`) } catch {}
-      if (order.customer_phone) { try { await sendSMS(order.customer_phone, `Thank you for shopping with us, ${firstName}!\n\nYour payment of GHS ${amount} has been received.\n\nBEDTIME BEDDINGS & HOME\nAviation Road J382, Adenta\n059 908 4552`) } catch {} }
+      if (order.customer_phone) { try { await sendSMS(order.customer_phone, `Thank you for shopping with us, ${firstName}!\n\nYour payment of GHS ${amount} has been received.\n\nBEDTIME BEDDINGS & HOME\nMcCarthy Hills Junction, Accra\n059 908 4552`) } catch {} }
       console.log('Moolre payment confirmed:', order.order_no)
       return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } })
     }

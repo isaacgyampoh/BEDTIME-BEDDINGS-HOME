@@ -10,7 +10,7 @@ export const fmtDateTime = d => d ? new Date(d).toLocaleDateString('en-GB', { da
 // ImageKit free CDN endpoint — set this to your endpoint to route ALL images
 // through ImageKit (faster, auto WebP/AVIF, 20GB/mo free). Leave '' to keep
 // using the raw image URLs / Cloudinary transforms as before.
-// Example: 'https://ik.imagekit.io/everytinroom'
+// Example: 'https://ik.imagekit.io/bqikvsp59'
 export const IMAGEKIT_ENDPOINT = 'https://ik.imagekit.io/bqikvsp59'
 
 export const thumb = (url, w) => {
@@ -41,7 +41,7 @@ export const SHOP = {
   name: 'BEDTIME BEDDINGS & HOME',
   tagline: '',
   phone: '059 908 4552',
-  address: 'McCarthy Hills, near McCarthy Junction, Accra',
+  address: 'McCarthy Hills Junction, Accra',
   addressFull: '',
   mapsUrl: 'https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6',
   yango: '',

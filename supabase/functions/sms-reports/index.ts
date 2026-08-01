@@ -6,7 +6,7 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevl
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const SENDER_ID = 'EverytnRm'
 
-const ADMIN_PHONES = ['0533547740', '0548124978', '0554808341']
+const ADMIN_PHONES = ['0599084552']
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
 
@@ -90,7 +90,7 @@ const buildMorningReport = async () => {
   if (sales.split > 0) msg += `Split: ${fmt(sales.split)}\n`
   if (topSellers.length > 0) { msg += `\nTop Sellers:\n`; topSellers.forEach(([n, d], i) => { msg += `${i + 1}. ${n} (${d.qty})\n` }) }
   if (lowStock.length > 0) { msg += `\nLow Stock:\n`; lowStock.slice(0, 5).forEach(p => { msg += `- ${p.name}: ${p.quantity} left\n` }) }
-  msg += `\n- Everytin Room`
+  msg += `\n- BEDTIME BEDDINGS & HOME`
   return msg
 }
 
@@ -103,7 +103,7 @@ const buildAfternoonReport = async () => {
   msg += `Revenue: ${fmt(sales.revenue)}\nSales: ${sales.count}\nProfit: ${fmt(sales.profit)}\nExpenses: ${fmt(expenses.total)}\nNet: ${fmt(sales.profit - expenses.total)}\n\n`
   msg += `Cash: ${fmt(sales.cash)}\nMomo: ${fmt(sales.momo)}\n`
   if (sales.count === 0) msg += `\nNo sales yet. Let's push!\n`
-  msg += `\n- Everytin Room`
+  msg += `\n- BEDTIME BEDDINGS & HOME`
   return msg
 }
 
@@ -118,7 +118,7 @@ const buildEveningReport = async () => {
   msg += `Cash: ${fmt(sales.cash)}\nMomo: ${fmt(sales.momo)}\n`
   if (sales.split > 0) msg += `Split: ${fmt(sales.split)}\n`
   if (topSellers.length > 0) { msg += `\nBest Sellers:\n`; topSellers.forEach(([n, d], i) => { msg += `${i + 1}. ${n} x${d.qty}\n` }) }
-  msg += `\nDay closed. Well done!\n- Everytin Room`
+  msg += `\nDay closed. Well done!\n- BEDTIME BEDDINGS & HOME`
   return msg
 }
 
@@ -137,7 +137,7 @@ const buildWeeklyReport = async () => {
   msg += `Cash: ${fmt(sales.cash)}\nMomo: ${fmt(sales.momo)}\n`
   if (topSellers.length > 0) { msg += `\nTop 5:\n`; topSellers.forEach(([n, d], i) => { msg += `${i + 1}. ${n} x${d.qty}\n` }) }
   if (lowStock.length > 0) { msg += `\nRestock:\n`; lowStock.forEach(p => { msg += `- ${p.name}: ${p.quantity}\n` }) }
-  msg += `\nNew week, new targets!\n- Everytin Room`
+  msg += `\nNew week, new targets!\n- BEDTIME BEDDINGS & HOME`
   return msg
 }
 
@@ -153,7 +153,7 @@ serve(async (req) => {
       case 'evening': message = await buildEveningReport(); break
       case 'weekly': message = await buildWeeklyReport(); break
       case 'test':
-        message = `Everytin Room SMS Reports Active!\n\nYou will receive:\n6AM - Yesterday summary\n1PM - Today so far\n8PM - End of day\nMonday 6AM - Weekly\n\n- Everytin Room POS`
+        message = `BEDTIME BEDDINGS & HOME SMS Reports Active!\n\nYou will receive:\n6AM - Yesterday summary\n1PM - Today so far\n8PM - End of day\nMonday 6AM - Weekly\n\n- BEDTIME BEDDINGS & HOME`
         break
       default:
         return new Response(JSON.stringify({ status: 'ok', usage: '?type=morning|afternoon|evening|weekly|test' }), { headers: { 'Content-Type': 'application/json' } })
