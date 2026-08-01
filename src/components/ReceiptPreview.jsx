@@ -97,9 +97,10 @@ export default function ReceiptPreview({ sale, onClose }) {
       </div>
 
       <div class="footer">
-        <p>Thank you for shopping with us!</p>
-        ${SHOP.website ? `<p>${SHOP.website}</p>` : ''}
-        <p style="color:#999!important;margin-top:2mm;">Goods sold are not returnable</p>
+        <p style="font-weight:bold;">Thank you for shopping with us!</p>
+        <p>We hope to see you again soon.</p>
+        <p style="margin-top:1.5mm;">bedtimehome.com</p>
+        <p style="color:#666!important;margin-top:2mm;">Goods sold are not returnable.</p>
       </div>
 
       </div>
@@ -176,8 +177,9 @@ export default function ReceiptPreview({ sale, onClose }) {
           {/* Footer */}
           <div className="text-center border-t-2 border-dashed border-gray-800 pt-3 mt-4">
             <p className="text-[12px] font-bold">Thank you for shopping with us!</p>
+            <p className="text-[11px] text-gray-500">We hope to see you again soon.</p>
             {SHOP.website && <p className="text-[11px] text-gray-500 mt-1">{SHOP.website}</p>}
-            <p className="text-[10px] text-gray-400 mt-1">Goods sold are not returnable</p>
+            <p className="text-[10px] text-gray-400 mt-1">Goods sold are not returnable.</p>
           </div>
         </div>
 

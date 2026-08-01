@@ -41,11 +41,11 @@ export const SHOP = {
   name: 'BEDTIME BEDDINGS & HOME',
   tagline: '',
   phone: '059 908 4552',
-  address: '',
+  address: 'McCarthy Hills, near McCarthy Junction, Accra',
   addressFull: '',
-  mapsUrl: '',
+  mapsUrl: 'https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6',
   yango: '',
-  website: '',
+  website: 'bedtimehome.com',
   promoMsg: '',
 }
 
