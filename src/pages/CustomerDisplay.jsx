@@ -10,14 +10,15 @@ const IDLE_PANELS = [
   { k: 'welcome', title: 'Welcome', sub: 'Your items will appear here as they are scanned' },
   { k: 'pay', title: 'Pay your way', sub: 'Cash  ·  Mobile Money (USSD)' },
   { k: 'hours', title: 'Open daily', sub: 'Mon – Sat  ·  8:00am – 7:00pm' },
-  { k: 'location', title: 'Find us', sub: 'Aviation Road J382, Adenta, Accra' },
-  { k: 'contact', title: 'Talk to us', sub: '024 531 5581  ·  024 936 5339' },
+  { k: 'location', title: 'Find us', sub: 'McCarthy Hills, near McCarthy Junction, Accra' },
+  { k: 'contact', title: 'Talk to us', sub: '059 908 4552' },
 ]
 
 export default function CustomerDisplay() {
   const [s, setS] = useState(EMPTY)
   const [flash, setFlash] = useState(false)
   const [idleIdx, setIdleIdx] = useState(0)
+  const [isFs, setIsFs] = useState(false)
   const prevCount = useRef(0)
 
   // The customer screen is always light, independent of the cashier's theme.
@@ -62,11 +63,14 @@ export default function CustomerDisplay() {
     }
     window.addEventListener('click', goFs)
     window.addEventListener('touchend', goFs)
+    const onFsChange = () => setIsFs(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFsChange)
 
     return () => {
       document.body.style.background = ''
       window.removeEventListener('click', goFs)
       window.removeEventListener('touchend', goFs)
+      document.removeEventListener('fullscreenchange', onFsChange)
     }
   }, [])
 
@@ -95,7 +99,8 @@ export default function CustomerDisplay() {
   // ─── PAID / THANK YOU ───
   if (s.status === 'paid') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#16181d] text-white px-6 relative overflow-hidden">
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-[#16181d] text-white px-6 overflow-hidden">
+        {!isFs && <button onClick={() => { try { document.documentElement.requestFullscreen({ navigationUI: 'hide' }) } catch {} }} className="fixed bottom-4 right-4 z-50 bg-white/15 text-white text-xs px-4 py-2 rounded-full hover:bg-white/25 transition">Tap for fullscreen</button>}
         <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle at 30% 20%, #fff 0, transparent 45%), radial-gradient(circle at 70% 80%, #fff 0, transparent 40%)' }} />
         <div className="w-24 h-24 rounded-full border-2 border-white/25 flex items-center justify-center mb-9 animate-fade relative">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
@@ -104,7 +109,7 @@ export default function CustomerDisplay() {
         <p className="text-lg text-white/55 mb-1 tracking-wide">Payment received</p>
         <div className="text-5xl font-semibold mt-5 tabular-nums">{money(s.total)}</div>
         {s.receiptNo && <p className="text-white/35 mt-4 text-sm tracking-wide">Receipt {s.receiptNo}</p>}
-        <p className="text-white/30 mt-12 text-xs tracking-[0.2em] uppercase">BEDTIME BEDDINGS & HOME &middot; Adenta</p>
+        <p className="text-white/30 mt-12 text-xs tracking-[0.2em] uppercase">BEDTIME BEDDINGS & HOME &middot; McCarthy Hills</p>
       </div>
     )
   }
@@ -121,6 +126,7 @@ export default function CustomerDisplay() {
 
   return (
     <div className="fixed inset-0 bg-white overflow-hidden">
+      {!isFs && <button onClick={() => { try { document.documentElement.requestFullscreen({ navigationUI: 'hide' }) } catch {} }} className="fixed bottom-4 right-4 z-50 bg-black/70 text-white text-xs px-4 py-2 rounded-full hover:bg-black transition">Tap for fullscreen</button>}
       {/* Header — fixed at top */}
       <header className="fixed top-0 left-0 right-0 z-20 flex items-center gap-3 px-8 py-5 bg-[#16181d] text-white">
         <LogoFlat height={22} color="#ffffff" accent="#9a9da3" tagline={false} />
