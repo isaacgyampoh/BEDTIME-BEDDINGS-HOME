@@ -4,6 +4,7 @@ import { LogoMark } from './Logo'
 import { ECOMMERCE_ENABLED } from '../lib/utils'
 import { openCustomerScreenManual } from '../hooks/useCustomerDisplay'
 import { usePosMode, isTouchPOS, setPosOverride } from '../hooks/usePosMode'
+import PrinterSettings from './PrinterSettings'
 import toast from 'react-hot-toast'
 
 // Clean minimal SVG icons
@@ -89,6 +90,7 @@ export default function Navigation({ onOpenCart }) {
   const togglePin = () => { const nx = !pinned; setPinned(nx); setHovering(false); try { localStorage.setItem('sidebar-pinned', nx ? '1' : '0') } catch {} }
   useEffect(() => () => clearTimeout(hoverTimer.current), [])
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [printerOpen, setPrinterOpen] = useState(false)
   const { page, setPage, user, isAdmin, logout, waOrders, cart, darkMode, toggleDark, shopOpen, shopSettingLoaded, fetchShopOpen, setShopOpen } = useStore()
   useEffect(() => { if (ECOMMERCE_ENABLED && isAdmin) fetchShopOpen() }, [isAdmin])
   useEffect(() => { document.documentElement.style.setProperty('--sidebar-w', (pinned ? 236 : 68) + 'px') }, [pinned])
@@ -133,6 +135,8 @@ export default function Navigation({ onOpenCart }) {
   })).filter(g => g.items.length > 0)
 
   return (<>
+    <PrinterSettings open={printerOpen} onClose={() => setPrinterOpen(false)} />
+
     {/* Desktop Sidebar — solid, structured, enterprise */}
     <aside className={`hidden md:flex fixed top-0 left-0 bottom-0 z-[100] flex-col bg-[#0f1115] border-r border-black/20 transition-[width] duration-200 ease-out ${expanded && !pinned ? 'shadow-2xl shadow-black/40' : ''}`}
       onMouseEnter={onEnter} onMouseLeave={onLeave}
@@ -182,6 +186,11 @@ export default function Navigation({ onOpenCart }) {
 
       {/* Bottom — tools + user */}
       <div className="flex-shrink-0 border-t border-white/5 px-2 py-2 space-y-0.5">
+        <button onClick={() => setPrinterOpen(true)} className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-white/45 hover:bg-white/8 hover:text-white transition group relative">
+          <span className="flex-shrink-0 w-5 flex justify-center"><I d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" /></span>
+          {expanded && <span className="text-[13px]">Receipt Printer</span>}
+          {!expanded && <div className="absolute left-full ml-2 px-2.5 py-1 bg-[#0f1115] border border-white/10 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">Receipt Printer</div>}
+        </button>
         <button onClick={openCustomerScreen} className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-white/45 hover:bg-white/8 hover:text-white transition group relative">
           <span className="flex-shrink-0 w-5 flex justify-center"><I d="M2 3h20v14H2zM8 21h8M12 17v4" /></span>
           {expanded && <span className="text-[13px]">Customer Screen</span>}
@@ -272,6 +281,9 @@ export default function Navigation({ onOpenCart }) {
             <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${shopOpen ? 'left-[18px]' : 'left-0.5'}`} />
           </span>
         </button>}
+        <button onClick={() => { setPrinterOpen(true); setMobileOpen(false) }} className="w-full py-3 bg-stone-100 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
+          <I d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" /> Receipt Printer
+        </button>
         {isAdmin && <button onClick={toggleDark} className="w-full py-3 bg-stone-100 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
           {darkMode ? <I d="M12 3v1m0 16v1m9-9h-1M4 12H3m3.34-5.66l-.7-.7m12.73 0l-.71.7M6.34 17.66l-.7.7m12.73 0l-.71-.7M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" /> : <I d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />}
           {darkMode ? 'Light Mode' : 'Dark Mode'}

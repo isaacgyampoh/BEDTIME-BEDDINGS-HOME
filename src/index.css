@@ -28,12 +28,10 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Inter', -apple-system, system-ui, sans-se
 .bg-white.rounded-2xl { box-shadow: 0 1px 2px rgba(16,24,29,.04), 0 1px 1px rgba(16,24,29,.03); border: 1px solid rgba(16,24,29,.05); }
 body.dark .bg-white.rounded-2xl { box-shadow: none; border-color: rgba(255,255,255,.06); }
 
-@media print {
-  @page { size: 80mm auto; margin: 0 4mm; }
-  body * { visibility: hidden; }
-  #print-receipt, #print-receipt * { visibility: visible; }
-  #print-receipt { position: absolute; left: 0; top: 0; width: 72mm; }
-}
+/* Receipt printing is done in an isolated iframe (src/lib/printer.js), which
+   brings its own stylesheet. Nothing in the app document is ever printed, so
+   there is no @media print rule here — the old one targeted a #print-receipt
+   element that does not exist. */
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -146,6 +144,13 @@ body.dark .hover\:bg-gray-100:hover,
 body.dark .hover\:bg-gray-50:hover { background-color: #262a33 !important; }
 
 /* keep colored accent chips readable (amber/red/green badges) — leave as-is, they work on dark */
+
+/* Light surfaces introduced by the POS input components. Arbitrary hex values
+   are never caught by the utility overrides above, so name them explicitly:
+   the on-screen keyboard bar and the printer-settings note would otherwise be
+   bright slabs in dark mode. */
+body.dark .bg-\[\#ececeb\] { background-color: #1b1e24 !important; }
+body.dark .bg-\[\#f6f6f5\] { background-color: #21242c !important; }
 
 /* sidebar explicit surface (the dark-sidebar helper referenced in Navigation) */
 body.dark .dark-sidebar { background-color: #14161b !important; }

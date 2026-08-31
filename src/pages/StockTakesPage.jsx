@@ -5,6 +5,7 @@ import { fmtDateTime, money } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 import { askConfirm } from '../components/PromptDialog'
+import { printDocument } from '../lib/printer'
 
 export default function StockTakesPage() {
   const { stockTakes, stockAdjustments, products, user, refreshStockTakes, refreshStockAdjustments, refreshProducts, setLoading } = useStore()
@@ -28,7 +29,7 @@ export default function StockTakesPage() {
 
   // Print a paper stock-count sheet on the 80mm thermal printer.
   // Staff walk around ticking / writing the physical count by hand.
-  const printStockSheet = () => {
+  const printStockSheet = async () => {
     const sorted = [...products].sort((a, b) =>
       (a.category || 'zzz').localeCompare(b.category || 'zzz') || a.name.localeCompare(b.name))
     const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -80,9 +81,10 @@ export default function StockTakesPage() {
       <script>window.onload = function(){ window.print(); setTimeout(function(){ window.close() }, 300) }<\/script>
       </body></html>`
 
-    const w = window.open('', 'stock-sheet', 'width=360,height=640')
-    if (!w) { alert('Allow popups to print the stock sheet.'); return }
-    w.document.write(html); w.document.close()
+    // Via a hidden iframe, not a popup: a POS runs in kiosk/fullscreen where
+    // window.open is blocked, which is why this used to demand popups.
+    const ok = await printDocument(html, { title: 'Stock count sheet' })
+    if (!ok) toast.error('Could not reach the printer. Check it is on and has paper.')
   }
 
   const startStockTake = () => {

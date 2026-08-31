@@ -5,6 +5,7 @@ import { money, fmtDateTime, PAYMENTS_ENABLED } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 import { askText, askConfirm } from '../components/PromptDialog'
+import { printDocument } from '../lib/printer'
 
 export default function WhatsAppOrders() {
   const { waOrders, waFilter, setWAFilter, refreshWAOrders, user, setLoading, loadAll } = useStore()
@@ -182,14 +183,13 @@ export default function WhatsAppOrders() {
     toast.success('Link copied')
   }
 
-  const printSticker = (o) => {
+  const printSticker = async (o) => {
     const deliverUrl = window.location.origin + '/#/deliver/' + o.id
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(deliverUrl)}`
     const trackNo = o.trackingNo || o.orderNo
     const orderDate = new Date(o.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 
-    const w = window.open('', '_blank', 'width=420,height=700')
-    w.document.write(`<!DOCTYPE html><html><head><title>${trackNo}</title>
+    const html = `<!DOCTYPE html><html><head><title>${trackNo}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Helvetica Neue', 'Arial', sans-serif; width: 80mm; color: #000; }
@@ -280,9 +280,12 @@ export default function WhatsAppOrders() {
 
 </div>
 
-<script>setTimeout(() => { window.print(); }, 600);</script>
-</body></html>`)
-    w.document.close()
+</body></html>`
+
+    // Hidden iframe rather than a popup: kiosk mode blocks window.open, and the
+    // old popup was never closed so slips piled up as orphan windows.
+    const ok = await printDocument(html, { title: `Slip ${trackNo}` })
+    if (!ok) toast.error('Could not reach the printer. Check it is on and has paper.')
   }
 
   const statusColor = (s) => {
