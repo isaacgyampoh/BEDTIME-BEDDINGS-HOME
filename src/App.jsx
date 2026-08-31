@@ -31,6 +31,8 @@ const PromosPage = lazy(() => import('./pages/PromosPage'))
 const InvoicesPage = lazy(() => import('./pages/InvoicesPage'))
 const StockTakesPage = lazy(() => import('./pages/StockTakesPage'))
 const StockAdjustmentsPage = lazy(() => import('./pages/StockAdjustmentsPage'))
+const SocialDashboard = lazy(() => import('./pages/SocialDashboard'))
+const PromotionHistory = lazy(() => import('./pages/PromotionHistory'))
 const RestockPage = lazy(() => import('./pages/RestockPage'))
 const InvoicePay = lazy(() => import('./pages/InvoicePay'))
 const Catalog = lazy(() => import('./pages/Catalog'))
@@ -39,7 +41,7 @@ const DeliveryDetails = lazy(() => import('./pages/DeliveryDetails'))
 const CustomerDisplay = lazy(() => import('./pages/CustomerDisplay'))
 
 const INACTIVITY_TIMEOUT = 60 * 1000 // 1 minute
-const ADMIN_PAGES = ['products', 'staff', 'promos', 'invoices', 'stocktakes', 'stockadjustments', 'restock']
+const ADMIN_PAGES = ['products', 'staff', 'promos', 'invoices', 'stocktakes', 'stockadjustments', 'restock', 'social', 'promotions']
 
 export default function App() {
   const { user, page, setPage, loading, loadAll, logout, isAdmin, darkMode } = useStore()
@@ -244,6 +246,8 @@ export default function App() {
     invoices: <InvoicesPage />,
     stocktakes: <StockTakesPage />,
     stockadjustments: <StockAdjustmentsPage />,
+    social: <SocialDashboard />,
+    promotions: <PromotionHistory />,
     restock: <RestockPage />,
   }
 

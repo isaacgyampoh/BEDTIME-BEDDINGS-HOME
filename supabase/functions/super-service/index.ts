@@ -53,6 +53,64 @@ function callbackAuthorised(url: URL, req: Request): boolean {
   return diff === 0
 }
 
+// ===== TikTok (Content Posting API) — credentials from Supabase secrets =====
+// Never inline these. The browser must never receive a TikTok token.
+const TIKTOK_CLIENT_KEY = Deno.env.get('TIKTOK_CLIENT_KEY') || ''
+const TIKTOK_CLIENT_SECRET = Deno.env.get('TIKTOK_CLIENT_SECRET') || ''
+const TIKTOK_REDIRECT_URI = Deno.env.get('TIKTOK_REDIRECT_URI') || `${SUPABASE_URL}/functions/v1/super-service?action=tiktok-oauth-callback`
+const APP_URL = Deno.env.get('APP_URL') || 'https://admin.bedtimehome.com'
+
+const TIKTOK_AUTH = 'https://www.tiktok.com/v2/auth/authorize/'
+const TIKTOK_TOKEN = 'https://open.tiktokapis.com/v2/oauth/token/'
+const TIKTOK_USERINFO = 'https://open.tiktokapis.com/v2/user/info/'
+const TIKTOK_INIT_VIDEO = 'https://open.tiktokapis.com/v2/post/publish/video/init/'
+const TIKTOK_INIT_PHOTO = 'https://open.tiktokapis.com/v2/post/publish/content/init/'
+const TIKTOK_STATUS = 'https://open.tiktokapis.com/v2/post/publish/status/fetch/'
+
+const tiktokConfigured = () => !!(TIKTOK_CLIENT_KEY && TIKTOK_CLIENT_SECRET)
+
+/** Authorise a privileged social action with an admin PIN (this app has no session token). */
+async function requireAdmin(sb: any, pin: string): Promise<boolean> {
+  if (!pin) return false
+  const { data, error } = await sb.rpc('is_admin_pin', { p_pin: pin })
+  return !error && data === true
+}
+
+async function socialAudit(sb: any, entry: Record<string, unknown>) {
+  try { await sb.from('social_audit_log').insert(entry) } catch (_) { /* never block on logging */ }
+}
+
+/** Exchange a refresh token when the stored access token has expired. */
+async function tiktokAccessToken(sb: any): Promise<{ token?: string; error?: string }> {
+  const { data: rows } = await sb.from('social_connections').select('*').eq('platform', 'tiktok').limit(1)
+  const conn = rows?.[0]
+  if (!conn?.access_token) return { error: 'TikTok is not connected' }
+
+  const fresh = conn.token_expires_at && new Date(conn.token_expires_at).getTime() > Date.now() + 60_000
+  if (fresh) return { token: conn.access_token }
+
+  if (!conn.refresh_token) return { error: 'TikTok session expired — reconnect the account' }
+  const body = new URLSearchParams({
+    client_key: TIKTOK_CLIENT_KEY, client_secret: TIKTOK_CLIENT_SECRET,
+    grant_type: 'refresh_token', refresh_token: conn.refresh_token,
+  })
+  const r = await fetch(TIKTOK_TOKEN, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+  })
+  const j = await r.json()
+  if (!j.access_token) {
+    await sb.from('social_connections').update({ status: 'expired', last_error: j.error_description || 'refresh failed' }).eq('platform', 'tiktok')
+    return { error: 'TikTok session expired — reconnect the account' }
+  }
+  await sb.from('social_connections').update({
+    access_token: j.access_token,
+    refresh_token: j.refresh_token || conn.refresh_token,
+    token_expires_at: new Date(Date.now() + (j.expires_in || 86400) * 1000).toISOString(),
+    status: 'connected', last_error: null,
+  }).eq('platform', 'tiktok')
+  return { token: j.access_token }
+}
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -760,6 +818,244 @@ serve(async (req) => {
       } catch (e) {
         return new Response(JSON.stringify({ success: false, error: 'Status check failed: ' + (e as Error).message }), { headers: CORS })
       }
+    }
+
+    // ═══════════════ TIKTOK: OAuth ═══════════════
+    if (action === 'tiktok-oauth-start') {
+      if (!tiktokConfigured()) {
+        return new Response(JSON.stringify({ success: false, error: 'TikTok is not configured on the server' }), { headers: CORS })
+      }
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+      let body: any = {}; try { body = await req.json() } catch (_) { /* GET */ }
+      if (!(await requireAdmin(supabase, body.adminPin))) {
+        return new Response(JSON.stringify({ success: false, error: 'Admin PIN is incorrect' }), { status: 403, headers: CORS })
+      }
+      // CSRF state, stored server-side and checked on the way back.
+      const state = crypto.randomUUID()
+      await supabase.from('social_connections').upsert({
+        platform: 'tiktok', status: 'connecting', last_error: state, connected_by: body.actor || '',
+      }, { onConflict: 'platform' })
+
+      const url = new URL(TIKTOK_AUTH)
+      url.searchParams.set('client_key', TIKTOK_CLIENT_KEY)
+      url.searchParams.set('response_type', 'code')
+      // user.info.basic = account name; video.publish = Direct Post (needs audit);
+      // video.upload = land in the creator's drafts, which works pre-audit.
+      url.searchParams.set('scope', 'user.info.basic,video.publish,video.upload')
+      url.searchParams.set('redirect_uri', TIKTOK_REDIRECT_URI)
+      url.searchParams.set('state', state)
+      return new Response(JSON.stringify({ success: true, url: url.toString() }), { headers: CORS })
+    }
+
+    if (action === 'tiktok-oauth-callback') {
+      // TikTok redirects the browser here. Respond with a page, not JSON.
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+      const code = url.searchParams.get('code') || ''
+      const state = url.searchParams.get('state') || ''
+      const page = (title: string, msg: string) => new Response(
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+         <meta name="viewport" content="width=device-width,initial-scale=1">
+         <style>body{font-family:system-ui,sans-serif;background:#f6f6f5;color:#16181d;display:flex;
+         min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}
+         .c{max-width:420px;text-align:center;background:#fff;padding:32px;border-radius:18px;
+         border:1px solid rgba(0,0,0,.06)}h1{font-size:19px;margin:0 0 8px}p{color:#5f6163;font-size:14px;line-height:1.5}
+         a{display:inline-block;margin-top:18px;background:#16181d;color:#fff;text-decoration:none;
+         padding:12px 22px;border-radius:12px;font-weight:600;font-size:14px}</style></head>
+         <body><div class="c"><h1>${title}</h1><p>${msg}</p>
+         <a href="${APP_URL}/#/social">Back to the POS</a></div></body></html>`,
+        { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+
+      if (!code) return page('TikTok connection cancelled', 'No authorisation code was returned.')
+
+      const { data: rows } = await supabase.from('social_connections').select('last_error,status').eq('platform', 'tiktok').limit(1)
+      if (!state || rows?.[0]?.last_error !== state) {
+        return page('Connection rejected', 'That authorisation request did not match one this POS started.')
+      }
+
+      const form = new URLSearchParams({
+        client_key: TIKTOK_CLIENT_KEY, client_secret: TIKTOK_CLIENT_SECRET,
+        code, grant_type: 'authorization_code', redirect_uri: TIKTOK_REDIRECT_URI,
+      })
+      const tr = await fetch(TIKTOK_TOKEN, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form })
+      const tj = await tr.json()
+      if (!tj.access_token) {
+        await socialAudit(supabase, { action: 'tiktok_connect', platform: 'tiktok', result: 'failed', detail: tj.error_description || 'token exchange failed' })
+        return page('Could not connect TikTok', tj.error_description || 'TikTok did not return an access token.')
+      }
+
+      let accountName = ''
+      try {
+        const ur = await fetch(`${TIKTOK_USERINFO}?fields=display_name,open_id`, { headers: { Authorization: `Bearer ${tj.access_token}` } })
+        const uj = await ur.json(); accountName = uj?.data?.user?.display_name || ''
+      } catch (_) { /* display name is cosmetic */ }
+
+      await supabase.from('social_connections').upsert({
+        platform: 'tiktok', status: 'connected', account_name: accountName,
+        account_id: tj.open_id || null, scopes: tj.scope || null,
+        access_token: tj.access_token, refresh_token: tj.refresh_token || null,
+        token_expires_at: new Date(Date.now() + (tj.expires_in || 86400) * 1000).toISOString(),
+        connected_at: new Date().toISOString(), last_error: null,
+      }, { onConflict: 'platform' })
+
+      await socialAudit(supabase, { action: 'tiktok_connect', platform: 'tiktok', result: 'ok', detail: accountName })
+      return page('TikTok connected', `${accountName || 'Your account'} is now linked to this POS.`)
+    }
+
+    if (action === 'tiktok-disconnect') {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+      let body: any = {}; try { body = await req.json() } catch (_) {}
+      if (!(await requireAdmin(supabase, body.adminPin))) {
+        return new Response(JSON.stringify({ success: false, error: 'Admin PIN is incorrect' }), { status: 403, headers: CORS })
+      }
+      await supabase.from('social_connections').delete().eq('platform', 'tiktok')
+      await socialAudit(supabase, { action: 'tiktok_disconnect', platform: 'tiktok', result: 'ok', actor: body.actor || '' })
+      return new Response(JSON.stringify({ success: true }), { headers: CORS })
+    }
+
+    // ═══════════════ TIKTOK: publish ═══════════════
+    if (action === 'tiktok-publish') {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+      let body: any = {}; try { body = await req.json() } catch (_) {}
+      if (!(await requireAdmin(supabase, body.adminPin))) {
+        return new Response(JSON.stringify({ success: false, error: 'Admin PIN is incorrect' }), { status: 403, headers: CORS })
+      }
+      if (!tiktokConfigured()) {
+        return new Response(JSON.stringify({ success: false, error: 'TikTok is not configured on the server' }), { headers: CORS })
+      }
+
+      // Idempotency (§19): only the caller that wins this claim may publish.
+      // A refresh, retry, timeout or restarted worker loses and is told why.
+      const { data: claim } = await supabase.rpc('claim_social_post', { p_post_id: body.postId })
+      if (!claim?.claimed) {
+        return new Response(JSON.stringify({
+          success: false, alreadyPublished: !!claim?.alreadyPublished,
+          error: claim?.alreadyPublished ? 'This post was already published' : `Post is ${claim?.reason}`,
+        }), { headers: CORS })
+      }
+      const post = claim.post
+
+      // Re-read stock at publish time (§25): never advertise something that
+      // sold out between drafting and publishing.
+      if (post.product_id) {
+        const { data: prod } = await supabase.from('products').select('quantity,name').eq('id', post.product_id).limit(1)
+        if ((prod?.[0]?.quantity ?? 0) <= 0) {
+          await supabase.from('social_posts').update({ status: 'cancelled', error: 'Product sold out before publishing' }).eq('id', post.id)
+          await socialAudit(supabase, { action: 'tiktok_publish', platform: 'tiktok', product_id: post.product_id, post_id: post.id, result: 'cancelled', detail: 'sold out' })
+          return new Response(JSON.stringify({ success: false, error: 'Product sold out — publishing cancelled' }), { headers: CORS })
+        }
+      }
+
+      const { token, error: tokErr } = await tiktokAccessToken(supabase)
+      if (!token) {
+        await supabase.from('social_posts').update({ status: 'failed', error: tokErr }).eq('id', post.id)
+        return new Response(JSON.stringify({ success: false, error: tokErr }), { headers: CORS })
+      }
+
+      const media = Array.isArray(post.media) ? post.media : []
+      const caption = [post.caption, post.hashtags].filter(Boolean).join('\n\n').slice(0, 2200)
+
+      try {
+        let initRes: any
+        const isVideo = media[0]?.type === 'video'
+
+        if (isVideo) {
+          // FILE_UPLOAD deliberately, not PULL_FROM_URL: PULL_FROM_URL requires
+          // TikTok to have verified ownership of the media's domain, and the
+          // media lives on supabase.co which cannot be verified.
+          const mr = await fetch(media[0].url)
+          const blob = new Uint8Array(await mr.arrayBuffer())
+          const init = await fetch(TIKTOK_INIT_VIDEO, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              post_info: { title: caption, privacy_level: 'SELF_ONLY', disable_comment: false },
+              source_info: { source: 'FILE_UPLOAD', video_size: blob.length, chunk_size: blob.length, total_chunk_count: 1 },
+            }),
+          })
+          initRes = await init.json()
+          const uploadUrl = initRes?.data?.upload_url
+          if (!uploadUrl) throw new Error(initRes?.error?.message || 'TikTok rejected the upload request')
+          const up = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'video/mp4', 'Content-Range': `bytes 0-${blob.length - 1}/${blob.length}` },
+            body: blob,
+          })
+          if (!up.ok) throw new Error(`Media upload failed (${up.status})`)
+        } else {
+          const urls = media.filter((m: any) => m?.url).map((m: any) => m.url).slice(0, 10)
+          if (!urls.length) throw new Error('No media selected for this post')
+          const init = await fetch(TIKTOK_INIT_PHOTO, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              post_info: { title: post.product_name || '', description: caption, privacy_level: 'SELF_ONLY' },
+              source_info: { source: 'PULL_FROM_URL', photo_cover_index: 0, photo_images: urls },
+              post_mode: 'DIRECT_POST', media_type: 'PHOTO',
+            }),
+          })
+          initRes = await init.json()
+          if (initRes?.error?.code && initRes.error.code !== 'ok') {
+            throw new Error(initRes.error.message || 'TikTok rejected the post')
+          }
+        }
+
+        const publishId = initRes?.data?.publish_id
+        if (!publishId) throw new Error('TikTok did not return a publish id')
+
+        // Do NOT call this published yet. TikTok processes asynchronously, and
+        // claiming success here would be exactly the false "Published" the
+        // brief forbids. Status stays 'publishing' until the status endpoint
+        // confirms it (see ?action=tiktok-status).
+        await supabase.from('social_posts').update({
+          external_post_id: publishId, error: null,
+        }).eq('id', post.id)
+
+        await socialAudit(supabase, { action: 'tiktok_publish', platform: 'tiktok', product_id: post.product_id, post_id: post.id, result: 'submitted', detail: publishId, actor: body.actor || '' })
+        return new Response(JSON.stringify({ success: true, publishId, status: 'publishing' }), { headers: CORS })
+
+      } catch (e) {
+        const msg = (e as Error).message || 'Publishing failed'
+        await supabase.from('social_posts').update({ status: 'failed', error: msg }).eq('id', post.id)
+        await socialAudit(supabase, { action: 'tiktok_publish', platform: 'tiktok', product_id: post.product_id, post_id: post.id, result: 'failed', detail: msg, actor: body.actor || '' })
+        return new Response(JSON.stringify({ success: false, error: msg }), { headers: CORS })
+      }
+    }
+
+    // Poll TikTok for the real outcome. Only this marks a post Published.
+    if (action === 'tiktok-status') {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+      const { data: pending } = await supabase.from('social_posts')
+        .select('id,external_post_id,product_id')
+        .eq('platform', 'tiktok').eq('status', 'publishing')
+        .not('external_post_id', 'is', null).limit(20)
+
+      const { token } = await tiktokAccessToken(supabase)
+      if (!token) return new Response(JSON.stringify({ success: false, error: 'TikTok is not connected' }), { headers: CORS })
+
+      let confirmed = 0, failed = 0
+      for (const p of pending || []) {
+        try {
+          const r = await fetch(TIKTOK_STATUS, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ publish_id: p.external_post_id }),
+          })
+          const j = await r.json()
+          const st = j?.data?.status
+          if (st === 'PUBLISH_COMPLETE') {
+            await supabase.from('social_posts').update({ status: 'published', published_at: new Date().toISOString() }).eq('id', p.id)
+            await supabase.from('social_connections').update({ last_published_at: new Date().toISOString() }).eq('platform', 'tiktok')
+            await socialAudit(supabase, { action: 'tiktok_published', platform: 'tiktok', product_id: p.product_id, post_id: p.id, result: 'ok', detail: p.external_post_id })
+            confirmed++
+          } else if (st === 'FAILED') {
+            const reason = j?.data?.fail_reason || 'TikTok reported a failure'
+            await supabase.from('social_posts').update({ status: 'failed', error: reason }).eq('id', p.id)
+            await socialAudit(supabase, { action: 'tiktok_published', platform: 'tiktok', product_id: p.product_id, post_id: p.id, result: 'failed', detail: reason })
+            failed++
+          }
+        } catch (_) { /* leave it publishing; the next poll retries */ }
+      }
+      return new Response(JSON.stringify({ success: true, checked: pending?.length || 0, confirmed, failed }), { headers: CORS })
     }
 
     return new Response(JSON.stringify({ error: 'Use ?action=initialize, charge, verify, ussd, webhook, report, remind, or resend-sms' }), { headers: CORS })

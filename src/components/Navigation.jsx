@@ -25,6 +25,8 @@ const icons = {
   invoices: <I d="M4 4h16v16H4zM4 9h16M9 4v16" />,
   customers: <I d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
   wachats: <I d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  social: <I d="M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.6 13.5l6.8 3.9M15.4 6.6L8.6 10.5" />,
+  promotions: <I d="M3 3v18h18M18 9l-5 5-3-3-4 4" />,
   expenses: <I d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />,
   reports: <I d="M18 20V10M12 20V4M6 20v-6" />,
   staff: <I d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
@@ -54,6 +56,8 @@ const NAV_GROUPS = [
   { section: 'Channels', items: [
     { id: 'whatsapp', label: 'WhatsApp Orders', wa: true },
     { id: 'wachats', label: 'WhatsApp AI', admin: true },
+    { id: 'social', label: 'Social Commerce', admin: true },
+    { id: 'promotions', label: 'Promotion History', admin: true },
   ]},
   { section: 'System', items: [
     { id: 'staff', label: 'Staff & Roles', admin: true },

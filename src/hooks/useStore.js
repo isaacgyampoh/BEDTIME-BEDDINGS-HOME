@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { getSupabase } from '../lib/supabase'
 import { num } from '../lib/utils'
 
-const mapProduct = p => ({ id: p.id, name: p.name, category: p.category || '', costPrice: num(p.cost_price), price: num(p.price), wholesalePrice: num(p.wholesale_price), wholesaleMinQty: num(p.wholesale_min_qty) || 0, quantity: num(p.quantity), image: p.image || '', groupTag: (p.group_tag || '').trim().toLowerCase() })
+const mapProduct = p => ({ id: p.id, name: p.name, category: p.category || '', costPrice: num(p.cost_price), price: num(p.price), wholesalePrice: num(p.wholesale_price), wholesaleMinQty: num(p.wholesale_min_qty) || 0, quantity: num(p.quantity), image: p.image || '', groupTag: (p.group_tag || '').trim().toLowerCase(), description: p.description || '' })
 
 // Recalculate pricing across the whole cart.
 // NOTE: automatic wholesale grouping is currently DISABLED — every line stays
@@ -151,7 +151,7 @@ export const useStore = create((set, get) => ({
     try {
       // PHASE 1: Only what POS needs immediately
       const [prodData, staffData, bunData, promoData] = await Promise.all([
-        q(sb, 'products', { select: 'id,name,category,cost_price,price,wholesale_price,wholesale_min_qty,quantity,image,group_tag', order: 'name', asc: true }),
+        q(sb, 'products', { select: 'id,name,category,cost_price,price,wholesale_price,wholesale_min_qty,quantity,image,group_tag,description', order: 'name', asc: true }),
         q(sb, 'staff_safe', { select: 'id,name,role,active' }),
         q(sb, 'bundles', { select: 'id,name,products,bundle_price,active' }),
         q(sb, 'promos', { select: 'id,name,start_date,end_date,items,active', limit: 50 }),
