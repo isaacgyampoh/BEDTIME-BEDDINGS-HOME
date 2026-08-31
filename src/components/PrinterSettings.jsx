@@ -1,9 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Modal from './Modal'
 import {
   PAPER, getPaperWidth, setPaperWidth,
-  getAutoPrint, setAutoPrint, printHTML, testPageHTML,
+  getAutoPrint, setAutoPrint, printTestPage,
 } from '../lib/printer'
+import {
+  pairSerial, pairUsb, unlink, isLinked, restoreLink, linkLabel,
+  serialSupported, usbSupported, directSupported,
+  BAUD_RATES, getBaud, setBaud,
+} from '../lib/printerLink'
 import toast from 'react-hot-toast'
 
 // Defined at module scope on purpose: a component created inside render is a
@@ -25,16 +30,48 @@ const Choice = ({ active, onClick, title, sub }) => (
 export default function PrinterSettings({ open, onClose }) {
   const [paper, setPaper] = useState(getPaperWidth)
   const [auto, setAuto] = useState(getAutoPrint)
+  const [baud, setBaudState] = useState(getBaud)
   const [testing, setTesting] = useState(false)
+  const [linked, setLinked] = useState(false)
+  const [label, setLabel] = useState('Not connected')
+  const [pairing, setPairing] = useState(false)
+
+  // Reconnect silently to a printer paired earlier on this terminal.
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    restoreLink().then(ok => { if (live) { setLinked(ok); setLabel(linkLabel()) } })
+    return () => { live = false }
+  }, [open])
 
   const choosePaper = (w) => { setPaper(w); setPaperWidth(w); toast.success(`Paper set to ${w}mm`) }
   const chooseAuto = (m) => { setAuto(m); setAutoPrint(m) }
+  const chooseBaud = (b) => { setBaudState(b); setBaud(b) }
+
+  const pair = async (kind) => {
+    setPairing(true)
+    try {
+      await (kind === 'usb' ? pairUsb() : pairSerial())
+      setLinked(true); setLabel(linkLabel())
+      toast.success('Printer connected')
+    } catch (e) {
+      // Cancelling the browser's device picker is normal, not an error.
+      const msg = String(e?.message || e)
+      if (!/No port selected|No device selected|cancelled/i.test(msg)) toast.error(msg)
+    } finally { setPairing(false) }
+  }
+
+  const disconnect = async () => {
+    await unlink(); setLinked(false); setLabel(linkLabel()); toast('Printer disconnected')
+  }
 
   const testPrint = async () => {
     setTesting(true)
-    const ok = await printHTML(testPageHTML(paper), { paper, title: 'Printer test' })
+    const { ok, via } = await printTestPage({ paper })
     setTesting(false)
     if (!ok) toast.error('Could not reach the printer. Check it is on and has paper.')
+    else if (via === 'browser') toast('Sent to the Windows printer dialog')
+    else toast.success('Sent to the built-in printer')
   }
 
   return (
@@ -47,6 +84,76 @@ export default function PrinterSettings({ open, onClose }) {
         </button>
       </>}>
       <div className="space-y-6">
+
+        {/* Connection — the built-in head on this terminal is not a Windows
+            printer, so the Chrome print dialog cannot see it. Pairing here
+            talks to it directly instead. */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 mb-2.5">Built-in printer</label>
+
+          <div className={`rounded-2xl border-2 p-3.5 mb-2.5 ${linked ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'}`}>
+            <div className="flex items-center gap-2.5">
+              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${linked ? 'bg-green-500' : 'bg-gray-300'}`} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[14px] font-bold text-gray-900">{linked ? 'Connected' : 'Not connected'}</div>
+                <div className="text-[11px] text-gray-500 truncate">{label}</div>
+              </div>
+              {linked && (
+                <button onClick={disconnect} className="text-[12px] font-semibold text-gray-500 hover:text-red-500 px-2">
+                  Disconnect
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!directSupported() && (
+            <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              This browser cannot talk to the printer directly. Use Google Chrome
+              or Microsoft Edge on the terminal.
+            </p>
+          )}
+
+          {directSupported() && !linked && (
+            <div className="flex gap-2.5 flex-wrap">
+              {serialSupported() && (
+                <button onClick={() => pair('serial')} disabled={pairing}
+                  className="flex-1 min-w-[130px] h-12 rounded-xl bg-[#16181d] text-white text-[13px] font-bold disabled:opacity-50 active:scale-[.98] transition">
+                  Connect via COM port
+                </button>
+              )}
+              {usbSupported() && (
+                <button onClick={() => pair('usb')} disabled={pairing}
+                  className="flex-1 min-w-[130px] h-12 rounded-xl border-2 border-[#16181d] text-[#16181d] text-[13px] font-bold disabled:opacity-50 active:scale-[.98] transition">
+                  Connect via USB
+                </button>
+              )}
+            </div>
+          )}
+          <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
+            Pick the printer once. This terminal remembers it, so it reconnects
+            on its own from then on. Try COM port first; if the list is empty,
+            try USB.
+          </p>
+        </div>
+
+        {serialSupported() && !linked && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-2.5">COM port speed</label>
+            <div className="flex gap-2 flex-wrap">
+              {BAUD_RATES.map(b => (
+                <button key={b} onClick={() => chooseBaud(b)}
+                  className={`h-11 px-3.5 rounded-xl border-2 text-[13px] font-semibold transition ${
+                    baud === b ? 'border-[#16181d] bg-[#16181d] text-white' : 'border-gray-200 bg-white text-gray-600'}`}>
+                  {b}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-2">
+              Almost all of these printers are 9600. Only change this if the test
+              page prints garbled characters.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-xs font-semibold text-gray-500 mb-2.5">Paper width</label>
@@ -72,12 +179,13 @@ export default function PrinterSettings({ open, onClose }) {
         </div>
 
         <div className="bg-[#f6f6f5] border border-gray-200 rounded-xl p-4">
-          <div className="text-[13px] font-bold text-gray-800 mb-1.5">To skip the print dialog</div>
+          <div className="text-[13px] font-bold text-gray-800 mb-1.5">
+            {linked ? 'Printing directly' : 'If the printer will not connect'}
+          </div>
           <p className="text-[12px] text-gray-500 leading-relaxed">
-            A browser shows a print dialog every time unless it is told not to.
-            Launch Chrome on this terminal with <code className="bg-white px-1.5 py-0.5 rounded border border-gray-200 text-[11px]">--kiosk-printing</code>,
-            and set the built-in printer as the default. Receipts then print
-            straight to the roll with no confirmation.
+            {linked
+              ? 'Receipts go straight to the built-in printer. No Windows driver, no print dialog, and the paper is cut automatically.'
+              : 'Without a direct connection the app falls back to the Windows print dialog, which can only see printers Windows has installed. If the built-in printer is missing from that list, install its driver in Windows Settings, or connect it directly above.'}
           </p>
         </div>
 

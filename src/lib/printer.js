@@ -20,6 +20,9 @@
  *   - Money is tabular so the amount column lines up.
  */
 
+import { receiptBytes, testBytes } from './escpos'
+import { sendBytes, isLinked, restoreLink } from './printerLink'
+
 const PAPER_KEY = 'pos-paper-width'   // '58' | '80'
 const AUTO_KEY = 'pos-auto-print'     // 'all' | 'cash' | 'off'
 
@@ -301,4 +304,36 @@ export function printDocument(fullHTML, { paper = getPaperWidth(), title = 'Prin
       resolve(false)
     }
   })
+}
+
+// ── high level: direct link first, browser print second ─────────────────────
+
+/**
+ * Print a sale.
+ *
+ * Order matters. If the terminal has been paired with its built-in head we send
+ * ESC/POS straight to it: no driver, no queue, no print dialog. Only if that is
+ * unavailable do we fall back to window-style printing, which needs the printer
+ * to exist as an OS printer — and on this till it does not.
+ *
+ * Returns { ok, via } so the caller can tell the operator what actually happened.
+ */
+export async function printReceipt(sale, shop, { paper = getPaperWidth() } = {}) {
+  if (isLinked() || await restoreLink()) {
+    const ok = await sendBytes(receiptBytes(sale, shop, paper))
+    if (ok) return { ok: true, via: 'direct' }
+    // fall through — a failed direct write should still try the OS path
+  }
+  const ok = await printHTML(receiptHTML(sale, shop), { paper, title: `Receipt ${sale.receiptNo || ''}` })
+  return { ok, via: 'browser' }
+}
+
+/** Alignment/darkness check, over whichever transport is available. */
+export async function printTestPage({ paper = getPaperWidth() } = {}) {
+  if (isLinked() || await restoreLink()) {
+    const ok = await sendBytes(testBytes(paper))
+    if (ok) return { ok: true, via: 'direct' }
+  }
+  const ok = await printHTML(testPageHTML(paper), { paper, title: 'Printer test' })
+  return { ok, via: 'browser' }
 }

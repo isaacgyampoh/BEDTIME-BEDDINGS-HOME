@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { fmtDateTime, SHOP } from '../lib/utils'
 import {
-  printHTML, receiptHTML, buildDocument, paperMM,
+  printReceipt, receiptHTML, buildDocument, paperMM,
   getAutoPrint, getPaperWidth,
 } from '../lib/printer'
 import toast from 'react-hot-toast'
@@ -31,12 +31,13 @@ export default function ReceiptPreview({ sale, onClose }) {
   const doPrint = async () => {
     if (!sale || printing) return
     setPrinting(true)
-    const ok = await printHTML(
-      receiptHTML({ ...sale, dateText: fmtDateTime(sale.date) }, SHOP),
-      { paper, title: `Receipt ${sale.receiptNo || ''}` }
+    // Goes straight to the built-in head over ESC/POS when the terminal has
+    // been paired; otherwise falls back to the OS print path.
+    const { ok } = await printReceipt(
+      { ...sale, dateText: fmtDateTime(sale.date) }, SHOP, { paper }
     )
     setPrinting(false)
-    if (!ok) toast.error('Could not reach the printer. Check it is on and has paper.')
+    if (!ok) toast.error('Could not reach the printer. Open Receipt Printer in the menu to connect it.')
   }
 
   // Auto-print. Was hardcoded to cash sales; now follows the terminal setting,
