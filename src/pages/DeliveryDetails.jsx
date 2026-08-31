@@ -45,7 +45,7 @@ export default function DeliveryDetails() {
       }).eq('id', order.id)
       if (error) throw error
       setDone(true)
-    } catch (e) {
+    } catch {
       alert('Could not save. Please check your connection and try again.')
     } finally { setSaving(false) }
   }

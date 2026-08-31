@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getSupabase } from '../lib/supabase'
+import { getSupabase, FUNCTIONS_URL, SUPABASE_URL } from '../lib/supabase'
 import { SHOP } from '../lib/utils'
 import { LogoMark } from '../components/Logo'
 
@@ -68,7 +68,7 @@ export default function InvoicePay() {
     setPaying(true)
     setError('')
     try {
-      const res = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=initialize', {
+      const res = await fetch(`${FUNCTIONS_URL}?action=initialize`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           phone: phone.trim() || order.customer_phone,
@@ -85,7 +85,7 @@ export default function InvoicePay() {
         setPaying(false)
         setError(data.error || 'Payment could not be processed. Please try again.')
       }
-    } catch (e) {
+    } catch {
       setPaying(false)
       setError('Connection error. Please check your internet and try again.')
     }
@@ -97,21 +97,22 @@ export default function InvoicePay() {
     const ref = params.get('reference') || params.get('trxref')
     if (ref && orderId) {
       const sb = getSupabase()
-      sb.from('whatsapp_orders').update({
-        paystack_ref: ref,
-        paid_at: new Date().toISOString(),
-        status: 'Paid'
-      }).eq('id', orderId).then(async () => {
+      // Record only which reference came back — never the payment status. The
+      // status is set by the signed Paystack webhook / the reconcile job, which
+      // confirm the payment with the gateway. Trusting this redirect would let
+      // anyone mark an order Paid by putting ?reference=anything in the URL.
+      sb.from('whatsapp_orders').update({ paystack_ref: ref }).eq('id', orderId).then(async () => {
         await loadOrder()
-        // Send WhatsApp payment confirmation
+        // Confirmation message, only once the server has actually marked it paid.
         try {
-          const { data: o } = await sb.from('whatsapp_orders').select('customer_phone,customer_name,order_no,total').eq('id', orderId).single()
-          if (o?.customer_phone) {
+          const { data: o } = await sb.from('whatsapp_orders').select('customer_phone,customer_name,order_no,total,status,paid_at').eq('id', orderId).single()
+          const confirmed = o && (o.status === 'Paid' || o.status === 'Completed' || o.paid_at)
+          if (confirmed && o?.customer_phone) {
             const name = o.customer_name ? ` ${o.customer_name}` : ''
             const msg = `Hi${name}! Thank you for completing your payment.\n\nOrder ID: ${o.order_no}\nAmount: GHS ${Number(o.total).toFixed(2)}\n\nYour order will be packaged and our delivery team will contact you to arrange delivery and let you know the delivery fee to your location.\n\nThank you for shopping with BEDTIME BEDDINGS & HOME!`
             const phone = o.customer_phone.replace(/\D/g, '')
             const chatId = phone.startsWith('0') ? '233' + phone.slice(1) : phone
-            await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-processor', {
+            await fetch(`${SUPABASE_URL}/functions/v1/super-processor`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ action: 'send_confirmation', chatId, message: msg })

@@ -5,7 +5,7 @@ import { money, fmtDate } from '../lib/utils'
 export default function CustomersPage() {
   const { customers } = useStore()
   const [query, setQuery] = useState('')
-  const filtered = customers.filter(c => c.phone.includes(query))
+  const filtered = customers.filter(c => (c.phone || '').includes(query))
 
   return (
     <div >

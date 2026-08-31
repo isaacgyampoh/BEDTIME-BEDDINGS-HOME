@@ -4,6 +4,7 @@ import { getSupabase } from '../lib/supabase'
 import { money, num, fmtDate, today } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { adminDelete } from '../lib/adminActions'
 
 export default function PromosPage() {
   const { promos, bundles, products, refreshPromos, refreshBundles, setLoading } = useStore()
@@ -35,7 +36,10 @@ export default function PromosPage() {
     await refreshPromos(); setLoading(false); setModal(false); toast.success('Saved')
   }
   const togglePromo = async (id, active) => { const sb = getSupabase(); await sb.from('promos').update({ active: !active }).eq('id', id); refreshPromos() }
-  const delPromo = async (id) => { if (!confirm('Delete?')) return; setLoading(true); await getSupabase().from('promos').delete().eq('id', id); await refreshPromos(); setLoading(false); toast.success('Deleted') }
+  const delPromo = async (p) => {
+    if (!(await adminDelete('promos', p.id, p.name))) return
+    setLoading(true); await refreshPromos(); setLoading(false)
+  }
 
   // Bundle functions
   const openNewBundle = () => { setBunForm({ id: '', name: '', price: '', items: [] }); setBunModal(true) }
@@ -48,7 +52,10 @@ export default function PromosPage() {
     if (bunForm.id) await sb.from('bundles').update(data).eq('id', bunForm.id); else await sb.from('bundles').insert(data)
     await refreshBundles(); setLoading(false); setBunModal(false); toast.success('Saved')
   }
-  const delBundle = async (id) => { if (!confirm('Delete?')) return; setLoading(true); await getSupabase().from('bundles').delete().eq('id', id); await refreshBundles(); setLoading(false); toast.success('Deleted') }
+  const delBundle = async (b) => {
+    if (!(await adminDelete('bundles', b.id, b.name))) return
+    setLoading(true); await refreshBundles(); setLoading(false)
+  }
 
   return (
     <div >
@@ -99,7 +106,7 @@ export default function PromosPage() {
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => togglePromo(p.id, p.active)} className={`h-8 px-3 rounded-lg text-xs font-semibold ${p.active ? 'bg-gray-100' : 'bg-green-50 text-green-500'}`}>{p.active ? 'Deactivate' : 'Activate'}</button>
                   <button onClick={() => openEditPromo(p)} className="h-8 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-100 transition">Edit</button>
-                  <button onClick={() => delPromo(p.id)} className="h-8 px-3 bg-[#c0492f] text-white rounded-lg text-xs font-medium hover:bg-[#a83d27] transition">Delete</button>
+                  <button onClick={() => delPromo(p)} className="h-8 px-3 bg-[#c0492f] text-white rounded-lg text-xs font-medium hover:bg-[#a83d27] transition">Delete</button>
                 </div>
               </div>
             )
@@ -114,7 +121,7 @@ export default function PromosPage() {
             <thead><tr><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-400 uppercase">Bundle</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-400 uppercase">Products</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-400 uppercase">Price</th><th className="p-3 bg-gray-50"></th></tr></thead>
             <tbody>{bundles.length === 0 ? <tr><td colSpan={4} className="text-center py-16 text-gray-300">No bundles</td></tr> : bundles.map(b => {
               const names = b.products.map(p => { const pr = products.find(x => x.id === p.productId); return pr ? p.qty + 'x ' + pr.name : '?' }).join(', ')
-              return (<tr key={b.id} className="border-b border-gray-50"><td className="p-3 text-sm font-semibold">{b.name}</td><td className="p-3 text-xs text-gray-500 max-w-[200px] truncate">{names}</td><td className="p-3 font-bold text-sm">{money(b.bundlePrice)}</td><td className="p-3"><div className="flex gap-2"><button onClick={() => openEditBundle(b)} className="h-8 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-100 transition">Edit</button><button onClick={() => delBundle(b.id)} className="h-8 px-3 bg-[#c0492f] text-white rounded-lg text-xs font-medium hover:bg-[#a83d27] transition">Delete</button></div></td></tr>)
+              return (<tr key={b.id} className="border-b border-gray-50"><td className="p-3 text-sm font-semibold">{b.name}</td><td className="p-3 text-xs text-gray-500 max-w-[200px] truncate">{names}</td><td className="p-3 font-bold text-sm">{money(b.bundlePrice)}</td><td className="p-3"><div className="flex gap-2"><button onClick={() => openEditBundle(b)} className="h-8 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-100 transition">Edit</button><button onClick={() => delBundle(b)} className="h-8 px-3 bg-[#c0492f] text-white rounded-lg text-xs font-medium hover:bg-[#a83d27] transition">Delete</button></div></td></tr>)
             })}</tbody>
           </table>
         </div>

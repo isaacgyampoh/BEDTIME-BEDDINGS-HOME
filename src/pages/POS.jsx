@@ -1,4 +1,6 @@
 import { useState, useMemo, memo } from 'react'
+import { usePosMode } from '../hooks/usePosMode'
+import TextKeyboard from '../components/TextKeyboard'
 import { useStore } from '../hooks/useStore'
 import { money, num, today, thumb } from '../lib/utils'
 import toast from 'react-hot-toast'
@@ -31,6 +33,8 @@ const ProductCard = memo(({ item, price, hasPromo, onAdd }) => {
 export default function POS() {
   const { products, bundles, promos, mode, setMode, selectedCat, setCat, addToCart } = useStore()
   const [query, setQuery] = useState('')
+  const touchPOS = usePosMode()
+  const [kbOpen, setKbOpen] = useState(false)
 
   const categories = useMemo(() => ['all', ...new Set(products.filter(p => p.category).map(p => p.category))], [products])
 
@@ -65,6 +69,21 @@ export default function POS() {
 
   const searchAdd = (p) => { if (!p || p.quantity === 0) return false; const pr = getPrice(p); if (addToCart({ productId: p.id, name: p.name, price: pr, costPrice: p.costPrice, image: p.image, originalPrice: p.price, isPromo: !!promoPriceMap[p.id] })) { toast.success(p.name); return true } return false }
 
+  // Typing (scanner or on-screen keyboard) auto-adds on an exact name match,
+  // matching the previous behaviour of the raw input.
+  const onQuery = (v) => {
+    setQuery(v)
+    const t = v.trim()
+    if (t.length > 3) {
+      const exact = products.find(p => (p.name || '').toLowerCase() === t.toLowerCase())
+      if (exact && searchAdd(exact)) setQuery('')
+    }
+  }
+
+  const submitSearch = () => {
+    if (query.trim() && filtered[0] && mode !== 'bundle' && searchAdd(filtered[0])) setQuery('')
+  }
+
   const promoCount = Object.keys(promoPriceMap).length
 
   return (
@@ -78,20 +97,33 @@ export default function POS() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative mt-3.5 mb-3">
-        
-        <input className="w-full h-11 md:h-12 pl-4 pr-4 bg-white rounded-xl text-sm font-medium placeholder:text-stone-300 focus:outline-none focus:ring-2 focus:ring-gray-400/30" placeholder="Search or scan barcode..." value={query}
-          onChange={e => { setQuery(e.target.value); const v = e.target.value.trim(); if (v.length > 3) { const ex = products.find(p => p.name.toLowerCase() === v.toLowerCase()); if (ex && searchAdd(ex)) setQuery('') } }}
-          onKeyDown={e => { if (e.key === 'Enter' && query.trim() && filtered[0] && mode !== 'bundle') { if (searchAdd(filtered[0])) setQuery('') } }}
+      {/* Search — the input stays live for the barcode scanner; on a touch
+          terminal the keyboard button opens an on-screen QWERTY as well. */}
+      <div className="mt-3.5 mb-3 flex gap-2">
+        <input className="flex-1 h-12 px-4 bg-white rounded-xl text-[15px] font-medium placeholder:text-stone-300 focus:outline-none focus:ring-2 focus:ring-gray-400/30"
+          placeholder="Search or scan barcode..." value={query}
+          onChange={e => onQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submitSearch() }}
         />
+        {query && (
+          <button onClick={() => setQuery('')} aria-label="Clear search"
+            className="w-12 h-12 rounded-xl bg-white text-stone-400 flex items-center justify-center active:scale-95 transition">✕</button>
+        )}
+        {touchPOS && (
+          <button onClick={() => setKbOpen(v => !v)} aria-label="On-screen keyboard" aria-pressed={kbOpen}
+            className={`w-12 h-12 rounded-xl flex items-center justify-center active:scale-95 transition ${kbOpen ? 'bg-[#16181d] text-white' : 'bg-white text-stone-500'}`}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Modes */}
       <div className="flex gap-2 mb-3">
         {[{ id: 'retail', l: 'Retail' }, { id: 'wholesale', l: 'Wholesale' }, { id: 'bundle', l: 'Bundles' }].map(m => (
           <button key={m.id} onClick={() => setMode(m.id)}
-            className={`h-9 px-4 rounded-full text-xs font-bold transition ${mode === m.id ? 'bg-gray-900 text-white' : 'bg-white text-stone-500 hover:text-stone-700'}`}>
+            className={`h-11 px-5 rounded-full text-[13px] font-bold transition active:scale-95 ${mode === m.id ? 'bg-gray-900 text-white' : 'bg-white text-stone-500 hover:text-stone-700'}`}>
             {m.l}
           </button>
         ))}
@@ -101,7 +133,7 @@ export default function POS() {
         <div className="flex gap-1.5 overflow-x-auto mb-3.5 scrollbar-hide">
           {categories.map(c => (
             <button key={c} onClick={() => setCat(c)}
-              className={`h-8 px-3.5 rounded-full text-xs font-semibold whitespace-nowrap transition ${selectedCat === c ? 'bg-gray-800 text-white' : 'bg-white text-stone-400 hover:text-stone-600'}`}>
+              className={`h-10 px-4 rounded-full text-[13px] font-semibold whitespace-nowrap transition active:scale-95 ${selectedCat === c ? 'bg-gray-800 text-white' : 'bg-white text-stone-400 hover:text-stone-600'}`}>
               {c === 'all' ? 'All' : c}
             </button>
           ))}
@@ -109,9 +141,9 @@ export default function POS() {
       )}
 
       {/* Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2 md:gap-2.5">
+      <div className={`grid gap-2.5 ${touchPOS ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7'}`}>
         {filtered.length === 0 && <div className="col-span-full py-20 text-center text-stone-300 text-sm">No products found</div>}
-        {filtered.map((item, idx) => {
+        {filtered.map((item) => {
           if (mode === 'bundle') return (
             <button key={item.id} onClick={() => doAdd(item)} className="bg-white rounded-2xl p-4 text-left active:scale-[.97] transition-transform">
               <div className="text-sm font-semibold">{item.name}</div>
@@ -121,6 +153,19 @@ export default function POS() {
           return <ProductCard key={item.id} item={item} price={getPrice(item)} hasPromo={!!promoPriceMap[item.id]} onAdd={() => doAdd(item)} />
         })}
       </div>
+
+      {kbOpen && (
+        <>
+          {/* Reserve room so the sheet never covers the last row of products. */}
+          <div className="h-[340px]" aria-hidden="true" />
+          <TextKeyboard
+            value={query}
+            onChange={onQuery}
+            onSubmit={submitSearch}
+            onClose={() => setKbOpen(false)}
+          />
+        </>
+      )}
     </div>
   )
 }

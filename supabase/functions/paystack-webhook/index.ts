@@ -4,6 +4,38 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const PAYSTACK_SECRET_KEY = Deno.env.get('PAYSTACK_SECRET_KEY') || ''
+
+/**
+ * Paystack signs every webhook with HMAC-SHA512 of the raw body, keyed on the
+ * account's secret key, in the `x-paystack-signature` header.
+ *
+ * Without this check the endpoint accepted any POST claiming `charge.success`,
+ * so anyone who knew the URL could mark orders Paid and have stock deducted and
+ * confirmation SMS sent — free goods. Verify before trusting a single field.
+ */
+async function signatureValid(rawBody: string, signature: string): Promise<boolean> {
+  if (!PAYSTACK_SECRET_KEY) {
+    console.error('SECURITY: PAYSTACK_SECRET_KEY is not set — refusing to process the webhook.')
+    return false
+  }
+  if (!signature) return false
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(PAYSTACK_SECRET_KEY),
+    { name: 'HMAC', hash: 'SHA-512' },
+    false,
+    ['sign'],
+  )
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody))
+  const expected = Array.from(new Uint8Array(mac)).map(b => b.toString(16).padStart(2, '0')).join('')
+
+  if (expected.length !== signature.length) return false
+  let diff = 0
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i)
+  return diff === 0
+}
 
 serve(async (req) => {
   if (req.method !== 'POST') {
@@ -11,7 +43,19 @@ serve(async (req) => {
   }
 
   try {
-    const body = await req.json()
+    // Read the body as text: the signature is over the exact bytes sent, so it
+    // must be verified before any JSON parsing/normalisation.
+    const rawBody = await req.text()
+    const signature = req.headers.get('x-paystack-signature') || ''
+
+    if (!await signatureValid(rawBody, signature)) {
+      console.error('Rejected webhook with an invalid or missing Paystack signature')
+      return new Response(JSON.stringify({ error: 'invalid signature' }), {
+        status: 401, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const body = JSON.parse(rawBody)
 
     console.log('WEBHOOK EVENT:', body.event)
     console.log('WEBHOOK DATA:', JSON.stringify(body.data || {}).slice(0, 500))

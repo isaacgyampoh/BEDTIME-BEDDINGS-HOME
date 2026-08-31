@@ -1,3 +1,14 @@
+-- ############################################################################
+-- SUPERSEDED by 018_cron_config.sql — do not run this file as-is.
+--
+-- The bearer token that used to be inline here was minted for a DIFFERENT
+-- Supabase project (a leftover from the previous brand), so these jobs
+-- authenticated with the wrong credential. 018 moves the key into
+-- private.app_config and reschedules every job through private.call_edge().
+--
+-- Kept only for reference / for the schedule times.
+-- ############################################################################
+
 -- Payment Reminder — runs every hour, sends SMS to customers with unpaid orders
 -- Requires pg_cron and pg_net extensions enabled
 
@@ -10,7 +21,7 @@ SELECT cron.schedule(
     url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/charge-momo?action=remind',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaWl1d2tvdm9vamtjd3p1cHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExOTQyMTcsImV4cCI6MjA4Njc3MDIxN30.Wpduc4qYawgVSWqMqKPaDWUXm0dp8A_z9IxOrVfqN7w'
+      'Authorization', 'Bearer <SET private.app_config.service_key — SEE 018_cron_config.sql>'
     ),
     body := '{}'::jsonb
   );

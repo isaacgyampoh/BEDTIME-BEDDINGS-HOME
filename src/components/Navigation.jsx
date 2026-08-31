@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../hooks/useStore'
 import { LogoMark } from './Logo'
 import { ECOMMERCE_ENABLED } from '../lib/utils'
-import { getRegisterId, openCustomerScreenManual } from '../hooks/useCustomerDisplay'
+import { openCustomerScreenManual } from '../hooks/useCustomerDisplay'
+import { usePosMode, isTouchPOS, setPosOverride } from '../hooks/usePosMode'
 import toast from 'react-hot-toast'
 
 // Clean minimal SVG icons
@@ -19,6 +20,7 @@ const icons = {
   promos: <I d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01" />,
   restock: <I d="M1 3h15v13H1zM16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM18.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" />,
   stocktakes: <I d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />,
+  stockadjustments: <I d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />,
   invoices: <I d="M4 4h16v16H4zM4 9h16M9 4v16" />,
   customers: <I d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
   wachats: <I d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
@@ -37,7 +39,8 @@ const NAV_GROUPS = [
   ]},
   { section: 'Inventory', items: [
     { id: 'products', label: 'Products', admin: true },
-    { id: 'stocktakes', label: 'Stock & Adjust', admin: true },
+    { id: 'stocktakes', label: 'Stock Takes', admin: true },
+    { id: 'stockadjustments', label: 'Stock Adjustments', admin: true },
     { id: 'restock', label: 'Restock', admin: true },
     { id: 'promos', label: 'Promos & Bundles', admin: true },
   ]},
@@ -64,25 +67,47 @@ const MOB = [
   { id: 'dash', label: 'More', admin: true },
 ]
 
-const AP = ['dash','products','bundles','staff','expenses','reports','customers','performance','promos','invoices','stocktakes','restock','stockadjustments']
 
 export default function Navigation({ onOpenCart }) {
-  const [pinned, setPinned] = useState(() => { try { return localStorage.getItem('sidebar-pinned') === '1' } catch { return false } })
+  const touchPOS = usePosMode()
+  // A touchscreen cannot hover, so a hover-to-expand sidebar shows nothing but
+  // unlabelled icons on a POS terminal. Default those machines to pinned-open.
+  const [pinned, setPinned] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sidebar-pinned')
+      if (saved !== null) return saved === '1'
+    } catch {}
+    return isTouchPOS()
+  })
   const [hovering, setHovering] = useState(false)
   const hoverTimer = useRef(null)
   const expanded = pinned || hovering
-  const onEnter = () => { if (pinned) return; clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setHovering(true), 90) }
-  const onLeave = () => { if (pinned) return; clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setHovering(false), 180) }
+  // Hover-expand is a mouse affordance only; on touch it would fire from the
+  // synthetic mouseenter a tap emits and leave the sidebar stuck open.
+  const onEnter = () => { if (pinned || touchPOS) return; clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setHovering(true), 90) }
+  const onLeave = () => { if (pinned || touchPOS) return; clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setHovering(false), 180) }
   const togglePin = () => { const nx = !pinned; setPinned(nx); setHovering(false); try { localStorage.setItem('sidebar-pinned', nx ? '1' : '0') } catch {} }
+  useEffect(() => () => clearTimeout(hoverTimer.current), [])
   const [mobileOpen, setMobileOpen] = useState(false)
   const { page, setPage, user, isAdmin, logout, waOrders, cart, darkMode, toggleDark, shopOpen, shopSettingLoaded, fetchShopOpen, setShopOpen } = useStore()
-  useEffect(() => { if (isAdmin) fetchShopOpen() }, [isAdmin])
+  useEffect(() => { if (ECOMMERCE_ENABLED && isAdmin) fetchShopOpen() }, [isAdmin])
   useEffect(() => { document.documentElement.style.setProperty('--sidebar-w', (pinned ? 236 : 68) + 'px') }, [pinned])
   const toggleShop = async () => {
     const next = !shopOpen
     const res = await setShopOpen(next)
     if (res?.ok) toast.success(next ? 'Online shop is now OPEN' : 'Online shop is now CLOSED')
     else toast.error('Could not save: ' + (res?.error || 'unknown error'))
+  }
+
+  // Some terminals misreport their pointer capabilities, so the installer can
+  // force touch mode on or off for the machine. Also pins the sidebar open,
+  // since that is the setting a touch terminal actually needs.
+  const toggleTouchMode = () => {
+    const next = !touchPOS
+    setPosOverride(next)
+    if (next) { setPinned(true); try { localStorage.setItem('sidebar-pinned', '1') } catch {} }
+    window.dispatchEvent(new Event('pos-mode-change'))
+    toast.success(next ? 'Touch POS mode ON — bigger targets, on-screen keypads' : 'Touch POS mode OFF')
   }
 
   // Open the customer screen — on a dual-screen POS (e.g. GS-3063) put it on
@@ -114,12 +139,22 @@ export default function Navigation({ onOpenCart }) {
       style={{ width: expanded ? 236 : 68 }}>
 
       {/* Brand + collapse toggle */}
-      <div className="flex items-center gap-3 px-4 h-16 flex-shrink-0 border-b border-white/5">
+      <div className="flex items-center gap-2 px-3 h-16 flex-shrink-0 border-b border-white/5">
         <LogoMark size={30} rounded={8} />
         {expanded && <div className="font-heading text-[14px] font-bold tracking-tight text-white whitespace-nowrap flex-1">BEDTIME</div>}
-        {expanded && <button onClick={togglePin} title={pinned ? 'Unpin sidebar' : 'Pin sidebar open'} className={`transition flex-shrink-0 ${pinned ? 'text-white' : 'text-white/40 hover:text-white/80'}`}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
-        </button>}
+        {/* Always rendered. Previously this only appeared once expanded, which
+            on a no-hover terminal meant a collapsed sidebar could never be
+            reopened. */}
+        <button onClick={togglePin}
+          title={pinned ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-label={pinned ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-expanded={expanded}
+          className={`flex-shrink-0 w-11 h-11 -mr-1 rounded-lg flex items-center justify-center transition ${pinned ? 'text-white hover:bg-white/10' : 'text-white/50 hover:text-white hover:bg-white/10'}`}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18" />
+            {!pinned && <path d="M13.5 9l2.5 3-2.5 3" />}
+          </svg>
+        </button>
       </div>
 
       {/* Nav groups */}
@@ -152,9 +187,13 @@ export default function Navigation({ onOpenCart }) {
           {expanded && <span className="text-[13px]">Customer Screen</span>}
           {!expanded && <div className="absolute left-full ml-2 px-2.5 py-1 bg-[#0f1115] border border-white/10 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">Customer Screen</div>}
         </button>
-        {isAdmin && <button onClick={toggleShop} disabled={!shopSettingLoaded} className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-white/45 hover:bg-white/8 hover:text-white transition disabled:opacity-40">
+        {ECOMMERCE_ENABLED && isAdmin && <button onClick={toggleShop} disabled={!shopSettingLoaded} className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-white/45 hover:bg-white/8 hover:text-white transition disabled:opacity-40">
           <span className="flex-shrink-0 w-5 flex justify-center"><I d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18" /></span>
           {expanded && <span className="flex-1 flex items-center justify-between text-[13px]"><span>Online Shop</span><span className={`relative w-9 h-5 rounded-full transition-colors ${shopOpen ? 'bg-green-500' : 'bg-white/20'}`}><span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${shopOpen ? 'left-[18px]' : 'left-0.5'}`} /></span></span>}
+        </button>}
+        {isAdmin && <button onClick={toggleTouchMode} title="Touch POS mode" className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-white/45 hover:bg-white/8 hover:text-white transition">
+          <span className="flex-shrink-0 w-5 flex justify-center"><I d="M9 11V6a2 2 0 1 1 4 0v9M9 11a2 2 0 1 0-4 0v2a7 7 0 0 0 7 7h1a6 6 0 0 0 6-6v-3a2 2 0 1 0-4 0M13 11a2 2 0 1 1 4 0" /></span>
+          {expanded && <span className="flex-1 flex items-center justify-between text-[13px]"><span>Touch POS</span><span className={`relative w-9 h-5 rounded-full transition-colors ${touchPOS ? 'bg-green-500' : 'bg-white/20'}`}><span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${touchPOS ? 'left-[18px]' : 'left-0.5'}`} /></span></span>}
         </button>}
         {isAdmin && <button onClick={toggleDark} className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-white/45 hover:bg-white/8 hover:text-white transition">
           <span className="flex-shrink-0 w-5 flex justify-center">{darkMode ? <I d="M12 3v1m0 16v1m9-9h-1M4 12H3m3.34-5.66l-.7-.7m12.73 0l-.71.7M6.34 17.66l-.7.7m12.73 0l-.71-.7M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" /> : <I d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />}</span>

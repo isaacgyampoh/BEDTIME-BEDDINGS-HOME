@@ -21,16 +21,8 @@ const Kpi = ({ label, value, sub, accent }) => (
   </div>
 )
 
-const Stat = ({ label, value, sub, color = 'text-gray-900' }) => (
-  <div className="py-2">
-    <div className="text-xs text-gray-400 font-medium">{label}</div>
-    <div className={`text-lg font-bold mt-0.5 tabular-nums ${color}`}>{value}</div>
-    {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
-  </div>
-)
-
 export default function ReportsPage() {
-  const { sales, expenses, refunds, products } = useStore()
+  const { sales, expenses, refunds } = useStore()
   const [tab, setTab] = useState('today')
 
   const t = today(), ws = weekStartDate(), ms = monthStart()
@@ -114,6 +106,27 @@ export default function ReportsPage() {
   })
   const staffPerf = Object.values(staffMap).sort((a, b) => b.revenue - a.revenue)
 
+  // Excel/Sheets treat a leading = + - @ as a formula. Product names and
+  // customer notes are free text from the DB, so neutralise them on export.
+  const csvCell = (v) => {
+    const str = String(v ?? '')
+    const safe = /^[=+\-@\t\r]/.test(str) ? "'" + str : str
+    return '"' + safe.replace(/"/g, '""') + '"'
+  }
+
+  const exportCsv = () => {
+    const rows = [['Date','Receipt','Customer','Staff','Payment','Type','Items','Subtotal','Discount','Total','Profit']]
+    fSales.forEach(s => rows.push([isoDate(s.date), s.receiptNo, s.customer, s.cashier, s.payment, s.type, (s.items||[]).map(i=>i.name).join('; '), s.total+s.discount, s.discount, s.total, s.profit]))
+    rows.push([]); rows.push(['','','','','','','TOTAL','',totalDiscount,totalRev,totalProfit])
+    const csv = rows.map(r => r.map(csvCell).join(',')).join('\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `bedtime-report-${tab}-${today()}.csv`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const tabs = [
     { id: 'today', label: 'Today' },
     { id: 'week', label: 'This Week' },
@@ -128,15 +141,7 @@ export default function ReportsPage() {
           <h1 className="text-[22px] md:text-[26px] font-bold tracking-tight">Reports</h1>
           <p className="text-gray-400 text-sm mt-0.5">Business analytics & insights</p>
         </div>
-        <button onClick={() => {
-          const rows = [['Date','Receipt','Customer','Staff','Payment','Type','Items','Subtotal','Discount','Total','Profit']]
-          fSales.forEach(s => rows.push([isoDate(s.date), s.receiptNo, s.customer, s.cashier, s.payment, s.type, (s.items||[]).map(i=>i.name).join('; '), s.total+s.discount, s.discount, s.total, s.profit]))
-          rows.push([]); rows.push(['','','','','','','TOTAL','',totalDiscount,totalRev,totalProfit])
-          const csv = rows.map(r => r.map(c => '"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n')
-          const blob = new Blob([csv], { type: 'text/csv' })
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a'); a.href = url; a.download = `bedtime-report-${tab}-${today()}.csv`; a.click()
-        }} className="h-10 px-4 bg-[#16181d] text-white rounded-xl text-sm font-semibold hover:bg-[#2a2d34] active:scale-[.97] transition">
+        <button onClick={exportCsv} className="h-10 px-4 bg-[#16181d] text-white rounded-xl text-sm font-semibold hover:bg-[#2a2d34] active:scale-[.97] transition">
           Export CSV
         </button>
       </div>
@@ -171,7 +176,7 @@ export default function ReportsPage() {
 
       <div className="grid md:grid-cols-2 gap-5 mb-5">
         {/* Payment Breakdown */}
-        <Section title="Payment Breakdown" icon="">
+        <Section title="Payment Breakdown">
           <div className="space-y-3">
             {[
               { label: 'Cash', count: cashSales.length, amount: cashTotal, color: 'bg-gray-800', pct: totalRev ? (cashTotal / totalRev * 100) : 0 },
@@ -192,7 +197,7 @@ export default function ReportsPage() {
         </Section>
 
         {/* Sales Type Breakdown */}
-        <Section title="Sales Type" icon="">
+        <Section title="Sales Type">
           <div className="space-y-3">
             {[
               { label: 'Retail', count: retailSales.length, amount: retailSales.reduce((a, s) => a + s.total, 0), color: 'bg-gray-800' },
@@ -216,7 +221,7 @@ export default function ReportsPage() {
 
       <div className="grid md:grid-cols-2 gap-5 mb-5">
         {/* Top Selling Products */}
-        <Section title="Top Selling Products" icon="">
+        <Section title="Top Selling Products">
           {topProducts.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">No sales data</p> : (
             <div className="space-y-2.5">
               {topProducts.map((p, i) => (
@@ -238,7 +243,7 @@ export default function ReportsPage() {
         </Section>
 
         {/* Expense Breakdown */}
-        <Section title="Expense Categories" icon="">
+        <Section title="Expense Categories">
           {expCats.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">No expenses</p> : (
             <div className="space-y-2.5">
               {expCats.map((c, i) => (
@@ -261,7 +266,7 @@ export default function ReportsPage() {
 
       <div className="grid md:grid-cols-2 gap-5 mb-5">
         {/* Staff Performance */}
-        <Section title="Staff Performance" icon="">
+        <Section title="Staff Performance">
           {staffPerf.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">No data</p> : (
             <div className="space-y-2.5">
               {staffPerf.map((s, i) => (

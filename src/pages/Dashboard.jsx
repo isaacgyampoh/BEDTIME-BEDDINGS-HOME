@@ -1,20 +1,8 @@
 import { useStore } from '../hooks/useStore'
-import { useEffect, useState } from 'react'
-import toast from 'react-hot-toast'
-import { money, today, weekStartDate, monthStart, isoDate, fmtDate, ECOMMERCE_ENABLED } from '../lib/utils'
+import { money, today, weekStartDate, monthStart, isoDate } from '../lib/utils'
 
 export default function Dashboard() {
-  const { sales, expenses, products, customers, refunds, stockAdjustments, user, setPage, shopOpen, shopSettingLoaded, fetchShopOpen, setShopOpen } = useStore()
-  const [toggling, setToggling] = useState(false)
-  useEffect(() => { fetchShopOpen() }, [])
-  const onToggleShop = async () => {
-    setToggling(true)
-    const next = !shopOpen
-    const res = await setShopOpen(next)
-    setToggling(false)
-    if (res?.ok) toast.success(next ? 'Online shop is now OPEN' : 'Online shop is now CLOSED')
-    else toast.error('Could not save: ' + (res?.error || 'unknown error'))
-  }
+  const { sales, expenses, products, user } = useStore()
   const t = today(), ws = weekStartDate(), ms = monthStart()
 
   const todaySales = sales.filter(s => !s.voided && isoDate(s.date) === t)
@@ -29,28 +17,6 @@ export default function Dashboard() {
   const monthProfit = monthSales.reduce((a, s) => a + s.profit, 0)
   const todayExp = expenses.filter(e => isoDate(e.date) === t).reduce((a, e) => a + e.amount, 0)
   const monthExp = expenses.filter(e => isoDate(e.date) >= ms).reduce((a, e) => a + e.amount, 0)
-  const lowStock = products.filter(p => p.quantity <= 5)
-  const recentSales = sales.filter(s => !s.voided).slice(0, 6)
-
-  // Last 7 days trend
-  const last7 = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i)
-    const ds = d.toISOString().slice(0, 10)
-    const daySales = allSales.filter(s => isoDate(s.date) === ds)
-    const dayLabel = d.toLocaleDateString('en-GB', { weekday: 'short' })
-    last7.push({ label: dayLabel, date: ds, revenue: daySales.reduce((a, s) => a + s.total, 0), count: daySales.length })
-  }
-  const maxRev = Math.max(...last7.map(d => d.revenue), 1)
-
-  // Hourly distribution today
-  const hourMap = {}
-  todaySales.forEach(s => {
-    const h = new Date(s.date).getHours()
-    hourMap[h] = (hourMap[h] || 0) + 1
-  })
-  const maxHour = Math.max(...Object.values(hourMap), 1)
-
   // Payment split this month
   const monthCash = monthSales.filter(s => s.payment === 'Cash').reduce((a, s) => a + s.total, 0)
   const monthMomo = monthSales.filter(s => s.payment === 'Momo' || s.payment === 'Paystack').reduce((a, s) => a + s.total, 0)
@@ -61,7 +27,6 @@ export default function Dashboard() {
 
   // Stock value
   const stockValue = products.reduce((a, p) => a + p.price * p.quantity, 0)
-  const stockCost = products.reduce((a, p) => a + p.costPrice * p.quantity, 0)
 
   const greetHour = new Date().getHours()
   const greet = greetHour < 12 ? 'Good Morning' : greetHour < 17 ? 'Good Afternoon' : 'Good Evening'
@@ -74,26 +39,6 @@ export default function Dashboard() {
           <p className="text-gray-400 text-sm mt-1">Here's what's happening in your shop today</p>
         </div>
       </div>
-
-      {/* Online shop on/off */}
-      {ECOMMERCE_ENABLED && (<div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4 flex items-center gap-4">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${shopOpen ? 'bg-[#16181d]' : 'bg-gray-200'}`}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={shopOpen ? '#fff' : '#8a8d92'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18"/></svg>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[15px] font-bold text-gray-900">Online Shop</div>
-          <div className="text-[13px] text-gray-400">
-            {!shopSettingLoaded ? 'Checking…' : shopOpen ? 'Open — customers can order online' : 'Closed — customers see a "back soon" page'}
-          </div>
-        </div>
-        <button onClick={onToggleShop} disabled={toggling || !shopSettingLoaded}
-          className={`relative w-14 h-8 rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${shopOpen ? 'bg-[#16181d]' : 'bg-gray-300'}`}>
-          <span className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-all ${shopOpen ? 'left-7' : 'left-1'}`} />
-        </button>
-      </div>)}
-
-      {/* Alerts */}
-
 
       {/* Revenue Cards — Cleara style: light, airy, one teal feature card */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-3.5">

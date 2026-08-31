@@ -1,3 +1,14 @@
+-- ############################################################################
+-- SUPERSEDED by 018_cron_config.sql — do not run this file as-is.
+--
+-- The bearer token that used to be inline here was minted for a DIFFERENT
+-- Supabase project (a leftover from the previous brand), so these jobs
+-- authenticated with the wrong credential. 018 moves the key into
+-- private.app_config and reschedules every job through private.call_edge().
+--
+-- Kept only for reference / for the schedule times.
+-- ############################################################################
+
 -- ============================================================================
 -- EVERYTINROOM POS — CRON JOBS FOR SMS REPORTS
 -- Run AFTER the schema. Requires pg_cron + pg_net (enabled in Supabase Dashboard → Extensions)
@@ -5,7 +16,7 @@
 -- Go to: Supabase Dashboard → Database → Extensions → Enable pg_cron and pg_net
 -- Then run this SQL.
 --
--- IMPORTANT: Replace https://wqkgfvmvuljzexhevlnp.supabase.co and eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaWl1d2tvdm9vamtjd3p1cHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExOTQyMTcsImV4cCI6MjA4Njc3MDIxN30.Wpduc4qYawgVSWqMqKPaDWUXm0dp8A_z9IxOrVfqN7w below!
+-- IMPORTANT: Replace https://wqkgfvmvuljzexhevlnp.supabase.co and <SET private.app_config.service_key — SEE 018_cron_config.sql> below!
 -- ============================================================================
 
 -- Enable extensions if not already
@@ -19,7 +30,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/sms-reports?type=morning',
-    headers := '{"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaWl1d2tvdm9vamtjd3p1cHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExOTQyMTcsImV4cCI6MjA4Njc3MDIxN30.Wpduc4qYawgVSWqMqKPaDWUXm0dp8A_z9IxOrVfqN7w"}'::jsonb,
+    headers := '{"Authorization": "Bearer <SET private.app_config.service_key — SEE 018_cron_config.sql>"}'::jsonb,
     body := '{}'::jsonb
   );
   $$
@@ -32,7 +43,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/sms-reports?type=midday',
-    headers := '{"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaWl1d2tvdm9vamtjd3p1cHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExOTQyMTcsImV4cCI6MjA4Njc3MDIxN30.Wpduc4qYawgVSWqMqKPaDWUXm0dp8A_z9IxOrVfqN7w"}'::jsonb,
+    headers := '{"Authorization": "Bearer <SET private.app_config.service_key — SEE 018_cron_config.sql>"}'::jsonb,
     body := '{}'::jsonb
   );
   $$
@@ -45,7 +56,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/sms-reports?type=evening',
-    headers := '{"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaWl1d2tvdm9vamtjd3p1cHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExOTQyMTcsImV4cCI6MjA4Njc3MDIxN30.Wpduc4qYawgVSWqMqKPaDWUXm0dp8A_z9IxOrVfqN7w"}'::jsonb,
+    headers := '{"Authorization": "Bearer <SET private.app_config.service_key — SEE 018_cron_config.sql>"}'::jsonb,
     body := '{}'::jsonb
   );
   $$
@@ -58,7 +69,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/sms-reports?type=weekly',
-    headers := '{"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaWl1d2tvdm9vamtjd3p1cHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExOTQyMTcsImV4cCI6MjA4Njc3MDIxN30.Wpduc4qYawgVSWqMqKPaDWUXm0dp8A_z9IxOrVfqN7w"}'::jsonb,
+    headers := '{"Authorization": "Bearer <SET private.app_config.service_key — SEE 018_cron_config.sql>"}'::jsonb,
     body := '{}'::jsonb
   );
   $$
@@ -71,7 +82,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/sms-reports?type=monthly',
-    headers := '{"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaWl1d2tvdm9vamtjd3p1cHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExOTQyMTcsImV4cCI6MjA4Njc3MDIxN30.Wpduc4qYawgVSWqMqKPaDWUXm0dp8A_z9IxOrVfqN7w"}'::jsonb,
+    headers := '{"Authorization": "Bearer <SET private.app_config.service_key — SEE 018_cron_config.sql>"}'::jsonb,
     body := '{}'::jsonb
   );
   $$
@@ -84,7 +95,7 @@ SELECT cron.schedule(
   $$
   SELECT net.http_post(
     url := 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/sms-reports?type=lowstock',
-    headers := '{"Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5vaWl1d2tvdm9vamtjd3p1cHllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExOTQyMTcsImV4cCI6MjA4Njc3MDIxN30.Wpduc4qYawgVSWqMqKPaDWUXm0dp8A_z9IxOrVfqN7w"}'::jsonb,
+    headers := '{"Authorization": "Bearer <SET private.app_config.service_key — SEE 018_cron_config.sql>"}'::jsonb,
     body := '{}'::jsonb
   );
   $$

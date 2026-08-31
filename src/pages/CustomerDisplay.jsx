@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { getSupabase } from '../lib/supabase'
 import { money, thumb } from '../lib/utils'
-import { Logo, LogoFlat, LogoMark } from '../components/Logo'
+import { Logo, LogoFlat } from '../components/Logo'
 
 const EMPTY = { items: [], count: 0, subtotal: 0, total: 0, status: 'shopping', receiptNo: null }
 
@@ -82,7 +82,7 @@ export default function CustomerDisplay() {
     const chanName = reg ? `customer-display-${reg}` : 'customer-display'
     const ch = sb.channel(chanName, { config: { broadcast: { self: true } } })
     ch.on('broadcast', { event: 'state' }, ({ payload }) => {
-      setS(prev => ({ ...EMPTY, ...payload }))
+      setS(() => ({ ...EMPTY, ...payload }))
       if ((payload.count || 0) > prevCount.current) { setFlash(true); setTimeout(() => setFlash(false), 350) }
       prevCount.current = payload.count || 0
       if (payload.status === 'paid') {
@@ -97,6 +97,20 @@ export default function CustomerDisplay() {
   }, [])
 
   // ─── PAID / THANK YOU ───
+  // Derived here, and the idle timer with it, so that EVERY render path runs
+  // the same hooks in the same order. These used to sit below the `paid`
+  // early-return, so completing a sale dropped a hook and React threw
+  // "rendered fewer hooks than expected" — the customer screen crashed on
+  // every completed sale.
+  const empty = !s.items || s.items.length === 0
+
+  // Cycle the idle info panels, but only while the screen is idle (empty).
+  useEffect(() => {
+    if (!empty) { setIdleIdx(0); return }
+    const t = setInterval(() => setIdleIdx(i => (i + 1) % IDLE_PANELS.length), 5000)
+    return () => clearInterval(t)
+  }, [empty])
+
   if (s.status === 'paid') {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-[#16181d] text-white px-6 overflow-hidden">
@@ -115,15 +129,6 @@ export default function CustomerDisplay() {
   }
 
   // ─── SHOPPING / IDLE ───
-  const empty = !s.items || s.items.length === 0
-
-  // Cycle the idle info panels, but only while the screen is idle (empty).
-  useEffect(() => {
-    if (!empty) { setIdleIdx(0); return }
-    const t = setInterval(() => setIdleIdx(i => (i + 1) % IDLE_PANELS.length), 5000)
-    return () => clearInterval(t)
-  }, [empty])
-
   return (
     <div className="fixed inset-0 bg-white overflow-hidden">
       {!isFs && <button onClick={() => { try { document.documentElement.requestFullscreen({ navigationUI: 'hide' }) } catch {} }} className="fixed bottom-4 right-4 z-50 bg-black/70 text-white text-xs px-4 py-2 rounded-full hover:bg-black transition">Tap for fullscreen</button>}

@@ -13,7 +13,6 @@ let _id = 0
 const uid = () => `arc${++_id}`
 
 export function Logo({ height = 96, color = INK, accent = GOLD, tagline = false, className = '' }) {
-  const id = uid()
   // viewBox is wide; the arc path spans almost the full width so its arc-
   // length comfortably EXCEEDS the word — otherwise textPath clips the
   // letters that fall past the path ends (which was cutting the E and M).
@@ -23,6 +22,9 @@ export function Logo({ height = 96, color = INK, accent = GOLD, tagline = false,
   const pad = 24
   const arcPath = `M ${pad} ${arcY} Q ${cx} ${arcY - arcLift} ${W - pad} ${arcY}`
   const ruleY = arcY + 22
+  // Unique per instance: the <defs> path id is referenced by textPath below,
+  // and two logos on one page must not share an id.
+  const id = uid()
   return (
     <svg className={className} height={height} viewBox={`0 0 ${W} ${H}`} fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BEDTIME BEDDINGS & HOME">
       <defs><path id={id} d={arcPath} /></defs>
@@ -41,7 +43,6 @@ export function Logo({ height = 96, color = INK, accent = GOLD, tagline = false,
 }
 
 export function LogoFlat({ height = 44, color = INK, accent = GOLD, tagline = false, className = '' }) {
-  const id = uid()
   const W = 460, H = tagline ? 96 : 66
   const cx = W / 2
   const ruleY = 58

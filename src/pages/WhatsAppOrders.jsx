@@ -1,14 +1,14 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useStore } from '../hooks/useStore'
-import { getSupabase } from '../lib/supabase'
+import { getSupabase, callFunction } from '../lib/supabase'
 import { money, fmtDateTime, PAYMENTS_ENABLED } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { askText, askConfirm } from '../components/PromptDialog'
 
 export default function WhatsAppOrders() {
   const { waOrders, waFilter, setWAFilter, refreshWAOrders, user, setLoading, loadAll } = useStore()
   const [search, setSearch] = useState('')
-  const reconcileRef = useRef(false)
 
   // Auto-reconcile: check recent pending orders against NaloPay and confirm any
   // that actually paid (covers payments where NaloPay's callback never arrived).
@@ -17,8 +17,7 @@ export default function WhatsAppOrders() {
     if (!PAYMENTS_ENABLED) return
     const run = async () => {
       try {
-        const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=reconcile-payments', { method: 'POST' })
-        const j = await r.json()
+        const j = await callFunction('reconcile-payments')
         if (j?.confirmed > 0) { refreshWAOrders(); toast.success(`${j.confirmed} payment(s) confirmed`) }
       } catch {}
     }
@@ -47,21 +46,9 @@ export default function WhatsAppOrders() {
     : bySource
   const sorted = [...searched].sort((a, b) => new Date(b.date) - new Date(a.date))
 
-  const complete = async (id) => {
-    if (!confirm('Complete order? Stock will be deducted.')) return
-    setLoading(true, 'Completing...')
-    try {
-      const sb = getSupabase()
-      const { data, error } = await sb.rpc('complete_wa_order', { p_order_id: id, p_processed_by: user?.name || '' })
-      setLoading(false)
-      if (data?.success) { toast.success('Completed! ' + data.receiptNo); setSelected(null); loadAll() }
-      else toast.error(data?.error || error?.message || 'Error')
-    } catch (e) { setLoading(false); toast.error('Error') }
-  }
-
   // Manually confirm a payment the gateway didn't auto-confirm (customer showed proof).
   const markPaid = async (o) => {
-    if (!confirm(`Mark ${o.orderNo} as PAID? Only do this if you've CONFIRMED the payment was received (${money(o.total)}).`)) return
+    if (!(await askConfirm(`Mark ${o.orderNo} as PAID?`, `Only do this if you have CONFIRMED that ${money(o.total)} was received.`))) return
     setLoading(true, 'Marking paid...')
     try {
       const sb = getSupabase()
@@ -71,11 +58,11 @@ export default function WhatsAppOrders() {
       setLoading(false)
       if (error) { toast.error(error.message || 'Error'); return }
       toast.success('Marked as paid'); setSelected(null); refreshWAOrders()
-    } catch (e) { setLoading(false); toast.error('Error') }
+    } catch { setLoading(false); toast.error('Error') }
   }
 
   const cancel = async (id) => {
-    const reason = prompt('Reason for cancellation:')
+    const reason = await askText('Cancel this order', 'Reason for cancellation:')
     if (reason === null) return
     setLoading(true, 'Cancelling...')
     const sb = getSupabase()
@@ -87,55 +74,42 @@ export default function WhatsAppOrders() {
 
   const markPackaged = async (id) => {
     const sb = getSupabase()
-    
-    // Get the full order to create a sales record
-    const { data: orderData } = await sb.from('whatsapp_orders')
-      .select('*')
-      .eq('id', id)
-      .limit(1)
-    
+
+    const { data: orderData } = await sb.from('whatsapp_orders').select('*').eq('id', id).limit(1)
     const order = orderData?.[0]
-    
+    if (!order) { toast.error('Order not found'); return }
+
+    setLoading(true, 'Packaging...')
+
     // Update delivery status
-    await sb.from('whatsapp_orders').update({
+    const { error: upErr } = await sb.from('whatsapp_orders').update({
       delivery_status: 'Packaged',
       status: 'Completed',
       processed_by: user?.name || '',
       processed_at: new Date().toISOString(),
     }).eq('id', id)
+    if (upErr) { setLoading(false); toast.error('Could not update order: ' + upErr.message); return }
 
-    // Create a sales record if this is a paid order
-    if (order && (order.status === 'Paid' || order.status === 'Completed')) {
-      try {
-        let items = order.items
-        if (typeof items === 'string') items = JSON.parse(items)
-        
-        const saleTotal = Number(order.total) || 0
-        const receiptNo = order.order_no || 'WA-' + Date.now()
-        
-        await sb.from('sales').insert({
-          receipt_no: receiptNo,
-          date: order.paid_at || order.date || new Date().toISOString(),
-          items: items,
-          subtotal: Number(order.subtotal) || saleTotal,
-          discount: 0,
-          total: saleTotal,
-          profit: 0,
-          payment: 'Momo',
-          type: 'Retail',
-          customer: order.customer_phone || order.customer_name || '',
-          cashier: user?.name || 'Online',
-          voided: false,
-        })
-        console.log('Sales record created for:', receiptNo)
-      } catch (e) {
-        console.error('Failed to create sales record:', e)
+    // Record the sale for a paid order. complete_wa_order computes real profit
+    // from product cost and is idempotent, so packaging twice can no longer
+    // double-count the revenue the way the old hand-written insert did.
+    let recorded = false
+    if (order.status === 'Paid' || order.status === 'Completed') {
+      const receiptNo = order.order_no || ''
+      const { data: existing } = await sb.from('sales').select('id').eq('receipt_no', receiptNo).limit(1)
+      if (existing?.length) {
+        recorded = true // already has a sales row — nothing more to do
+      } else {
+        const { data, error } = await sb.rpc('complete_wa_order', { p_order_id: id, p_processed_by: user?.name || '' })
+        if (data?.success) recorded = true
+        else console.error('complete_wa_order failed:', data?.error || error?.message)
       }
     }
 
+    setLoading(false)
     setSelected(s => s ? { ...s, deliveryStatus: 'Packaged', status: 'Completed' } : s)
-    refreshWAOrders()
-    toast.success('Packaged — sales recorded')
+    loadAll()
+    toast.success(recorded ? 'Packaged — sale recorded' : 'Packaged')
   }
 
   const markDispatched = async (id, deliveryGuy) => {
@@ -151,7 +125,9 @@ export default function WhatsAppOrders() {
 
   const markPickedUp = async (id, method) => {
     const sb = getSupabase()
-    const who = method === 'self' ? 'Customer (Self Pickup)' : prompt('Rider/service name (e.g. Yango, Bolt):')
+    const who = method === 'self'
+      ? 'Customer (Self Pickup)'
+      : await askText('Picked up by', 'Rider or service name (e.g. Yango, Bolt):')
     if (!who) return
     await sb.from('whatsapp_orders').update({
       delivery_status: 'Picked Up',
@@ -581,6 +557,9 @@ export default function WhatsAppOrders() {
                   {o.ussdCode && <button onClick={() => { navigator.clipboard?.writeText(`*920*141*${o.ussdCode}#`); toast.success('USSD code copied!') }} className="flex-1 h-11 bg-gray-800 text-white rounded-xl text-sm font-semibold active:scale-[.98] transition">Copy USSD</button>}
                   <button onClick={() => cancel(o.id)} className="flex-1 h-11 bg-white text-red-500 rounded-xl text-sm font-semibold active:scale-[.98] transition border border-red-200">Cancel</button>
                 </div>
+                <button onClick={() => markPaid(o)} className="w-full h-11 bg-white border border-gray-300 text-gray-700 rounded-xl text-sm font-semibold active:scale-[.98] transition">
+                  Payment received — mark as Paid
+                </button>
               </div>
             )}
 
@@ -589,7 +568,7 @@ export default function WhatsAppOrders() {
 
                 {/* Step 1: Process & Package */}
                 {(!o.deliveryStatus || o.deliveryStatus === '') && o.status === 'Paid' && (
-                  <button onClick={() => { markPackaged(o.id); complete(o.id) }} className="w-full h-12 bg-gray-900 text-white rounded-xl text-sm font-bold active:scale-[.98] transition">Process & Package</button>
+                  <button onClick={() => markPackaged(o.id)} className="w-full h-12 bg-gray-900 text-white rounded-xl text-sm font-bold active:scale-[.98] transition">Process & Package</button>
                 )}
                 {(!o.deliveryStatus || o.deliveryStatus === '') && o.status === 'Completed' && (
                   <button onClick={() => markPackaged(o.id)} className="w-full h-12 bg-gray-900 text-white rounded-xl text-sm font-bold active:scale-[.98] transition">Mark as Packaged</button>
@@ -599,8 +578,8 @@ export default function WhatsAppOrders() {
                 {o.deliveryStatus === 'Packaged' && (
                   <>
                     <p className="text-[11px] text-gray-400 font-medium pt-1">How is this order leaving?</p>
-                    <button onClick={() => {
-                      const guy = prompt('Delivery person name:')
+                    <button onClick={async () => {
+                      const guy = await askText('Dispatch order', 'Delivery person name:')
                       if (guy) markDispatched(o.id, guy)
                     }} className="w-full h-11 bg-gray-900 text-white rounded-xl text-sm font-bold active:scale-[.98] transition">Send with our delivery</button>
                     <div className="flex gap-2">

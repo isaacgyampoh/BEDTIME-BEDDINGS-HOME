@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { useStore } from '../hooks/useStore'
-import { getSupabase } from '../lib/supabase'
+import { getSupabase, STORAGE_URL } from '../lib/supabase'
 import { money, num, thumb } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { adminDelete } from '../lib/adminActions'
 
 // Shrink an image file client-side to a max width, re-encoded as JPEG. Keeps
 // stored product photos small and uploads fast. Falls back to the original
@@ -36,13 +37,15 @@ export default function Products() {
   const [modal, setModal] = useState(false)
   const [form, setForm] = useState({ id: '', name: '', category: '', costPrice: '', price: '', wholesalePrice: '', wholesaleMinQty: '', quantity: '', groupTag: '', file: null, existingImage: '' })
   const [preview, setPreview] = useState('')
-  const [migrating, setMigrating] = useState(false)
   const [photoFilter, setPhotoFilter] = useState(false)
-  const filtered = products.filter(p => p.name.toLowerCase().includes(query.toLowerCase())).filter(p => !photoFilter || needsPhoto(p))
 
   // Old Cloudinary images are unrecoverable (account blocked); those products
   // need a fresh photo. This flags them so staff can work through re-uploads.
   const needsPhoto = (p) => !p.image || p.image.includes('res.cloudinary.com')
+
+  const filtered = products
+    .filter(p => (p.name || '').toLowerCase().includes(query.toLowerCase()))
+    .filter(p => !photoFilter || needsPhoto(p))
 
   const openNew = () => { setForm({ id: '', name: '', category: '', costPrice: '', price: '', wholesalePrice: '', wholesaleMinQty: '', quantity: '', groupTag: '', file: null, existingImage: '' }); setPreview(''); setModal(true) }
   const openEdit = (p) => { setForm({ id: p.id, name: p.name, category: p.category, costPrice: p.costPrice, price: p.price, wholesalePrice: p.wholesalePrice, wholesaleMinQty: p.wholesaleMinQty || '', quantity: p.quantity, groupTag: p.groupTag || '', file: null, existingImage: p.image }); setPreview(p.image || ''); setModal(true) }
@@ -63,14 +66,20 @@ export default function Products() {
         const path = `products/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
         const { error: upErr } = await sb.storage.from('product-images').upload(path, file, { cacheControl: '31536000', upsert: true, contentType: 'image/jpeg' })
         if (upErr) { toast.error('Upload failed: ' + (upErr.message || 'create a public "product-images" bucket in Supabase')); setLoading(false); return }
-        imageUrl = `https://wqkgfvmvuljzexhevlnp.supabase.co/storage/v1/object/public/product-images/${path}`
+        imageUrl = `${STORAGE_URL}/product-images/${path}`
       } catch (e) { console.error('Image upload failed:', e); toast.error('Image upload failed: ' + (e?.message || '')); setLoading(false); return }
     }
     const data = { name: form.name.trim(), category: form.category.trim(), cost_price: num(form.costPrice), price: num(form.price), wholesale_price: num(form.wholesalePrice), wholesale_min_qty: num(form.wholesaleMinQty), quantity: num(form.quantity), group_tag: form.groupTag.trim().toLowerCase(), image: imageUrl }
-    if (form.id) await sb.from('products').update(data).eq('id', form.id); else await sb.from('products').insert(data)
+    const { error } = form.id
+      ? await sb.from('products').update(data).eq('id', form.id)
+      : await sb.from('products').insert(data)
+    if (error) { setLoading(false); toast.error('Save failed: ' + error.message); return }
     await refreshProducts(); setLoading(false); setModal(false); toast.success('Saved!')
   }
-  const del = async (id) => { if (!confirm('Delete?')) return; setLoading(true); const sb = getSupabase(); await sb.from('products').delete().eq('id', id); await refreshProducts(); setLoading(false); toast.success('Deleted!') }
+  const del = async (p) => {
+    if (!(await adminDelete('products', p.id, p.name))) return
+    setLoading(true); await refreshProducts(); setLoading(false)
+  }
 
   return (
     <div >
@@ -79,12 +88,12 @@ export default function Products() {
         <input className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base mb-5" placeholder="Search..." value={query} onChange={e => setQuery(e.target.value)} />
         <div className="overflow-x-auto"><table className="w-full min-w-[600px]"><thead><tr><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Product</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Price</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Margin</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Stock</th><th className="p-3 bg-gray-50 text-[11px] font-bold text-gray-500 uppercase">Actions</th></tr></thead>
           <tbody>{filtered.map(p => (
-            <tr key={p.id} className="border-b border-gray-50"><td className="p-3"><div className="flex items-center gap-3"><div className={`w-11 h-11 bg-gray-100 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center text-xl ${needsPhoto(p) ? 'ring-2 ring-amber-400' : ''}`} title={needsPhoto(p) ? 'Needs a new photo' : ''}>{p.image ? <img src={thumb(p.image, 88)} alt="" className="w-full h-full object-cover" /> : ''}</div><div><b className="text-sm">{p.name}</b><br /><small className="text-gray-400">{p.category || '-'}</small></div></div></td><td className="p-3 font-bold text-sm">{money(p.price)}</td><td className="p-3 text-xs">{p.costPrice > 0 ? <span className={`font-bold ${((p.price - p.costPrice) / p.price * 100) >= 30 ? 'text-emerald-600' : ((p.price - p.costPrice) / p.price * 100) >= 15 ? 'text-amber-600' : 'text-red-500'}`}>{((p.price - p.costPrice) / p.price * 100).toFixed(0)}%</span> : <span className="text-stone-300">—</span>}</td><td className={`p-3 font-bold text-sm ${p.quantity === 0 ? 'text-red-500' : p.quantity <= 5 ? 'text-amber-500' : ''}`}>{p.quantity}</td><td className="p-3"><div className="flex gap-2 justify-center"><button onClick={() => openEdit(p)} className="h-9 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-100 transition">Edit</button><button onClick={() => del(p.id)} className="h-9 px-3 bg-[#c0492f] text-white rounded-lg text-xs font-medium hover:bg-[#a83d27] transition">Delete</button></div></td></tr>
+            <tr key={p.id} className="border-b border-gray-50"><td className="p-3"><div className="flex items-center gap-3"><div className={`w-11 h-11 bg-gray-100 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center text-xl ${needsPhoto(p) ? 'ring-2 ring-amber-400' : ''}`} title={needsPhoto(p) ? 'Needs a new photo' : ''}>{p.image ? <img src={thumb(p.image, 88)} alt="" className="w-full h-full object-cover" /> : ''}</div><div><b className="text-sm">{p.name}</b><br /><small className="text-gray-400">{p.category || '-'}</small></div></div></td><td className="p-3 font-bold text-sm">{money(p.price)}</td><td className="p-3 text-xs">{p.costPrice > 0 ? <span className={`font-bold ${((p.price - p.costPrice) / p.price * 100) >= 30 ? 'text-emerald-600' : ((p.price - p.costPrice) / p.price * 100) >= 15 ? 'text-amber-600' : 'text-red-500'}`}>{((p.price - p.costPrice) / p.price * 100).toFixed(0)}%</span> : <span className="text-stone-300">—</span>}</td><td className={`p-3 font-bold text-sm ${p.quantity === 0 ? 'text-red-500' : p.quantity <= 5 ? 'text-amber-500' : ''}`}>{p.quantity}</td><td className="p-3"><div className="flex gap-2 justify-center"><button onClick={() => openEdit(p)} className="h-9 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-100 transition">Edit</button><button onClick={() => del(p)} className="h-9 px-3 bg-[#c0492f] text-white rounded-lg text-xs font-medium hover:bg-[#a83d27] transition">Delete</button></div></td></tr>
           ))}</tbody></table></div>
       </div>
       <Modal open={modal} onClose={() => setModal(false)} title={form.id ? 'Edit Product' : 'Add Product'} footer={<><button onClick={() => setModal(false)} className="h-12 px-5 border border-stone-300 rounded-xl text-sm font-semibold text-stone-600">Cancel</button><button onClick={save} className="flex-1 h-12 bg-gray-700 text-white rounded-xl text-sm font-bold">Save</button></>}>
         <div className="space-y-4">
-          <div><label className="block text-xs font-semibold text-gray-500 mb-2">Product Image</label><div className="flex items-center gap-4"><div className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center text-3xl flex-shrink-0">{preview ? <img src={thumb(preview, 160)} alt="" className="w-full h-full object-cover" /> : ''}</div><div className="flex-1"><input type="file" accept="image/*" className="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-600" onChange={handleFile} /><p className="text-xs text-gray-400 mt-1">JPG, PNG up to 5MB</p></div></div></div>
+          <div><label className="block text-xs font-semibold text-gray-500 mb-2">Product Image</label><div className="flex items-center gap-4"><div className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center text-3xl flex-shrink-0">{preview ? <img src={thumb(preview, 160)} alt="" className="w-full h-full object-cover" /> : ''}</div><div className="flex-1"><input type="file" accept="image/*" className="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-600" onChange={handleFile} /><p className="text-xs text-gray-400 mt-1">JPG, PNG up to 15MB</p></div></div></div>
           <div><label className="block text-xs font-semibold text-gray-500 mb-2">Name</label><input className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
           <div><label className="block text-xs font-semibold text-gray-500 mb-2">Category</label><select className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base appearance-none" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}><option value="">Select category...</option>{['Curtains','Kitchenware','Cookware Sets','Racks','Rods','Chairs','Carpets','Home Appliances','Blankets','Bed Sheets','Mats','Pillows','Towels & Covers','Artefacts & Decor','Other'].map(c => <option key={c} value={c}>{c}</option>)}</select></div>
           <div className="grid grid-cols-2 gap-3.5"><div><label className="block text-xs font-semibold text-gray-500 mb-2">Cost</label><input type="number" className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base" value={form.costPrice} onChange={e => setForm({ ...form, costPrice: e.target.value })} /></div><div><label className="block text-xs font-semibold text-gray-500 mb-2">Price</label><input type="number" className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></div></div>

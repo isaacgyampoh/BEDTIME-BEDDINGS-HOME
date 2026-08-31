@@ -177,3 +177,105 @@ body.dark .border-violet-100,body.dark .border-violet-200 { border-color: rgba(1
 @media (min-width: 768px) {
   .content-shell { margin-left: var(--sidebar-w, 68px); transition: margin-left 0.2s; }
 }
+
+/* ════════════════════════════════════════════════════════════
+   TOUCH POS TERMINALS
+   Applied when usePosMode() stamps data-pos="touch" on <html>:
+   a large landscape screen driven by finger, with no hover and
+   usually no physical keyboard. It reports a desktop viewport, so
+   none of the `md:` breakpoints catch it — these rules do.
+   ════════════════════════════════════════════════════════════ */
+
+/* Never let a stray double-tap select label text on a till. */
+[data-pos="touch"] button,
+[data-pos="touch"] [role="button"],
+[data-pos="touch"] label,
+[data-pos="touch"] th {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Kill the grey flash iOS/Android paint over tapped controls. */
+[data-pos="touch"] { -webkit-tap-highlight-color: transparent; }
+
+/* Remove the ~300ms tap delay and stop double-tap zoom on controls. */
+[data-pos="touch"] button,
+[data-pos="touch"] a,
+[data-pos="touch"] input,
+[data-pos="touch"] select,
+[data-pos="touch"] textarea { touch-action: manipulation; }
+
+/* ---- Minimum tap targets -------------------------------------------------
+   The app is full of h-7/h-8/h-9 controls (28-36px). That is fine for a
+   mouse and miss-prone for a fingertip; the cart quantity steppers were
+   32px and are pressed on every single sale. Scoped to real controls so
+   non-interactive elements using the same utilities are untouched. */
+[data-pos="touch"] button.h-7,
+[data-pos="touch"] button.h-8,
+[data-pos="touch"] button.h-9,
+[data-pos="touch"] button.h-10,
+[data-pos="touch"] a.h-8,
+[data-pos="touch"] a.h-9 { min-height: 46px; }
+
+[data-pos="touch"] button.w-7,
+[data-pos="touch"] button.w-8,
+[data-pos="touch"] button.w-9,
+[data-pos="touch"] button.w-10 { min-width: 46px; }
+
+/* Form controls need the same reach. */
+[data-pos="touch"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+[data-pos="touch"] select,
+[data-pos="touch"] textarea { min-height: 48px; font-size: 16px; }
+
+[data-pos="touch"] input[type="checkbox"],
+[data-pos="touch"] input[type="radio"] { width: 26px; height: 26px; }
+
+/* ---- Legibility at arm's length ----------------------------------------
+   A till screen is read from ~60cm, not ~40cm. Lift the smallest type;
+   10px is genuinely hard to read across a counter. */
+[data-pos="touch"] { font-size: 16px; }
+[data-pos="touch"] .text-\[10px\] { font-size: 11.5px; }
+[data-pos="touch"] .text-\[11px\] { font-size: 12.5px; }
+[data-pos="touch"] .text-\[9px\]  { font-size: 11px; }
+[data-pos="touch"] .text-xs       { font-size: 13px; }
+
+/* ---- Denser vertical rhythm on short screens ---------------------------
+   1024x768 and 1366x768 are the common POS panels. After the 64px sidebar
+   header and page padding there is little height left, so trim the big
+   page margins rather than making the operator scroll for the Pay button. */
+@media (max-height: 820px) {
+  [data-pos="touch"] .content-shell > div { padding-top: 12px; padding-bottom: 12px; }
+  [data-pos="touch"] h1 { font-size: 20px; }
+}
+
+/* Comfortable rows in the data tables. */
+[data-pos="touch"] table td { padding-top: 14px; padding-bottom: 14px; }
+
+/* Momentum scrolling inside panes, and no rubber-band on the page itself. */
+[data-pos="touch"] { overscroll-behavior: none; }
+[data-pos="touch"] .overflow-y-auto,
+[data-pos="touch"] .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+/* A modal should be able to use the full short screen. */
+[data-pos="touch"] .pos-modal { max-height: 94vh; }
+
+/* Hover-only reveals are unreachable without a pointer: show the tooltip
+   bubbles at full contrast only while the sidebar is collapsed AND the
+   machine can hover. On touch they stay hidden and the labels are used. */
+@media (hover: none) {
+  .group-hover\:opacity-100 { opacity: 0 !important; }
+}
+
+/* Wide tables scroll sideways. With a mouse the scrollbar says so; on a touch
+   terminal there is no visible cue, so fade the right edge while more content
+   remains to be scrolled to. */
+[data-pos="touch"] .overflow-x-auto {
+  scroll-snap-type: none;
+  background:
+    linear-gradient(to right, transparent 88%, rgba(0,0,0,.05)) right / 36px 100% no-repeat local;
+}
+body.dark[data-pos="touch"] .overflow-x-auto,
+[data-pos="touch"] body.dark .overflow-x-auto {
+  background:
+    linear-gradient(to right, transparent 88%, rgba(255,255,255,.06)) right / 36px 100% no-repeat local;
+}

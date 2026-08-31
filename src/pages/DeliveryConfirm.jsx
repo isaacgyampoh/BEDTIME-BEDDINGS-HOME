@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getSupabase } from '../lib/supabase'
-import { fmtDateTime } from '../lib/utils'
+import {  } from '../lib/utils'
 import { LogoFlat } from '../components/Logo'
 
 export default function DeliveryConfirm() {
@@ -28,13 +28,18 @@ export default function DeliveryConfirm() {
     if (!deliveryGuy.trim()) return
     setConfirming(true)
     const sb = getSupabase()
-    await sb.from('whatsapp_orders').update({
+    // This page is reachable by anyone holding the delivery link, so it must
+    // not be able to close out an order that was never paid for. Record the
+    // delivery either way; only advance `status` when payment already landed.
+    const paid = order?.status === 'Paid' || order?.status === 'Completed' || !!order?.paid_at
+    const { error } = await sb.from('whatsapp_orders').update({
       delivery_status: 'Delivered',
       delivery_guy: deliveryGuy.trim(),
       delivered_at: new Date().toISOString(),
       delivery_notes: notes.trim(),
-      status: 'Completed',
+      ...(paid ? { status: 'Completed' } : {}),
     }).eq('id', orderId)
+    if (error) { setConfirming(false); alert('Could not save. Please check your connection and try again.'); return }
     setDone(true)
     setConfirming(false)
     // Auto-close tab after 3 seconds

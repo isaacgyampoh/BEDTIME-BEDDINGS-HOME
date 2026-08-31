@@ -8,9 +8,13 @@ const MNOTIFY_API_KEY = Deno.env.get('MNOTIFY_KEY') || ''
 const MNOTIFY_SENDER_ID = 'BEDTIMEHOME'
 const SHOP = 'BEDTIME BEDDINGS & HOME'
 
-const NALOPAY_MERCHANT_ID = Deno.env.get('NALOPAY_MERCHANT_ID') || 'eaVmgPywA9EvkrNVjW8o8Y'
-const NALOPAY_API_KEY = Deno.env.get('NALOPAY_API_KEY') || 'efb02f2a34ee4f9f4a84b7932cfa0e47fd73468a659863396fd29223095e9bf5'
-const NALOPAY_AUTH = Deno.env.get('NALOPAY_AUTH_HEADER') || 'Basic 773c828e75f02a1c7988ccff2db58c18d8b1758a364840d2cb5a78323077bb4eb5c3ce25b512466bacec28d4a4ddf4ac4cd1287e1fe0fc97686d464920319a14'
+// SECURITY: never inline live payment credentials as fallbacks — this file is
+// in version control. Set these as Supabase function secrets:
+//   supabase secrets set NALOPAY_MERCHANT_ID=... NALOPAY_API_KEY=... NALOPAY_AUTH_HEADER=...
+// The guards below already treat an empty value as "NaloPay not configured".
+const NALOPAY_MERCHANT_ID = Deno.env.get('NALOPAY_MERCHANT_ID') || ''
+const NALOPAY_API_KEY = Deno.env.get('NALOPAY_API_KEY') || ''
+const NALOPAY_AUTH = Deno.env.get('NALOPAY_AUTH_HEADER') || ''
 const NALOPAY_TOKEN_URL = 'https://api.nalopay.com/clientapi/generate-payment-token/'
 const NALOPAY_COLLECTION_URL = 'https://api.nalopay.com/clientapi/collection/'
 
@@ -32,6 +36,23 @@ function moolreChannel(phone: string): string {
   return '7' // AT
 }
 
+// Shared secret appended to every callback URL we hand the payment providers.
+// While unset, callbacks stay open (existing behaviour) and a warning is logged.
+const CALLBACK_SECRET = Deno.env.get('PAYMENT_CALLBACK_SECRET') || ''
+
+function callbackAuthorised(url: URL, req: Request): boolean {
+  if (!CALLBACK_SECRET) {
+    console.warn('SECURITY: PAYMENT_CALLBACK_SECRET is not set — payment callbacks are unauthenticated and anyone who knows this URL can mark an order Paid.')
+    return true
+  }
+  const provided = url.searchParams.get('s') || req.headers.get('x-callback-secret') || ''
+  if (provided.length !== CALLBACK_SECRET.length) return false
+  // Constant-time compare so the secret can't be recovered by timing.
+  let diff = 0
+  for (let i = 0; i < CALLBACK_SECRET.length; i++) diff |= provided.charCodeAt(i) ^ CALLBACK_SECRET.charCodeAt(i)
+  return diff === 0
+}
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -39,11 +60,32 @@ const CORS = {
   'Content-Type': 'application/json',
 }
 
-async function sendSMS(to: string, message: string) {
+async function sendSMS(to: string, message: string, kind = 'generic') {
   if (!MNOTIFY_API_KEY) return
   const recipients = to.split(',').map(r => r.trim())
   for (const recipient of recipients) {
     const phone = recipient.replace(/\s+/g, '').replace(/^0/, '233')
+
+    // Rate limit BEFORE spending money. These actions are reachable by an
+    // unauthenticated POST, so without this anyone who knows the URL can run
+    // up the SMS bill or flood a customer's phone. claim_sms is atomic and
+    // records the send, so a false result means "already at the limit".
+    try {
+      const gate = createClient(SUPABASE_URL, SUPABASE_KEY)
+      const { data: allowed, error: gateErr } = await gate.rpc('claim_sms', { p_phone: phone, p_kind: kind })
+      if (gateErr) {
+        console.error('claim_sms failed, refusing to send:', gateErr.message)
+        continue
+      }
+      if (!allowed?.allowed) {
+        console.warn(`SMS to ${phone} blocked: ${allowed?.reason}`)
+        continue
+      }
+    } catch (e) {
+      console.error('SMS rate-limit check threw, refusing to send:', e)
+      continue
+    }
+
     try {
       const res = await fetch(`https://api.mnotify.com/api/sms/quick?key=${MNOTIFY_API_KEY}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -229,7 +271,7 @@ serve(async (req) => {
         // OTP removal on the account.
         let fp = phone.replace(/\s+/g, '').replace(/^0/, '233').replace(/^\+/, ''); if (!fp.startsWith('233')) fp = '233' + fp
         const ref = `USSD-${order.ussd_code}-${Date.now().toString(36).toUpperCase()}`; const num = fp.replace('233', ''); const naloPhone = '0' + num; const network = detectGhanaNetwork(naloPhone)
-        const callbackUrl = `https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=nalopay-callback`
+        const callbackUrl = `${SUPABASE_URL}/functions/v1/super-service?action=nalopay-callback` + (CALLBACK_SECRET ? `&s=${encodeURIComponent(CALLBACK_SECRET)}` : '')
         try {
           console.log(`NaloPay charge (USSD): phone=${naloPhone} amount=${total} network=${network} ref=${ref}`)
           const result = await nalopayCharge({ phone: naloPhone, amount: order.total, network, reference: ref, accountName: order.customer_name || 'Customer', description: `Order ${order.order_no}`, callbackUrl })
@@ -246,6 +288,10 @@ serve(async (req) => {
 
     // ==================== NALOPAY CALLBACK (FIXED — handles JSON, form data, query params) ====================
     if (action === 'nalopay-callback') {
+      if (!callbackAuthorised(url, req)) {
+        console.error('Rejected unauthenticated nalopay-callback')
+        return new Response(JSON.stringify({ error: 'unauthorised' }), { status: 401, headers: CORS })
+      }
       let body: any = {}
       const rawBody = await req.text()
       console.log('NALOPAY CALLBACK RAW TEXT:', rawBody.substring(0, 500))
@@ -301,6 +347,10 @@ serve(async (req) => {
     }
 
     if (action === 'hubtel-callback') {
+      if (!callbackAuthorised(url, req)) {
+        console.error('Rejected unauthenticated hubtel-callback')
+        return new Response(JSON.stringify({ error: 'unauthorised' }), { status: 401, headers: CORS })
+      }
       const body = await req.json(); const supabase = createClient(SUPABASE_URL, SUPABASE_KEY); const ADMIN_PHONES = '0599084552'
       const ref = body.ClientReference || body.Data?.ClientReference || ''; const status = body.ResponseCode || body.Data?.ResponseCode || ''
       if (status === '0000' && ref) { const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single(); if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: new Date().toISOString() }).eq('id', o.id); const amount = Number(o.total).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`) } catch {} } } }
@@ -383,7 +433,7 @@ serve(async (req) => {
       let naloPhone = String(phone).replace(/\s+/g, '').replace(/^\+/, '').replace(/^0/, '233'); if (!naloPhone.startsWith('233')) naloPhone = '233' + naloPhone
       const net = (network as 'MTN' | 'AT' | 'TELECEL') || detectGhanaNetwork(naloPhone)
       const ref = body.reference || `ETR-WEB-${Date.now().toString(36).toUpperCase()}`
-      const callbackUrl = `https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=nalopay-callback`
+      const callbackUrl = `${SUPABASE_URL}/functions/v1/super-service?action=nalopay-callback` + (CALLBACK_SECRET ? `&s=${encodeURIComponent(CALLBACK_SECRET)}` : '')
       const result = await nalopayCharge({ phone: naloPhone, amount: Number(amount), network: net, reference: ref, accountName: customerName || 'Customer', description: description || `Order ${orderNo || ref}`, callbackUrl })
       if (!result.success) return new Response(JSON.stringify({ success: false, error: result.error || 'Charge failed', reference: ref }), { headers: CORS })
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -660,6 +710,10 @@ serve(async (req) => {
     // Moolre POSTs here when a collection completes. Marks the order Paid and
     // sends the existing confirmation SMS. Mirrors the nalopay-callback shape.
     if (action === 'moolre-callback') {
+      if (!callbackAuthorised(url, req)) {
+        console.error('Rejected unauthenticated moolre-callback')
+        return new Response(JSON.stringify({ error: 'unauthorised' }), { status: 401, headers: CORS })
+      }
       let body: any = {}
       const rawBody = await req.text()
       console.log('MOOLRE CALLBACK RAW:', rawBody.substring(0, 500))

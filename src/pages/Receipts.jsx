@@ -5,7 +5,12 @@ import { money, fmtDate } from '../lib/utils'
 export default function Receipts({ onPrintReceipt }) {
   const { sales } = useStore()
   const [query, setQuery] = useState('')
-  const filtered = sales.filter(s => s.receiptNo.toLowerCase().includes(query.toLowerCase()) || s.customer.toLowerCase().includes(query.toLowerCase()) || s.cashier.toLowerCase().includes(query.toLowerCase())).slice(0, 50)
+  const q = query.toLowerCase()
+  const filtered = sales.filter(s =>
+    (s.receiptNo || '').toLowerCase().includes(q) ||
+    (s.customer || '').toLowerCase().includes(q) ||
+    (s.cashier || '').toLowerCase().includes(q)
+  ).slice(0, 50)
 
   return (
     <div >

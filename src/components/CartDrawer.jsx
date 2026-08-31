@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../hooks/useStore'
-import { getSupabase } from '../lib/supabase'
+import { getSupabase, callFunction } from '../lib/supabase'
 import { money, num, PAYMENTS_ENABLED } from '../lib/utils'
 import { broadcastDisplay } from '../hooks/useCustomerDisplay'
 import Modal from './Modal'
+import NumField from './NumField'
 import toast from 'react-hot-toast'
+import { askConfirm } from './PromptDialog'
 
-const CHARGE_URL = 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service'
 
 export default function CartDrawer({ open, onClose, onReceipt }) {
-  const { cart, updateCartQty, removeFromCart, clearCart, deductStock, user, mode, products } = useStore()
+  const { cart, updateCartQty, removeFromCart, clearCart, deductStock, user, mode } = useStore()
   const [discount, setDiscount] = useState(0)
   const [phone, setPhone] = useState('')
   const [isWhatsApp, setIsWhatsApp] = useState(false)
@@ -34,7 +35,9 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
   const autoCloseRef = useRef(null)
 
   const sub = cart.reduce((a, c) => a + c.lineTotal, 0)
-  const total = Math.max(0, sub - num(discount))
+  // Clamp to [0, sub]: a negative discount would otherwise inflate the total.
+  const discountValue = Math.min(Math.max(0, num(discount)), sub)
+  const total = sub - discountValue
   const cnt = cart.reduce((a, c) => a + c.qty, 0)
   const splitRemainder = total - num(splitCash)
   const phoneValid = phone.trim().length >= 9
@@ -59,15 +62,20 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
     try {
       const { data, error } = await sb.rpc('record_sale', {
         p_items: cart, p_customer: phone.trim(), p_payment: paymentMethod,
-        p_discount: num(discount), p_type: mode === 'wholesale' ? 'Wholesale' : 'Retail', p_cashier: user?.name || '',
+        p_discount: discountValue, p_type: mode === 'wholesale' ? 'Wholesale' : 'Retail', p_cashier: user?.name || '',
+        // Passed straight in: `sales` is append-only for the app now, so the
+        // old follow-up UPDATE would silently do nothing.
+        p_split_cash: num(extraData.splitCash), p_split_momo: num(extraData.splitMomo),
       })
       if (data?.success) {
-        if (extraData.splitCash !== undefined) {
-          await sb.from('sales').update({ split_cash: num(extraData.splitCash), split_momo: num(extraData.splitMomo) }).eq('receipt_no', data.receiptNo)
-        }
         deductStock(cart)
         return { receiptNo: data.receiptNo, date: new Date().toISOString(), customer: phone.trim(), cashier: user?.name || '', payment: paymentMethod, type: mode === 'wholesale' ? 'Wholesale' : 'Retail', items: cart, total: data.total, discount: data.discount, splitCash: extraData.splitCash, splitMomo: extraData.splitMomo }
-      } else { toast.error(data?.error || error?.message || 'Error'); return null }
+      } else {
+        // record_sale now rejects a stale cart or insufficient stock with a
+        // message meant for the cashier — show it rather than a generic error.
+        toast.error(data?.error || error?.message || 'Could not record the sale')
+        return null
+      }
     } catch (e) { toast.error('Error: ' + e.message); return null }
   }
 
@@ -96,11 +104,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
     if (!moolreCtx || !otpValue.trim()) return
     setOtpSubmitting(true)
     try {
-      const mr = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=moolre-charge', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: moolreCtx.phone, amount: moolreCtx.amount, orderNo: moolreCtx.orderNo, externalref: moolreCtx.externalref || moolreCtx.orderNo, otpcode: otpValue.trim() })
-      })
-      const mj = await mr.json()
+      const mj = await callFunction('moolre-charge', { phone: moolreCtx.phone, amount: moolreCtx.amount, orderNo: moolreCtx.orderNo, externalref: moolreCtx.externalref || moolreCtx.orderNo, otpcode: otpValue.trim() })
       if (mj.success) {
         toast.success('Payment prompt sent to customer')
         setMomoStep('waiting')
@@ -110,24 +114,38 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       } else {
         toast.error(mj.error || 'OTP verification failed')
       }
-    } catch (e) {
+    } catch {
       toast.error('Network error verifying OTP')
     } finally { setOtpSubmitting(false) }
   }
 
   const holdCart = () => {
     if (!cart.length) return
-    setHeldCarts(prev => [...prev, { id: Date.now(), items: [...cart], phone: phone.trim(), discount: num(discount), time: new Date().toLocaleTimeString() }])
+    setHeldCarts(prev => [...prev, { id: Date.now(), items: [...cart], phone: phone.trim(), discount: discountValue, time: new Date().toLocaleTimeString() }])
     clearCart(); setDiscount(0); setPhone(''); toast.success('Cart held!')
   }
 
-  const recallCart = (held) => {
-    if (cart.length && !confirm('Replace current cart?')) return
+  const recallCart = async (held) => {
+    if (cart.length && !(await askConfirm('Replace current cart?', 'The items now in the cart will be cleared.'))) return
     clearCart()
-    const { addToCart } = useStore.getState()
-    for (const item of held.items) { for (let i = 0; i < item.qty; i++) addToCart({ ...item, qty: undefined, lineTotal: undefined }) }
+    const { addToCart, updateCartQty } = useStore.getState()
+    let short = false
+    for (const item of held.items) {
+      if (!addToCart({ ...item, qty: undefined, lineTotal: undefined })) { short = true; continue }
+      // Top the line back up to the held quantity. Look the index up by id
+      // rather than assuming the line was appended, since addToCart merges
+      // into an existing line when the same product is already in the cart.
+      const idx = useStore.getState().cart.findIndex(c =>
+        item.isBundle ? c.bundleId === item.bundleId : c.productId === item.productId)
+      if (idx < 0) { short = true; continue }
+      for (let q = 1; q < item.qty; q++) {
+        if (updateCartQty(idx, 1) === false) { short = true; break }
+      }
+    }
     setPhone(held.phone || ''); setDiscount(held.discount || 0)
-    setHeldCarts(prev => prev.filter(h => h.id !== held.id)); setShowHeld(false); toast.success('Cart recalled!')
+    setHeldCarts(prev => prev.filter(h => h.id !== held.id)); setShowHeld(false)
+    if (short) toast('Cart recalled — some items had less stock than when held')
+    else toast.success('Cart recalled!')
   }
 
   const deleteHeld = (id) => { setHeldCarts(prev => prev.filter(h => h.id !== id)) }
@@ -187,11 +205,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       if (insErr || !inserted?.id) { setMomoStep('failed'); setMomoMessage('Could not create order: ' + (insErr?.message || '')); setProcessing(false); return }
       setPromptOrderId(inserted.id)
 
-      const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=nalopay-charge', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phone.trim(), amount, reference: ref, orderNo: ref, orderId: inserted.id, customerName: 'Customer', description: 'POS sale ' + ref })
-      })
-      const j = await r.json()
+      const j = await callFunction('nalopay-charge', { phone: phone.trim(), amount, reference: ref, orderNo: ref, orderId: inserted.id, customerName: 'Customer', description: 'POS sale ' + ref })
       if (!j.success) { setMomoStep('failed'); setMomoMessage(j.error || 'Could not send prompt. Try again.'); setProcessing(false); return }
       setWaitMode('prompt')
       setMomoStep('waiting')
@@ -210,7 +224,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
           if (st === 'Paid' || st === 'Completed') {
             clearInterval(pollRef.current)
             const saleData = await recordSale(isSplit ? 'Split' : 'Momo', isSplit ? { splitCash: num(splitCash), splitMomo: amount } : {})
-            try { fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=thankyou-sms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone.trim() }) }) } catch {}
+            try { callFunction('thankyou-sms', { phone: phone.trim() }) } catch {}
             if (saleData) { toast.success('Paid! ' + saleData.receiptNo); finishSale(saleData) }
           }
         } catch {}
@@ -228,18 +242,25 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       const orderNo = (isWhatsApp ? 'WA-' : 'POS-') + Date.now().toString(36).toUpperCase()
       const items = cart.map(c => ({ name: c.name, qty: c.qty, price: c.price, lineTotal: c.lineTotal }))
       
-      // Get next USSD code
-      const { data: mc } = await sb.from('whatsapp_orders').select('ussd_code').order('ussd_code', { ascending: false }).limit(1)
-      const uc = (mc?.[0]?.ussd_code || 0) + 1
-
-      // Create order
-      await sb.from('whatsapp_orders').insert({
+      // Let the database assign the USSD code. `ussd_code_seq` + the
+      // trg_assign_ussd_code trigger already do this atomically; the old
+      // client-side "max + 1" handed two simultaneous cashiers the same code,
+      // so one customer's payment landed on the other's order.
+      const { data: created, error: insErr } = await sb.from('whatsapp_orders').insert({
         order_no: orderNo, date: new Date().toISOString(),
         customer_name: phone.trim(), customer_phone: phone.trim(),
         items: JSON.stringify(items), subtotal: total, total: amount,
         notes: isSplit ? `Split: Cash ${money(num(splitCash))}, USSD ${money(amount)}` : (isWhatsApp ? 'WhatsApp order' : 'POS USSD Payment'),
-        status: 'Pending', ussd_code: uc, paystack_ref: orderNo, source: isWhatsApp ? 'whatsapp' : 'walkin', details_filled: false,
-      })
+        status: 'Pending', paystack_ref: orderNo, source: isWhatsApp ? 'whatsapp' : 'walkin', details_filled: false,
+      }).select('ussd_code').single()
+
+      if (insErr || !created?.ussd_code) {
+        setMomoStep('failed')
+        setMomoMessage('Could not create the order: ' + (insErr?.message || 'no payment code was assigned'))
+        setProcessing(false)
+        return
+      }
+      const uc = created.ussd_code
 
       // USSD code SMS is PAUSED for now — it delayed the cashier at the counter.
       // Walk-in: cashier reads the code aloud from the screen.
@@ -248,11 +269,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       let smsOk = false
       if (localStorage.getItem('ussd-sms') === '1') {
         try {
-          const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=send-ussd-code', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderNo })
-          })
-          const j = await r.json(); smsOk = !!j.success
+          const j = await callFunction('send-ussd-code', { orderNo }); smsOk = !!j.success
         } catch {}
       }
 
@@ -262,18 +279,14 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       // Moolre again later, set localStorage 'use-moolre' = '1'.
       let moolrePrompt = false
       let moolreOtp = false
-      let moolreError = ''
       let moolreRef = orderNo
       if (!isWhatsApp && localStorage.getItem('use-moolre') === '1') {
         try {
-          const mr = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=moolre-charge', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone: phone.trim(), amount, orderNo, externalref: orderNo })
-          })
-          const mj = await mr.json(); moolrePrompt = !!mj.success; moolreOtp = !!mj.otpRequired
+          const mj = await callFunction('moolre-charge', { phone: phone.trim(), amount, orderNo, externalref: orderNo })
+          moolrePrompt = !!mj.success; moolreOtp = !!mj.otpRequired
           if (mj.reference) moolreRef = mj.reference
-          if (!moolrePrompt && !moolreOtp) { moolreError = mj.error || 'unknown'; console.warn('Moolre charge failed:', mj.error) }
-        } catch (e) { moolreError = String(e); console.warn('Moolre charge error:', e) }
+          if (!moolrePrompt && !moolreOtp) console.warn('Moolre charge failed:', mj.error)
+        } catch (e) { console.warn('Moolre charge error:', e) }
       }
 
       // OTP required: stash what we need and show the OTP entry step.
@@ -281,7 +294,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
         setMoolreCtx({ phone: phone.trim(), amount, orderNo, uc, externalref: moolreRef })
         setOtpValue('')
         setMomoStep('otp')
-        setMomoMessage(`An OTP was sent by SMS to ${phone.trim()}.\nEnter the code the customer received to complete the GHS ${money(amount)} payment.`)
+        setMomoMessage(`An OTP was sent by SMS to ${phone.trim()}.\nEnter the code the customer received to complete the ${money(amount)} payment.`)
         // keep polling too, in case the callback confirms independently
         if (pollRef.current) clearInterval(pollRef.current)
         pollRef.current = setInterval(async () => {
@@ -308,7 +321,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       // delivery-details link so the customer can fill their address (no payment link).
       if (isWhatsApp) {
         const detailsLink = `${window.location.origin}/#/details/${orderNo}`
-        const payMsg = `Hello! Your BEDTIME BEDDINGS & HOME order is GHS ${money(amount)}.\n\nTo PAY, simply dial:\n*920*141*${uc}#\n\nEnter your MoMo PIN to approve. Thank you!\nBEDTIME BEDDINGS & HOME · 059 908 4552`
+        const payMsg = `Hello! Your BEDTIME BEDDINGS & HOME order is ${money(amount)}.\n\nTo PAY, simply dial:\n*920*141*${uc}#\n\nEnter your MoMo PIN to approve. Thank you!\nBEDTIME BEDDINGS & HOME · 059 908 4552`
         const addrMsg = `Hi, please when you're done with the payment, just tap the link below to fill in your delivery details so we can deliver to you. Thank you.\n\n${detailsLink}`
         setWaCtx({ phone: phone.trim(), payMsg, addrMsg, link: detailsLink, code: `*920*141*${uc}#` })
       } else {
@@ -329,7 +342,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
         }
       }, 5000)
 
-      // Auto-close the code screen after 30s so the cashier can serve the next
+      // Auto-close the code screen after 20s so the cashier can serve the next
       // customer. The order is already saved as Pending (with its items), so
       // when the customer dials and pays, the webhook marks it Paid and it
       // shows in the Orders list. We stop polling here to avoid completing a
@@ -376,7 +389,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
               Held{heldCarts.length > 0 && <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-gray-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{heldCarts.length}</span>}
             </button>
             <button onClick={holdCart} disabled={!cart.length} className="h-9 px-3 rounded-lg text-xs font-semibold bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 transition disabled:opacity-30">Hold</button>
-            <button onClick={() => { if (cart.length && confirm('Clear cart?')) clearCart() }} className="h-9 px-3 rounded-lg text-xs font-semibold bg-red-50 text-red-500 border border-red-100 hover:bg-red-100 transition">Clear</button>
+            <button onClick={async () => { if (cart.length && await askConfirm('Clear the cart?')) clearCart() }} className="h-9 px-3 rounded-lg text-xs font-semibold bg-red-50 text-red-500 border border-red-100 hover:bg-red-100 transition">Clear</button>
           </div>
         </div>
 
@@ -401,12 +414,12 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <button onClick={() => updateCartQty(i, -1)} className="w-8 h-8 rounded-lg bg-white border border-gray-200 text-gray-500 text-sm font-bold flex items-center justify-center hover:bg-gray-50 active:scale-90 transition">−</button>
-                    <span className="text-sm font-bold w-7 text-center">{c.qty}</span>
-                    <button onClick={() => { if (!updateCartQty(i, 1)) toast.error('Not enough stock') }} className="w-8 h-8 rounded-lg bg-white border border-gray-200 text-gray-500 text-sm font-bold flex items-center justify-center hover:bg-gray-50 active:scale-90 transition">+</button>
+                    <button onClick={() => updateCartQty(i, -1)} aria-label="Decrease quantity" className="w-11 h-11 rounded-lg bg-white border border-gray-200 text-gray-600 text-lg font-bold flex items-center justify-center hover:bg-gray-50 active:scale-90 transition">−</button>
+                    <span className="text-base font-bold w-9 text-center tabular-nums">{c.qty}</span>
+                    <button onClick={() => { if (!updateCartQty(i, 1)) toast.error('Not enough stock') }} aria-label="Increase quantity" className="w-11 h-11 rounded-lg bg-white border border-gray-200 text-gray-600 text-lg font-bold flex items-center justify-center hover:bg-gray-50 active:scale-90 transition">+</button>
                   </div>
                   <span className="text-sm font-bold text-gray-900 min-w-[70px] text-right">{money(c.lineTotal)}</span>
-                  <button onClick={() => removeFromCart(i)} className="w-8 h-8 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-500 text-sm flex items-center justify-center transition">✕</button>
+                  <button onClick={() => removeFromCart(i)} aria-label="Remove item" className="w-11 h-11 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-500 text-base flex items-center justify-center transition">✕</button>
                 </div>
               ))}
             </div>
@@ -419,7 +432,8 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
             <div className="flex justify-between text-sm"><span className="text-gray-400">Subtotal</span><span className="font-semibold text-gray-900">{money(sub)}</span></div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-400">Discount</span>
-              <input type="number" className="w-20 h-8 px-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-right focus:outline-none focus:border-gray-400" value={discount} min={0} onChange={e => setDiscount(e.target.value)} />
+              <NumField value={discount} onChange={setDiscount} allowDecimal placeholder="0" title="Discount amount"
+                inputClassName="w-24 h-11 px-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-right justify-end focus:outline-none focus:border-gray-400" />
             </div>
             <div className="flex justify-between items-baseline pt-2 border-t border-dashed border-gray-200">
               <span className="text-base font-bold text-gray-900">Total</span>
@@ -489,12 +503,14 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
               <div className="bg-[#f6f6f5] rounded-xl p-4 border border-gray-200 space-y-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1.5">Customer phone number</label>
-                  <input type="tel" inputMode="tel" autoFocus className={`w-full h-12 px-4 bg-white border-2 rounded-xl text-base font-semibold focus:outline-none ${phoneValid ? 'border-green-400' : 'border-gray-200 focus:border-gray-400'}`} placeholder="024 000 0000" value={phone} onChange={e => setPhone(e.target.value)} />
+                  <NumField value={phone} onChange={setPhone} placeholder="024 000 0000" maxLength={15} title="Customer phone number"
+                    inputClassName={`w-full h-13 px-4 bg-white border-2 rounded-xl text-base font-semibold focus:outline-none ${phoneValid ? 'border-green-400' : 'border-gray-200 focus:border-gray-400'}`} />
                   <p className="text-xs text-gray-400 mt-1">Required for the receipt.</p>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1.5">Amount received (optional)</label>
-                  <input type="number" inputMode="decimal" className="w-full h-11 px-4 bg-white border border-gray-200 rounded-xl text-sm font-bold focus:outline-none focus:border-gray-400" placeholder="0.00" value={cashReceived} onChange={e => setCashReceived(e.target.value)} />
+                  <NumField value={cashReceived} onChange={setCashReceived} allowDecimal placeholder="0.00" title="Cash received from customer"
+                    inputClassName="w-full h-13 px-4 bg-white border border-gray-200 rounded-xl text-base font-bold focus:outline-none focus:border-gray-400" />
                   {num(cashReceived) >= total && num(cashReceived) > 0 && (
                     <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-200">
                       <span className="text-sm font-semibold text-gray-500">Change</span>
@@ -512,7 +528,8 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
             {!isWhatsApp && !splitMode && payMethod === 'Momo' && (
               <div className="bg-[#0e7c86]/5 rounded-xl p-4 border border-[#0e7c86]/30 space-y-2">
                 <label className="block text-xs font-semibold text-[#0e7c86]">Customer MoMo number</label>
-                <input type="tel" inputMode="tel" autoFocus className={`w-full h-12 px-4 bg-white border-2 rounded-xl text-base font-bold focus:outline-none ${phoneValid ? 'border-green-400' : 'border-[#0e7c86]/40 focus:border-[#0e7c86]'}`} placeholder="024 000 0000" value={phone} onChange={e => setPhone(e.target.value)} />
+                <NumField value={phone} onChange={setPhone} placeholder="024 000 0000" maxLength={15} title="Customer MoMo number"
+                  inputClassName={`w-full h-13 px-4 bg-white border-2 rounded-xl text-base font-bold focus:outline-none ${phoneValid ? 'border-green-400' : 'border-[#0e7c86]/40 focus:border-[#0e7c86]'}`} />
                 <p className="text-xs text-gray-500">A payment prompt is sent straight to this number. The customer approves with their MoMo PIN — no code to dial.</p>
               </div>
             )}
@@ -523,7 +540,8 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
                 <div className="text-sm font-bold text-[#16181d]">Split Payment · {money(total)}</div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1.5">Cash Amount received</label>
-                  <input type="number" inputMode="decimal" className="w-full h-11 px-4 bg-white border border-gray-200 rounded-xl text-sm font-bold focus:outline-none focus:border-gray-400" placeholder="0.00" value={splitCash} min={0} max={total} onChange={e => setSplitCash(e.target.value)} />
+                  <NumField value={splitCash} onChange={setSplitCash} allowDecimal placeholder="0.00" title="Cash portion received"
+                    inputClassName="w-full h-13 px-4 bg-white border border-gray-200 rounded-xl text-base font-bold focus:outline-none focus:border-gray-400" />
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-gray-200">
                   <span className="text-sm font-semibold text-gray-500">MoMo (prompt) portion</span>
@@ -532,7 +550,8 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
                 {splitRemainder > 0 && (
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-1.5">Customer MoMo number</label>
-                    <input type="tel" inputMode="tel" className={`w-full h-11 px-4 bg-white border-2 rounded-xl text-sm font-bold focus:outline-none ${phoneValid ? 'border-green-400' : 'border-[#0e7c86]/40 focus:border-[#0e7c86]'}`} placeholder="024 000 0000" value={phone} onChange={e => setPhone(e.target.value)} />
+                    <NumField value={phone} onChange={setPhone} placeholder="024 000 0000" maxLength={15} title="Customer MoMo number"
+                      inputClassName={`w-full h-13 px-4 bg-white border-2 rounded-xl text-base font-bold focus:outline-none ${phoneValid ? 'border-green-400' : 'border-[#0e7c86]/40 focus:border-[#0e7c86]'}`} />
                     <p className="text-xs text-gray-400 mt-1">A prompt is sent to this number for the MoMo portion.</p>
                   </div>
                 )}
@@ -543,7 +562,8 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
             {isWhatsApp && (
               <div className="bg-[#0e7c86]/5 rounded-xl p-4 border border-[#0e7c86]/30 space-y-2">
                 <label className="block text-xs font-semibold text-[#0e7c86]">Customer phone number</label>
-                <input type="tel" inputMode="tel" autoFocus className={`w-full h-12 px-4 bg-white border-2 rounded-xl text-base font-bold focus:outline-none ${phoneValid ? 'border-green-400' : 'border-[#0e7c86]/40 focus:border-[#0e7c86]'}`} placeholder="024 000 0000" value={phone} onChange={e => setPhone(e.target.value)} />
+                <NumField value={phone} onChange={setPhone} placeholder="024 000 0000" maxLength={15} title="Customer phone number"
+                  inputClassName={`w-full h-13 px-4 bg-white border-2 rounded-xl text-base font-bold focus:outline-none ${phoneValid ? 'border-green-400' : 'border-[#0e7c86]/40 focus:border-[#0e7c86]'}`} />
                 <p className="text-xs text-gray-500">A USSD code + delivery-details link will be prepared to send to the customer.</p>
               </div>
             )}
@@ -567,13 +587,13 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
               <div className="bg-[#f6f6f5] border-2 border-gray-200 rounded-2xl p-6 mb-4">
                 <p className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2">Enter OTP</p>
                 <p className="text-sm text-gray-600 mb-4" style={{ whiteSpace: 'pre-line' }}>{momoMessage}</p>
-                <input
+                <NumField
                   value={otpValue}
-                  onChange={e => setOtpValue(e.target.value.replace(/\D/g, ''))}
-                  inputMode="numeric"
+                  onChange={v => setOtpValue(String(v).replace(/\D/g, ''))}
+                  maxLength={8}
                   placeholder="Enter code from SMS"
-                  className="w-full h-14 px-4 text-center text-2xl font-bold tracking-widest bg-white border-2 border-gray-300 rounded-xl focus:outline-none focus:border-[#0e7c86]"
-                  autoFocus
+                  title="OTP from the customer's SMS"
+                  inputClassName="w-full h-14 px-4 justify-center text-center text-2xl font-bold tracking-widest bg-white border-2 border-gray-300 rounded-xl focus:outline-none focus:border-[#0e7c86]"
                 />
                 <button onClick={submitOtp} disabled={otpSubmitting || !otpValue.trim()} className="mt-4 w-full h-12 bg-[#0e7c86] text-white rounded-xl font-bold disabled:opacity-40">
                   {otpSubmitting ? 'Verifying...' : 'Complete Payment'}

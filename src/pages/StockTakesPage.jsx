@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useStore } from '../hooks/useStore'
 import { getSupabase } from '../lib/supabase'
-import { fmtDate, fmtDateTime, money, num } from '../lib/utils'
+import { fmtDateTime, money } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { askConfirm } from '../components/PromptDialog'
 
 export default function StockTakesPage() {
   const { stockTakes, stockAdjustments, products, user, refreshStockTakes, refreshStockAdjustments, refreshProducts, setLoading } = useStore()
@@ -94,12 +95,12 @@ export default function StockTakesPage() {
     c[i].countedQty = val; c[i].variance = counted - c[i].systemQty; setCounts(c)
   }
 
-  const filteredCounts = counts.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.category || '').toLowerCase().includes(search.toLowerCase()))
+  const filteredCounts = counts.filter(c => (c.name || '').toLowerCase().includes(search.toLowerCase()) || (c.category || '').toLowerCase().includes(search.toLowerCase()))
 
   const saveTake = async () => {
     const filled = counts.filter(c => c.countedQty !== '')
     if (!filled.length) { toast.error('Count at least one product'); return }
-    if (!confirm('Save stock take with ' + filled.length + ' products counted?')) return
+    if (!(await askConfirm('Save this stock take?', filled.length + ' products counted. Stock will be set to the counted figures.'))) return
     setLoading(true, 'Saving...')
     const sb = getSupabase()
     const items = filled.map(c => ({ productId: c.productId, name: c.name, systemQty: c.systemQty, countedQty: parseInt(c.countedQty) || 0, variance: c.variance }))
@@ -119,10 +120,15 @@ export default function StockTakesPage() {
     const p = products.find(x => x.id === adjProduct)
     if (!p) return
     const qty = parseInt(adjQty)
-    const newQty = Math.max(0, p.quantity + qty)
+
     setLoading(true, 'Saving...')
     const sb = getSupabase()
-    await sb.from('products').update({ quantity: newQty }).eq('id', adjProduct)
+    // Atomic delta rather than writing back a cached quantity.
+    // adjust_product_stock applies the delta atomically and returns the
+    // resulting quantity, so we report the real figure rather than a guess.
+    const { data: adj, error: adjErr } = await sb.rpc('adjust_product_stock', { p_product_id: adjProduct, p_delta: qty })
+    if (adjErr || adj?.success === false) { setLoading(false); toast.error(adj?.error || adjErr?.message || 'Stock update failed'); return }
+    const newQty = adj.quantity
     await sb.from('stock_adjustments').insert({ date: new Date().toISOString(), product_id: adjProduct, product_name: p.name, qty, reason: adjReason, notes: adjNotes.trim() || adjReason, adjusted_by: user?.name || '' })
     await refreshProducts(); await refreshStockAdjustments(); setLoading(false); setAdjModal(false)
     setAdjProduct(''); setAdjQty(''); setAdjNotes('')
@@ -133,7 +139,7 @@ export default function StockTakesPage() {
     <div >
       <div className="flex justify-between items-start flex-wrap gap-4 mb-5">
         <div>
-          <h1 className="text-[22px] md:text-[26px] font-bold tracking-tight">Stock Stock & Adjustments Adjustments</h1>
+          <h1 className="text-[22px] md:text-[26px] font-bold tracking-tight">Stock Takes & Adjustments</h1>
           <p className="text-gray-400 text-sm mt-0.5">Count inventory, track variances & adjustments</p>
         </div>
         <div className="flex gap-2">
@@ -246,7 +252,7 @@ export default function StockTakesPage() {
           <div className="bg-gray-50 rounded-xl p-3 text-sm text-gray-800">Enter physical count. Leave blank to skip. Variances auto-calculated.</div>
           <input className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm" placeholder="Notes..." value={notes} onChange={e => setNotes(e.target.value)} />
           <input className="w-full h-11 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
-          {filteredCounts.map((c, i) => {
+          {filteredCounts.map((c) => {
             const ri = counts.indexOf(c); const v = c.countedQty !== '' ? c.variance : null
             return (
               <div key={ri} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">

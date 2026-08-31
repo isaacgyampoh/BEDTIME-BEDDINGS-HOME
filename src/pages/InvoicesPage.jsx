@@ -4,6 +4,7 @@ import { getSupabase } from '../lib/supabase'
 import { money, num, fmtDate, today } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { adminDelete } from '../lib/adminActions'
 
 export default function InvoicesPage() {
   const { invoices, refreshInvoices, setLoading } = useStore()
@@ -19,7 +20,7 @@ export default function InvoicesPage() {
     if (form.file) {
       const ext = form.file.name.split('.').pop()
       const path = `inv_${Date.now()}.${ext}`
-      const { data: upData, error: upErr } = await sb.storage.from('invoice-photos').upload(path, form.file)
+      const { error: upErr } = await sb.storage.from('invoice-photos').upload(path, form.file)
       if (!upErr) { const { data: urlData } = sb.storage.from('invoice-photos').getPublicUrl(path); imageUrl = urlData?.publicUrl || '' }
     }
     const invId = form.invoiceId.trim() || 'INV-' + Date.now().toString(36).toUpperCase()
@@ -27,9 +28,9 @@ export default function InvoicesPage() {
     await refreshInvoices(); setLoading(false); setModal(false); toast.success('Invoice added!')
   }
 
-  const del = async (id) => {
-    if (!confirm('Delete?')) return; setLoading(true); const sb = getSupabase()
-    await sb.from('invoices').delete().eq('id', id); await refreshInvoices(); setLoading(false); toast.success('Deleted!')
+  const del = async (inv) => {
+    if (!(await adminDelete('invoices', inv.id, inv.invoiceId || 'this invoice'))) return
+    setLoading(true); await refreshInvoices(); setLoading(false)
   }
 
   return (
@@ -55,7 +56,7 @@ export default function InvoicesPage() {
             </div>
             <div className="text-sm text-gray-500 mb-3">{fmtDate(inv.date)}</div>
             {inv.notes && <div className="text-sm text-gray-500 bg-gray-50 p-2.5 rounded-lg mb-3">{inv.notes}</div>}
-            <button onClick={() => del(inv.id)} className="h-9 px-3 bg-red-500 text-white rounded-lg text-xs font-semibold hover:bg-red-600 transition">Delete</button>
+            <button onClick={() => del(inv)} className="h-9 px-3 bg-red-500 text-white rounded-lg text-xs font-semibold hover:bg-red-600 transition">Delete</button>
           </div>
         ))}
       </div>

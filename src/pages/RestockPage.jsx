@@ -14,7 +14,7 @@ export default function RestockPage() {
   const filtered = useMemo(() => {
     if (!query.trim()) return []
     const q = query.toLowerCase()
-    return products.filter(p => p.name.toLowerCase().includes(q)).slice(0, 10)
+    return products.filter(p => (p.name || '').toLowerCase().includes(q)).slice(0, 10)
   }, [products, query])
 
   const addToRestock = (product) => {
@@ -66,8 +66,13 @@ export default function RestockPage() {
       const product = products.find(p => p.id === item.productId)
       if (!product) { failed++; continue }
       
-      const newQty = product.quantity + num(item.addQty)
-      const { error } = await sb.from('products').update({ quantity: newQty }).eq('id', item.productId)
+      // Atomic delta. The old `cached_quantity + n` write-back silently
+      // reverted any sale that landed between load and save.
+      const { data: adj, error } = await sb.rpc('adjust_product_stock', {
+        p_product_id: item.productId, p_delta: num(item.addQty),
+      })
+      if (error || adj?.success === false) { toast.error(adj?.error || error?.message || 'Stock update failed'); continue }
+      const newQty = adj.quantity
       
       if (error) {
         failed++

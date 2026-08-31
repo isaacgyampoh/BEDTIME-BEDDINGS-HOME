@@ -4,6 +4,7 @@ import { getSupabase } from '../lib/supabase'
 import { fmtDateTime, money } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { askConfirm } from '../components/PromptDialog'
 
 const REASONS = ['Damaged', 'Broken', 'Missing', 'Expired', 'Theft', 'Returned to Supplier', 'Other']
 
@@ -26,13 +27,27 @@ export default function StockAdjustmentsPage() {
     if (!product) { toast.error('Product not found'); return }
     if (qty > product.quantity) { toast.error('Quantity exceeds current stock (' + product.quantity + ')'); return }
 
-    if (!confirm(`Remove ${qty} x ${product.name}?\nReason: ${form.reason}\nThis will deduct from stock.`)) return
+    if (!(await askConfirm(`Remove ${qty} x ${product.name}?`, `Reason: ${form.reason}. This deducts from stock.`))) return
 
     setLoading(true, 'Recording adjustment...')
     const sb = getSupabase()
 
+    // Re-read the live quantity: the cached copy can be minutes old, and
+    // writing `cached - qty` back would silently undo any sale made in between.
+    const { data: fresh, error: readErr } = await sb.from('products')
+      .select('quantity').eq('id', form.productId).limit(1)
+    if (readErr || !fresh?.length) { setLoading(false); toast.error('Could not read current stock'); return }
+
+    const current = Number(fresh[0].quantity) || 0
+    if (qty > current) {
+      setLoading(false)
+      toast.error(`Stock changed — only ${current} left. Adjust the quantity and retry.`)
+      await refreshProducts()
+      return
+    }
+
     // Insert adjustment record
-    await sb.from('stock_adjustments').insert({
+    const { error: adjErr } = await sb.from('stock_adjustments').insert({
       date: new Date().toISOString(),
       product_id: form.productId,
       product_name: product.name,
@@ -41,16 +56,21 @@ export default function StockAdjustmentsPage() {
       notes: form.notes.trim() || '',
       adjusted_by: user?.name || '',
     })
+    if (adjErr) { setLoading(false); toast.error('Could not record adjustment: ' + adjErr.message); return }
 
-    // Deduct from product stock
-    await sb.from('products').update({ quantity: product.quantity - qty }).eq('id', form.productId)
+    // Atomic delta so a concurrent sale cannot be clobbered.
+    const { data: adj, error: stockErr } = await sb.rpc('adjust_product_stock', {
+      p_product_id: form.productId, p_delta: -qty,
+    })
+    const failed = stockErr || adj?.success === false
+    if (failed) toast.error('Adjustment logged but stock update failed: ' + (adj?.error || stockErr?.message || ''))
 
     await refreshStockAdjustments()
     await refreshProducts()
     setLoading(false)
     setModal(false)
     setForm({ productId: '', qty: '', reason: 'Damaged', notes: '' })
-    toast.success(`${qty} x ${product.name} removed — ${form.reason}`)
+    if (!failed) toast.success(`${qty} x ${product.name} removed — ${form.reason}`)
   }
 
   const filteredAdj = filterReason === 'all'

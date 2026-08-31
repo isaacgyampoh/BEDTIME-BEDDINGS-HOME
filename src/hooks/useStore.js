@@ -4,28 +4,10 @@ import { num } from '../lib/utils'
 
 const mapProduct = p => ({ id: p.id, name: p.name, category: p.category || '', costPrice: num(p.cost_price), price: num(p.price), wholesalePrice: num(p.wholesale_price), wholesaleMinQty: num(p.wholesale_min_qty) || 0, quantity: num(p.quantity), image: p.image || '', groupTag: (p.group_tag || '').trim().toLowerCase() })
 
-// Derive a product's base name by stripping the variant suffix
-// e.g. "2 in 1 coloured curtains(type16)" -> "2 in 1 coloured curtains"
-//      "10pcs granite cookware set (ash)" -> "10pcs granite cookware set"
-function baseName(name) {
-  return String(name || '')
-    .toLowerCase()
-    .replace(/\(\s*type\s*\d+\s*\)/g, '')   // (type1), (type 12)
-    .replace(/\btype\s*\d+\b/g, '')          // type1 without brackets
-    .replace(/\(\s*[^)]*\)/g, '')            // any other (...) e.g. (ash), (sky blue)
-    .replace(/[\s_-]+/g, ' ')
-    .trim()
-}
-
-// Recalculate wholesale pricing across the whole cart.
-// Variants of the same product POOL their quantities — grouped automatically
-// by base product name (variant suffix stripped), or by an explicit group_tag
-// if one is set. When the group total reaches the wholesale min qty, every
-// item in that group gets the wholesale price.
+// Recalculate pricing across the whole cart.
+// NOTE: automatic wholesale grouping is currently DISABLED — every line stays
+// at its retail price. Re-enable by restoring the group-quantity logic here.
 function applyWholesale(cart, products) {
-  // TEMPORARILY DISABLED — everything stays at retail price.
-  // Auto-wholesale grouping is turned off until the dedup/grouping bug is
-  // fully resolved. Each line uses its original retail price.
   const prodById = {}
   for (const p of products) prodById[p.id] = p
   return cart.map(c => {
@@ -33,28 +15,6 @@ function applyWholesale(cart, products) {
     const prod = prodById[c.productId]
     const retail = c.originalPrice || (prod ? prod.price : c.price)
     return { ...c, price: retail, lineTotal: c.qty * retail }
-  })
-}
-
-function applyWholesale_DISABLED(cart, products) {
-  const prodById = {}
-  for (const p of products) prodById[p.id] = p
-  const groupKey = (prod) => prod.groupTag ? 'g:' + prod.groupTag : 'n:' + baseName(prod.name)
-  const groupQty = {}
-  for (const c of cart) {
-    if (c.isBundle) continue
-    const prod = prodById[c.productId]; if (!prod) continue
-    const key = groupKey(prod)
-    groupQty[key] = (groupQty[key] || 0) + c.qty
-  }
-  return cart.map(c => {
-    if (c.isBundle) return { ...c, lineTotal: c.qty * c.price }
-    const prod = prodById[c.productId]
-    if (!prod) return { ...c, lineTotal: c.qty * c.price }
-    const totalQty = groupQty[groupKey(prod)] || c.qty
-    const wholesaleOn = prod.wholesalePrice > 0 && prod.wholesaleMinQty > 0 && totalQty >= prod.wholesaleMinQty
-    const newPrice = wholesaleOn ? prod.wholesalePrice : (c.originalPrice || prod.price)
-    return { ...c, price: newPrice, lineTotal: c.qty * newPrice }
   })
 }
 const mapBundle = b => ({ id: b.id, name: b.name, products: typeof b.products === 'string' ? JSON.parse(b.products) : (b.products || []), bundlePrice: num(b.bundle_price), active: b.active })
@@ -77,9 +37,9 @@ const q = async (sb, table, opts = {}) => {
     if (opts.limit) query = query.limit(opts.limit)
     if (opts.gt) query = query.gt(opts.gt[0], opts.gt[1])
     const { data, error } = await query
-    if (error) return []
+    if (error) { console.warn(`[store] ${table} query failed:`, error.message); return [] }
     return data || []
-  } catch { return [] }
+  } catch (e) { console.warn(`[store] ${table} query threw:`, e); return [] }
 }
 
 export const useStore = create((set, get) => ({
@@ -192,7 +152,7 @@ export const useStore = create((set, get) => ({
       // PHASE 1: Only what POS needs immediately
       const [prodData, staffData, bunData, promoData] = await Promise.all([
         q(sb, 'products', { select: 'id,name,category,cost_price,price,wholesale_price,wholesale_min_qty,quantity,image,group_tag', order: 'name', asc: true }),
-        q(sb, 'staff', { select: 'id,name,role,active' }),
+        q(sb, 'staff_safe', { select: 'id,name,role,active' }),
         q(sb, 'bundles', { select: 'id,name,products,bundle_price,active' }),
         q(sb, 'promos', { select: 'id,name,start_date,end_date,items,active', limit: 50 }),
       ])
@@ -245,7 +205,7 @@ export const useStore = create((set, get) => ({
   refreshProducts: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'products', { order: 'name', asc: true }); set({ products: d.map(mapProduct) }) },
   refreshSales: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'sales', { order: 'date', limit: 300 }); set({ sales: d.map(mapSale) }) },
   refreshWAOrders: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'whatsapp_orders', { order: 'date', limit: 500 }); set({ waOrders: d.map(mapWAOrder) }) },
-  refreshStaff: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'staff', { select: 'id,name,role,active' }); set({ staff: d.map(mapStaff) }) },
+  refreshStaff: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'staff_safe', { select: 'id,name,role,active' }); set({ staff: d.map(mapStaff) }) },
   refreshBundles: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'bundles'); set({ bundles: d.map(mapBundle) }) },
   refreshExpenses: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'expenses', { order: 'date', limit: 200 }); set({ expenses: d.map(mapExpense) }) },
   refreshCustomers: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'customers', { order: 'total_spent', limit: 500 }); set({ customers: d.map(mapCustomer) }) },
@@ -256,11 +216,21 @@ export const useStore = create((set, get) => ({
   refreshStockAdjustments: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'stock_adjustments', { order: 'date', limit: 200 }); set({ stockAdjustments: d.map(mapStockAdj) }) },
 
   deductStock: (cartItems) => {
-    const products = [...get().products]
+    // Build a delta map first, then produce fresh product objects. Mutating the
+    // existing ones in place leaves memoised components holding an unchanged
+    // reference, so the stock badge would not re-render after a sale.
+    const deltas = {}
     for (const c of cartItems) {
-      if (c.isBundle && c.bundleItems) { for (const bi of c.bundleItems) { const p = products.find(x => x.id === bi.productId); if (p) p.quantity = Math.max(0, p.quantity - num(bi.qty) * c.qty) } }
-      else if (c.productId) { const p = products.find(x => x.id === c.productId); if (p) p.quantity = Math.max(0, p.quantity - c.qty) }
+      if (c.isBundle && c.bundleItems) {
+        for (const bi of c.bundleItems) deltas[bi.productId] = (deltas[bi.productId] || 0) + num(bi.qty) * c.qty
+      } else if (c.productId) {
+        deltas[c.productId] = (deltas[c.productId] || 0) + c.qty
+      }
     }
-    set({ products })
+    set({
+      products: get().products.map(p =>
+        deltas[p.id] ? { ...p, quantity: Math.max(0, p.quantity - deltas[p.id]) } : p
+      ),
+    })
   },
 }))

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { money, fmtDateTime, SHOP } from '../lib/utils'
+import { fmtDateTime, SHOP } from '../lib/utils'
 
 export default function ReceiptPreview({ sale, onClose }) {
   const printedRef = useRef(false)

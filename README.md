@@ -1,105 +1,165 @@
-# EVERYTINROOM POS — React + Supabase + Vercel
+# BEDTIME BEDDINGS & HOME — POS
 
-Full React rewrite. No Google Sheets. No Google Apps Script.
-Supabase database + Vercel hosting + mNotify SMS reports.
+Staff point-of-sale for BEDTIME BEDDINGS & HOME.
+React + Supabase (PostgreSQL) + Vercel, with mobile-money payments and SMS reports.
 
 ## Tech Stack
-- **Frontend**: React 18 + Vite + Tailwind CSS + Zustand (state)
-- **Database**: Supabase (PostgreSQL)
-- **Backend**: Supabase Edge Functions + RPC functions
+- **Frontend**: React 18 + Vite 7 + Tailwind CSS + Zustand
+- **Database**: Supabase (PostgreSQL, Row Level Security)
+- **Backend**: Supabase Edge Functions (Deno) + PL/pgSQL RPCs
 - **Hosting**: Vercel
-- **SMS**: mNotify API via Edge Functions + pg_cron
+- **Payments**: NaloPay (MoMo prompt + USSD), Paystack, Moolre
+- **SMS**: mNotify / Arkesel via Edge Functions + pg_cron
 
 ---
 
-##  SETUP (5 steps)
+## Setup
 
-### 1. Supabase Database
-- Go to Supabase Dashboard → **SQL Editor** → New Query
-- Paste `supabase/migrations/001_schema.sql` → Run
-- Copy your **Project URL** and **anon key** from Settings → API
+### 1. Database
+Run the migrations in `supabase/migrations/` in order via the Supabase SQL Editor.
 
-### 2. SMS Cron Jobs
-- Enable `pg_cron` and `pg_net` extensions (Database → Extensions)
-- Edit `002_cron_jobs.sql` — replace `YOUR_SUPABASE_URL` and `YOUR_ANON_KEY`
-- Paste into SQL Editor → Run
+> **Run 015 → 016 → 017 → 018 BEFORE deploying the current frontend.**
+> The app expects the functions they create; deploying the frontend first
+> breaks staff management, deletes and checkout.
+>
+> | Migration | What it does | Frontend depends on it |
+> |---|---|---|
+> | `015_security_hardening` | Revokes anon access to `staff`, hashes PINs, throttles login, replaces the unauthenticated staff RPCs | `staff_safe`, `admin_save_staff`, `admin_delete_staff` |
+> | `016_integrity_hardening` | Server-side pricing + stock checks in `record_sale`, atomic stock moves, admin-PIN deletes, append-only `sales` | `adjust_product_stock`, `admin_delete_row`, `record_sale` split params |
+> | `017_sms_rate_limit` | Rate-limits the unauthenticated SMS endpoints | — (Edge Function only) |
+> | `018_cron_config` | Moves the scheduled-job key out of SQL and fixes jobs that carried **the wrong project's token** | — (needs a one-off config insert, see the file header) |
+>
+> 015 is login-safe: existing plaintext PINs keep working and upgrade to a
+> hash on first successful login. 016 rejects a sale whose prices no longer
+> match the database rather than silently charging a different figure, so a
+> cashier may occasionally be told to re-add a cart after a price change.
+>
+> `002_cron_jobs.sql` and `014_payment_reminders.sql` are **superseded by 018**
+> and must not be run as-is.
 
-### 3. Deploy Edge Functions
+### 2. Environment
+Copy `.env.example` to `.env` and fill in the two `VITE_` values. If they are
+absent the app falls back to the live project, so existing deploys keep working.
+
+### 3. Edge function secrets
+Never commit these — set them on the platform:
+
 ```bash
-npm i -g supabase
-supabase login
-supabase link --project-ref YOUR_REF
+supabase secrets set \
+  PAYSTACK_SECRET_KEY=...        `# REQUIRED: verifies the webhook HMAC` \
+  PAYMENT_CALLBACK_SECRET=...    `# REQUIRED: shared secret on payment callbacks` \
+  NALOPAY_MERCHANT_ID=... NALOPAY_API_KEY=... NALOPAY_AUTH_HEADER=... \
+  MNOTIFY_KEY=...
+```
+
+Both required secrets are fail-safe in different directions, by design:
+- Without `PAYSTACK_SECRET_KEY` the webhook **rejects everything** (safe).
+- Without `PAYMENT_CALLBACK_SECRET` the provider callbacks stay **open** and log
+  a warning on every request, so existing payment flows are not interrupted —
+  set it and update the callback URLs in each provider's dashboard to include
+  `&s=<secret>`.
+
+### 4. Deploy edge functions
+```bash
+supabase functions deploy charge-momo
 supabase functions deploy paystack-webhook --no-verify-jwt
 supabase functions deploy sms-reports --no-verify-jwt
 ```
-Set Paystack webhook to: `https://YOUR_REF.supabase.co/functions/v1/paystack-webhook`
+Point the Paystack webhook at `https://<ref>.supabase.co/functions/v1/paystack-webhook`.
 
-### 4. Deploy to Vercel
+### 5. Deploy the app
 ```bash
-npm i -g vercel
-cd everytinroom-pos
 npm install
+npm run build
 vercel
 ```
 
-### 5. First Login
-- Open Vercel URL → Enter Supabase URL + anon key
-- Login with PIN **1024** (admin) or staff PINs
+### 6. First login
+Open the deployed URL and enter a staff PIN. PINs are managed in **Staff &
+Roles** by an admin; changing staff requires re-entering an admin PIN.
 
 ---
 
-##  Structure
+## Structure
 ```
 src/
-├── App.jsx              # Main app + routing
-├── components/          # Reusable UI
-│   ├── CartDrawer.jsx   # Cart with checkout
-│   ├── ConfigModal.jsx  # Supabase setup
-│   ├── Login.jsx        # PIN login
-│   ├── Navigation.jsx   # Top/bottom/drawer nav
-│   ├── Modal.jsx        # Reusable modal
-│   ├── ReceiptPreview.jsx # Thermal receipt
-│   └── Loader.jsx
+├── App.jsx                    # Shell, routing, realtime, auto-logout
+├── components/
+│   ├── CartDrawer.jsx         # Cart + checkout (cash / MoMo / split / USSD)
+│   ├── Login.jsx              # PIN login
+│   ├── Navigation.jsx         # Sidebar + mobile nav
+│   ├── Modal.jsx  Loader.jsx  Logo.jsx
+│   └── ReceiptPreview.jsx     # Thermal receipt
 ├── hooks/
-│   └── useStore.js      # Zustand global state
+│   ├── useStore.js            # Zustand global state
+│   └── useCustomerDisplay.js  # Second-screen customer display
 ├── lib/
-│   ├── supabase.js      # Supabase client
-│   └── utils.js         # Helpers
-├── pages/               # 12 page components
-│   ├── Dashboard.jsx
-│   ├── POS.jsx
-│   ├── WhatsAppOrders.jsx
-│   ├── Receipts.jsx
-│   ├── Products.jsx
-│   ├── BundlesPage.jsx
-│   ├── StaffPage.jsx
-│   ├── ExpensesPage.jsx
-│   ├── CustomersPage.jsx
-│   ├── PerformancePage.jsx
-│   ├── RefundsPage.jsx
-│   └── ReportsPage.jsx
+│   ├── supabase.js            # Client + FUNCTIONS_URL / STORAGE_URL helpers
+│   └── utils.js               # Formatting, feature flags, shop details
+└── pages/                     # 23 pages (POS, orders, inventory, finance)
+
 supabase/
-├── migrations/
-│   ├── 001_schema.sql   # Full DB schema + RPC functions
-│   └── 002_cron_jobs.sql
-├── functions/
-│   ├── paystack-webhook/ # Paystack → WA order creation
-│   └── sms-reports/      # Automated SMS reports
+├── migrations/                # Schema, RPCs, cron, security hardening
+└── functions/                 # charge-momo, paystack-webhook, sms-reports, …
+
+storefront/                    # Separate public e-commerce site (own package)
 ```
 
 ---
 
 ## Features
--  POS with Retail/Wholesale/Bundle modes
--  WhatsApp orders with Paystack integration (realtime)
-- Thermal receipt printing
--  Dashboard with live stats
-- Staff performance tracking
-- Refund processing with stock restoration
--  Expense tracking
--  Product bundles
--  Daily/weekly/monthly reports
--  SMS reports (mNotify) via pg_cron
--  PIN-based auth (admin: 1024)
--  Realtime updates via Supabase WebSockets
--  Mobile-first responsive design
+- POS with Retail / Wholesale / Bundle modes, held carts, per-cashier carts
+- Payments: cash, MoMo direct prompt, USSD code, split cash+MoMo
+- WhatsApp & web orders with delivery tracking
+- Second-screen customer display (auto-detects the second monitor)
+- Thermal receipt printing, refunds with stock restoration
+- Inventory: products, stock takes, stock adjustments, restock, promos, bundles
+- Finance: expenses, invoices, staff sales, reports with CSV export
+- PIN-based auth, bcrypt-hashed, throttled, with inactivity auto-logout
+- Realtime updates over Supabase WebSockets; PWA with app-icon badge
+
+## POS terminals
+
+The app detects a touch terminal (`hover: none` / `pointer: coarse`) and stamps
+`data-pos="touch"` on `<html>`. That widens tap targets, lifts the smallest
+type, pins the sidebar open and swaps every numeric field for an on-screen
+keypad — a POS panel reports a *desktop* viewport, so none of the `md:`
+breakpoints catch it on their own.
+
+- **No keyboard is required.** PIN login, amounts, phone numbers and free-text
+  prompts all have on-screen input.
+- **Barcode scanners keep working.** The POS search box is still a real focused
+  `<input>`; the on-screen keyboard is an addition, not a replacement.
+- If a terminal misreports its pointer capabilities, an admin can force the
+  mode with the **Touch POS** toggle in the sidebar footer.
+
+## Security notes
+- The `VITE_SUPABASE_ANON_KEY` is public by design — it ships in the browser
+  bundle. Everything protecting the data is Row Level Security, so treat any
+  `USING (true)` policy as a hole, not a convenience.
+- The `staff` table is not readable by `anon`. Read `staff_safe` instead.
+- Payment status is only ever set server-side, from a verified webhook or the
+  reconcile job. Never let a client write `status = 'Paid'`.
+- Prices and costs used for a sale come from the database, never from the
+  browser. `record_sale` rejects a cart whose totals no longer match.
+- **Known gap:** the app authenticates by PIN with no session token, so the
+  anon role still holds broad INSERT/UPDATE. Destructive and financial paths
+  are closed (deletes, `sales`, pricing, PINs), but a full lockdown needs
+  per-session tokens checked in RLS. See the note at the end of this file.
+
+## Remaining work
+
+Staff log in with a PIN and the app then talks to Supabase as the public `anon`
+role — there is no per-session credential. Anything `anon` may do, anyone
+holding the (public) anon key may also do. Migrations 015/016 closed the paths
+that lose money or data: PIN theft, price tampering, rewriting `sales`, and
+deleting catalogue rows. Still open by design:
+
+- `anon` can INSERT/UPDATE `products`, `expenses`, `whatsapp_orders`, etc.
+- `adjust_product_stock` is callable by anyone with the anon key.
+
+The fix is a session token: have `verify_pin` mint one into a `staff_sessions`
+table, send it from the client as a header, and check it in RLS via
+`current_setting('request.headers', true)`. That touches every policy and every
+write path, so it wants doing deliberately, with a staging project to test
+against — not blind.

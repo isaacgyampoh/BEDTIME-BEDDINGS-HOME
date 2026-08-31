@@ -4,6 +4,7 @@ import { getSupabase } from '../lib/supabase'
 import { money, num, fmtDate, today, isoDate } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { askConfirm } from '../components/PromptDialog'
 
 export default function RefundsPage() {
   const { refunds, user, setLoading, loadAll } = useStore()
@@ -33,15 +34,15 @@ export default function RefundsPage() {
     if (!sale) return; if (!reason.trim()) { toast.error('Enter reason'); return }
     const items = saleItems.filter(i => i.checked).map(i => ({ name: i.name, productId: i.productId || '', price: num(i.price), qty: Math.min(num(i.refundQty), num(i.qty)) }))
     if (!items.length) { toast.error('Select items'); return }
-    if (!confirm('Process refund?')) return
+    if (!(await askConfirm('Process this refund?', `${money(refundAmount)} will be refunded and stock restored.`))) return
     setLoading(true, 'Processing...')
     try {
       const sb = getSupabase()
       const { data, error } = await sb.rpc('process_refund', { p_receipt_no: receiptNo.trim(), p_items: items, p_reason: reason.trim(), p_processed_by: user?.name || '', p_customer: sale.customer || 'Walk-in' })
       setLoading(false)
       if (data?.success) { toast.success('Refund ' + data.refundNo + ' done! ' + money(data.refundAmount)); setModal(false); loadAll() }
-      else toast.error(data?.error || 'Error')
-    } catch (e) { setLoading(false); toast.error('Error') }
+      else toast.error(data?.error || error?.message || 'Refund failed')
+    } catch (e) { setLoading(false); toast.error('Refund failed: ' + (e?.message || '')) }
   }
 
   return (

@@ -1,6 +1,10 @@
 node_modules/
 dist/
-.env
 .DS_Store
 storefront/node_modules
 storefront/dist
+
+# Environment files — the template is tracked, real values never are.
+.env
+.env.*
+!.env.example

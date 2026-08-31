@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { Toaster } from 'react-hot-toast'
-import { getSupabase } from './lib/supabase'
+import { getSupabase, callFunction } from './lib/supabase'
 import { PAYMENTS_ENABLED } from './lib/utils'
 import { useStore } from './hooks/useStore'
+import { usePosMode } from './hooks/usePosMode'
 import { useCustomerDisplayBroadcast, broadcastDisplay } from './hooks/useCustomerDisplay'
 import Loader from './components/Loader'
 import Login from './components/Login'
 import Navigation from './components/Navigation'
 import CartDrawer from './components/CartDrawer'
 import ReceiptPreview from './components/ReceiptPreview'
+import PromptDialog from './components/PromptDialog'
 import toast from 'react-hot-toast'
 
 // Lazy load all pages — only loads when needed
@@ -43,8 +45,12 @@ export default function App() {
   const { user, page, setPage, loading, loadAll, logout, isAdmin, darkMode } = useStore()
   const [cartOpen, setCartOpen] = useState(false)
   const [receipt, setReceipt] = useState(null)
-  const [lastActivity, setLastActivity] = useState(Date.now())
+  const lastActivityRef = useRef(Date.now())
   const [salePopup, setSalePopup] = useState(null)
+
+  // Stamps data-pos="touch" on <html> for the touch-terminal stylesheet.
+  // Must run above the early returns so the public pages get it too.
+  usePosMode()
 
   // Broadcast live cart to the customer-facing display (#/customer-display)
   useCustomerDisplayBroadcast()
@@ -78,7 +84,13 @@ export default function App() {
     document.body.classList.toggle('dark', darkMode)
   }, [darkMode])
 
-  useEffect(() => { loadAll(); setupRealtime() }, [])
+  useEffect(() => {
+    loadAll()
+    const channel = setupRealtime()
+    // Tear the subscription down on unmount, otherwise React StrictMode (dev)
+    // and any remount leave orphaned realtime channels open.
+    return () => { if (channel) { try { getSupabase().removeChannel(channel) } catch {} } }
+  }, []) // eslint-disable-line
 
   // Global image fallback: any product image that fails to load (e.g. dead
   // Cloudinary links) is swapped for a clean neutral placeholder instead of
@@ -102,8 +114,7 @@ export default function App() {
     if (!user || !PAYMENTS_ENABLED) return
     const run = async () => {
       try {
-        const r = await fetch('https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service?action=reconcile-payments', { method: 'POST' })
-        const j = await r.json()
+        const j = await callFunction('reconcile-payments')
         if (j?.confirmed > 0) { try { loadAll() } catch {} }
       } catch {}
     }
@@ -112,15 +123,18 @@ export default function App() {
     return () => clearInterval(iv)
   }, [user]) // eslint-disable-line
 
-  // Auto-logout on inactivity
-  const resetActivity = useCallback(() => setLastActivity(Date.now()), [])
+  // Auto-logout on inactivity. The last-activity timestamp lives in a ref so
+  // that ordinary interaction doesn't re-render the whole app or tear down and
+  // re-register these listeners on every keystroke.
+  const resetActivity = useCallback(() => { lastActivityRef.current = Date.now() }, [])
 
   useEffect(() => {
     if (!user) return
+    lastActivityRef.current = Date.now()
     const events = ['mousedown', 'keydown', 'touchstart', 'scroll']
     events.forEach(e => window.addEventListener(e, resetActivity))
     const timer = setInterval(() => {
-      if (Date.now() - lastActivity > INACTIVITY_TIMEOUT) {
+      if (Date.now() - lastActivityRef.current > INACTIVITY_TIMEOUT) {
         logout()
         toast('Logged out — enter your PIN to continue')
       }
@@ -129,7 +143,7 @@ export default function App() {
       events.forEach(e => window.removeEventListener(e, resetActivity))
       clearInterval(timer)
     }
-  }, [user, lastActivity, logout, resetActivity])
+  }, [user, logout, resetActivity])
 
   // Guard admin pages — redirect non-admin users
   useEffect(() => {
@@ -154,9 +168,9 @@ export default function App() {
   }
 
   const setupRealtime = () => {
-    const sb = getSupabase(); if (!sb) return
+    const sb = getSupabase(); if (!sb) return null
     const store = useStore.getState()
-    sb.channel('pos-live')
+    return sb.channel('pos-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_orders' }, () => {
         store.refreshWAOrders()
         // Update PWA badge with pending + paid (unprocessed) count
@@ -229,6 +243,7 @@ export default function App() {
     promos: <PromosPage />,
     invoices: <InvoicesPage />,
     stocktakes: <StockTakesPage />,
+    stockadjustments: <StockAdjustmentsPage />,
     restock: <RestockPage />,
   }
 
@@ -236,6 +251,7 @@ export default function App() {
     <div className="min-h-screen">
       <Toaster position="top-center" toastOptions={{ duration: 2000, style: { borderRadius: '14px', padding: '12px 20px', fontWeight: 600, fontSize: '13px', background: darkMode ? '#222' : '#fff', color: darkMode ? '#eee' : '#1a1a1a' } }} />
       <Navigation onOpenCart={() => setCartOpen(true)} />
+      <PromptDialog />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} onReceipt={setReceipt} />
       {receipt && <ReceiptPreview sale={receipt} onClose={() => setReceipt(null)} />}
 

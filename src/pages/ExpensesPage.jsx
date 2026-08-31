@@ -4,6 +4,7 @@ import { getSupabase } from '../lib/supabase'
 import { money, num, fmtDate, today, monthStart, isoDate } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { adminDelete } from '../lib/adminActions'
 
 export default function ExpensesPage() {
   const { expenses, refreshExpenses, setLoading } = useStore()
@@ -17,10 +18,9 @@ export default function ExpensesPage() {
     await sb.from('expenses').insert({ date: form.date, category: form.category, description: form.description.trim(), amount: num(form.amount) })
     await refreshExpenses(); setLoading(false); setModal(false); toast.success('Added!')
   }
-  const del = async (id) => {
-    if (!confirm('Delete?')) return; setLoading(true); const sb = getSupabase()
-    await sb.from('expenses').delete().eq('id', id)
-    await refreshExpenses(); setLoading(false); toast.success('Deleted!')
+  const del = async (e) => {
+    if (!(await adminDelete('expenses', e.id, `${e.category} expense`))) return
+    setLoading(true); await refreshExpenses(); setLoading(false)
   }
 
   return (
@@ -34,7 +34,7 @@ export default function ExpensesPage() {
         <table className="w-full min-w-[400px]">
           <thead><tr><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Date</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Category</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Description</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Amount</th><th className="p-3 bg-gray-50"></th></tr></thead>
           <tbody>{expenses.length === 0 ? <tr><td colSpan={5} className="text-center py-12 text-gray-400">No expenses</td></tr> : expenses.map(e => (
-            <tr key={e.id} className="border-b border-gray-50"><td className="p-3 text-sm">{fmtDate(e.date)}</td><td className="p-3"><span className="px-2.5 py-1 bg-red-50 text-red-500 rounded-lg text-[11px] font-bold">{e.category}</span></td><td className="p-3 text-sm">{e.description}</td><td className="p-3 text-sm font-bold text-red-500">{money(e.amount)}</td><td className="p-3"><button onClick={() => del(e.id)} className="h-9 px-3 bg-gray-800 text-white rounded-lg text-xs font-medium hover:bg-red-600 transition">Delete</button></td></tr>
+            <tr key={e.id} className="border-b border-gray-50"><td className="p-3 text-sm">{fmtDate(e.date)}</td><td className="p-3"><span className="px-2.5 py-1 bg-red-50 text-red-500 rounded-lg text-[11px] font-bold">{e.category}</span></td><td className="p-3 text-sm">{e.description}</td><td className="p-3 text-sm font-bold text-red-500">{money(e.amount)}</td><td className="p-3"><button onClick={() => del(e)} className="h-9 px-3 bg-gray-800 text-white rounded-lg text-xs font-medium hover:bg-red-600 transition">Delete</button></td></tr>
           ))}</tbody>
         </table>
       </div>
