@@ -21,6 +21,12 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- Supabase installs extensions into the `extensions` schema, not `public`, so
+-- crypt()/gen_salt() are NOT on the default search_path. Put `extensions` on
+-- the path for this migration's own statements, and on every function below
+-- that touches them.
+SET search_path = public, extensions, pg_temp;
+
 -- ---------------------------------------------------------------------------
 -- 1. Stop exposing the staff table (and its pin column) to the anon key.
 -- ---------------------------------------------------------------------------
@@ -71,7 +77,7 @@ CREATE OR REPLACE FUNCTION verify_pin(p_pin text)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_staff   record;
@@ -153,7 +159,7 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM staff
@@ -178,7 +184,7 @@ CREATE OR REPLACE FUNCTION admin_save_staff(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public, extensions, pg_temp
 AS $$
 DECLARE
   v_id   text;
@@ -294,8 +300,9 @@ BEGIN
          SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c
           WHERE c LIKE 'search_path=%'
        )
+       AND p.proname <> 'call_edge'                       -- 018 pins its own
   LOOP
-    EXECUTE format('ALTER FUNCTION %s SET search_path = public, pg_temp', fn.sig);
+    EXECUTE format('ALTER FUNCTION %s SET search_path = public, extensions, pg_temp', fn.sig);
     RAISE NOTICE 'Pinned search_path on %', fn.sig;
   END LOOP;
 END $$;

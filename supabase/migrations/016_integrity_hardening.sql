@@ -322,7 +322,7 @@ BEGIN
   ] LOOP
     BEGIN
       EXECUTE format('ALTER FUNCTION %s SECURITY DEFINER', fn);
-      EXECUTE format('ALTER FUNCTION %s SET search_path = public, pg_temp', fn);
+      EXECUTE format('ALTER FUNCTION %s SET search_path = public, extensions, pg_temp', fn);
       RAISE NOTICE 'promoted % to SECURITY DEFINER', fn;
     EXCEPTION WHEN undefined_function THEN
       RAISE NOTICE 'skipped % (not present)', fn;
