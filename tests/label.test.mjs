@@ -3,7 +3,8 @@ import { build } from 'esbuild'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { pathToFileURL } from 'url'
+import { pathToFileURL, fileURLToPath } from 'url'
+import { dirname, resolve } from 'path'
 
 const t = suite('Delivery label')
 
@@ -14,7 +15,7 @@ const t = suite('Delivery label')
 const dir = mkdtempSync(join(tmpdir(), 'lbl-'))
 const out = join(dir, 'label.mjs')
 await build({
-  entryPoints: ['src/lib/deliveryLabel.js'],
+  entryPoints: [resolve(dirname(fileURLToPath(import.meta.url)), '..', 'src/lib/deliveryLabel.js')],
   bundle: true, format: 'esm', platform: 'browser',
   define: { 'import.meta.env': '{}' },
   outfile: out, logLevel: 'silent',

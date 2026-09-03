@@ -6,13 +6,16 @@
  * repo now and run in CI.
  */
 import { readdirSync } from 'fs'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { dirname, join } from 'path'
 import { state } from './harness.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 for (const f of readdirSync(here).filter(f => f.endsWith('.test.mjs')).sort()) {
-  await import(join(here, f))
+  // Must be a file:// URL. A Windows absolute path (C:\...) is not a valid ESM
+  // specifier, so importing one throws ERR_UNSUPPORTED_ESM_URL_SCHEME — which
+  // is why every suite passed on macOS and none ran on windows-latest.
+  await import(pathToFileURL(join(here, f)).href)
 }
 
 console.log(`\n${'─'.repeat(48)}`)
