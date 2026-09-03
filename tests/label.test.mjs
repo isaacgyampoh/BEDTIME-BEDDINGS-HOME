@@ -1,18 +1,27 @@
 import { suite } from './harness.mjs'
-import { execSync } from 'child_process'
+import { build } from 'esbuild'
 import { mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 
 const t = suite('Delivery label')
 
 // Bundle the real module so the test exercises shipped code, not a copy.
+// Uses esbuild's JS API rather than shelling out: the CLI form needed shell
+// quoting that cmd.exe does not honour, so this suite passed on macOS and
+// failed the Windows release build.
 const dir = mkdtempSync(join(tmpdir(), 'lbl-'))
 const out = join(dir, 'label.mjs')
-execSync(`npx esbuild src/lib/deliveryLabel.js --bundle --format=esm --platform=browser --define:import.meta.env='{}' --outfile=${out}`,
-  { stdio: 'pipe' })
+await build({
+  entryPoints: ['src/lib/deliveryLabel.js'],
+  bundle: true, format: 'esm', platform: 'browser',
+  define: { 'import.meta.env': '{}' },
+  outfile: out, logLevel: 'silent',
+})
 globalThis.localStorage = { getItem: () => null, setItem: () => {} }
-const L = await import(out)
+// A Windows absolute path is not a valid ESM specifier without the file:// URL.
+const L = await import(pathToFileURL(out).href)
 
 // ── Code 128: decode our own output back, which is the only way to know it
 //    actually scans. The label used to draw '|'.repeat(40) — forty identical
