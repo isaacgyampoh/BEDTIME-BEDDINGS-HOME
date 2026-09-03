@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npx eslint src
+
+      - name: Tests
+        run: npm test
+
+      - name: Build POS
+        run: npm run build
+
+      - name: Build storefront
+        working-directory: storefront
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+
+      # A secret in the client bundle is the failure mode that matters most
+      # here: the repo is public and the anon key is already in it.
+      - name: No server secrets in the client bundle
+        shell: bash
+        run: |
+          set -e
+          for pat in TIKTOK_CLIENT_SECRET SUPABASE_SERVICE_ROLE_KEY NALOPAY_API_KEY MNOTIFY_KEY service_role; do
+            if grep -rq "$pat" dist/assets/*.js 2>/dev/null; then
+              echo "::error::'$pat' found in the built client bundle"; exit 1
+            fi
+          done
+          echo "clean"

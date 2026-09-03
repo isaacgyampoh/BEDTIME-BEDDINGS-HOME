@@ -10,7 +10,8 @@
     "lint": "eslint src",
     "desktop": "npm run build && cd desktop && npm start",
     "desktop:dev": "cd desktop && npm run dev",
-    "desktop:win": "npm run build && cd desktop && npm run build:win"
+    "desktop:win": "npm run build && cd desktop && npm run build:win",
+    "test": "node tests/run.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

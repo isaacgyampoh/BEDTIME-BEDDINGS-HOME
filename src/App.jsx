@@ -183,6 +183,10 @@ export default function App() {
         }, 1000)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => store.refreshProducts())
+      // A void is an UPDATE, not an INSERT. Listening only for INSERT meant
+      // every open till kept counting a voided sale in today's total until
+      // somebody reloaded the app.
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sales' }, () => store.refreshSales())
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sales' }, (payload) => {
         store.refreshSales()
         const s = payload.new
