@@ -1,62 +1,97 @@
-name: Build Windows POS installer
+name: Release Windows POS
 
+# A production release is cut by pushing a semver tag:
+#     npm run release:desktop 1.0.1
+#
+# It does NOT run on every push to main. The previous version did, with no
+# gate, which meant a broken commit became the update distributed to every
+# till. Every check below must pass before anything is published.
 on:
   push:
-    branches: [main]
-    paths: ['desktop/**', 'src/**', 'package.json', '.github/workflows/desktop-build.yml']
+    tags: ['v*.*.*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (must match desktop/package.json)'
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  windows:
+  release:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Build the web app
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      # ── Gate: nothing is published unless all of this passes ──────────────
+      - name: Lint
+        run: npx eslint src
+
+      - name: Tests
+        run: npm test
+
+      - name: Build web app
+        run: npm run build
+
+      - name: No server secrets in the client bundle
+        shell: bash
         run: |
-          npm install --no-audit --no-fund
-          npm run build
+          set -e
+          for pat in TIKTOK_CLIENT_SECRET SUPABASE_SERVICE_ROLE_KEY NALOPAY_API_KEY NALOPAY_AUTH_HEADER MNOTIFY_KEY service_role GH_TOKEN; do
+            if grep -rq "$pat" dist/assets/*.js 2>/dev/null; then
+              echo "::error::'$pat' found in the built client bundle"; exit 1
+            fi
+          done
+          echo "client bundle clean"
 
       - name: Install desktop deps
         working-directory: desktop
         run: npm install --no-audit --no-fund
 
-      - name: Package the Windows installer
-        working-directory: desktop
-        run: npx electron-builder --win --x64 --publish never
+      # The tag and desktop/package.json must agree, or an installed POS would
+      # be offered a version that does not match what it downloads.
+      - name: Version must match the tag
+        shell: bash
+        run: |
+          set -e
+          PKG=$(node -p "require('./desktop/package.json').version")
+          TAG="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then TAG="${{ inputs.version }}"; fi
+          echo "package.json=$PKG  tag=$TAG"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::desktop/package.json is $PKG but the tag is $TAG. Use 'npm run release:desktop <version>'."
+            exit 1
+          fi
 
-      - name: Show what was produced
+      # --publish always uploads the installer AND latest.yml, which is the
+      # metadata electron-updater reads. The old workflow uploaded only the
+      # .exe, so automatic updates could never have worked.
+      - name: Build and publish the installer
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --x64 --publish always
+
+      - name: Confirm the update metadata was produced
         working-directory: desktop
         shell: bash
-        run: ls -la release/*.exe
+        run: |
+          set -e
+          ls -la release/
+          test -f release/latest.yml || { echo "::error::latest.yml missing — auto-update would not work"; exit 1; }
+          echo "--- latest.yml ---"; cat release/latest.yml
 
       - uses: actions/upload-artifact@v4
         with:
           name: BEDTIME-POS-installer
-          path: desktop/release/*.exe
+          path: |
+            desktop/release/*.exe
+            desktop/release/latest.yml
           retention-days: 90
-
-      # A release asset on a public repo is a plain download link, which is the
-      # simplest way to get the installer onto a till that has no dev tooling.
-      - name: Publish as a release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: desktop-v${{ github.run_number }}
-          name: BEDTIME POS desktop (build ${{ github.run_number }})
-          body: |
-            Windows installer for the POS terminals.
-
-            Download `BEDTIME-POS-Setup-1.0.0.exe`, run it on the till, then open
-            **menu -> Receipt Printer** and press **Print test page**.
-
-            Built from ${{ github.sha }}.
-          files: desktop/release/*.exe
-          draft: false
-          prerelease: false

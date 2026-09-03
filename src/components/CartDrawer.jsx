@@ -10,7 +10,7 @@ import { askConfirm } from './PromptDialog'
 
 
 export default function CartDrawer({ open, onClose, onReceipt }) {
-  const { cart, updateCartQty, removeFromCart, clearCart, deductStock, user, mode } = useStore()
+  const { cart, updateCartQty, removeFromCart, clearCart, deductStock, user, mode, beginTx, endTx } = useStore()
   const [discount, setDiscount] = useState(0)
   const [phone, setPhone] = useState('')
   const [isWhatsApp, setIsWhatsApp] = useState(false)
@@ -49,6 +49,14 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
     if (payOpen) broadcastDisplay({ status: 'paying', total, count: cnt, subtotal: sub, items: cart.map(c => ({ name: c.name, qty: c.qty, price: c.price, lineTotal: c.lineTotal, image: c.image || '' })) })
   }, [payOpen]) // eslint-disable-line
 
+  // Taking a payment is uninterruptible for as long as the sheet is open —
+  // including the MoMo wait, which can run for minutes.
+  useEffect(() => {
+    if (!payOpen) return
+    beginTx()
+    return () => endTx()
+  }, [payOpen]) // eslint-disable-line
+
   // Elapsed-seconds counter for the direct-prompt waiting screen.
   useEffect(() => {
     if (momoStep !== 'waiting' || waitMode !== 'prompt') { setWaitSecs(0); return }
@@ -59,6 +67,9 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
 
   const recordSale = async (paymentMethod, extraData = {}) => {
     const sb = getSupabase(); if (!sb) return null
+    // Critical section: an app restart between here and the receipt would lose
+    // a sale, so the updater is told to hold off.
+    beginTx()
     try {
       const { data, error } = await sb.rpc('record_sale', {
         p_items: cart, p_customer: phone.trim(), p_payment: paymentMethod,
@@ -77,6 +88,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
         return null
       }
     } catch (e) { toast.error('Error: ' + e.message); return null }
+    finally { endTx() }
   }
 
   const finishSale = (saleData) => {

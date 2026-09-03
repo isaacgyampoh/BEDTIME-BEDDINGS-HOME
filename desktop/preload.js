@@ -27,6 +27,22 @@ contextBridge.exposeInMainWorld('posDesktop', {
 
   // Terminal settings
   setSettings:       (patch) => ipcRenderer.invoke('pos:setSettings', patch),
+
+  // Updates
+  updateState:       () => ipcRenderer.invoke('pos:updateState'),
+  checkForUpdates:   () => ipcRenderer.invoke('pos:checkForUpdates'),
+  installUpdate:     (opts) => ipcRenderer.invoke('pos:installUpdate', opts || {}),
+  /** Tell the main process a sale is open, so it will not restart mid-transaction. */
+  setBusy:           (busy) => ipcRenderer.invoke('pos:setBusy', !!busy),
+  /** Subscribe to update progress. Returns an unsubscribe function. */
+  onUpdateState: (cb) => {
+    if (typeof cb !== 'function') return () => {}
+    // Only the payload crosses the bridge — never the ipcRenderer event object,
+    // which would hand the renderer a channel it could send on.
+    const handler = (_e, state) => cb(state)
+    ipcRenderer.on('pos:update-state', handler)
+    return () => ipcRenderer.removeListener('pos:update-state', handler)
+  },
   setKiosk:          (on) => ipcRenderer.invoke('pos:setKiosk', !!on),
   setAutoLaunch:     (on) => ipcRenderer.invoke('pos:setAutoLaunch', !!on),
   relaunch:          () => ipcRenderer.invoke('pos:relaunch'),

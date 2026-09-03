@@ -48,6 +48,11 @@ export const useStore = create((set, get) => ({
   loading: true, loadingText: 'Connecting...',
   user: null, isAdmin: false,
   page: 'pos', cart: [], mode: 'retail', selectedCat: 'all', waFilter: 'Pending', perfPeriod: 'today',
+  // Counts the operations that must not be interrupted by an app restart:
+  // taking a payment, recording a sale, printing, adjusting stock. Components
+  // bracket their critical section with beginTx()/endTx(). A non-empty cart
+  // counts as busy on its own.
+  txDepth: 0,
   _secondaryLoaded: false,
   darkMode: localStorage.getItem('pos-dark') === 'true',
   toggleDark: () => set(s => { const d = !s.darkMode; localStorage.setItem('pos-dark', d); return { darkMode: d } }),
@@ -60,6 +65,10 @@ export const useStore = create((set, get) => ({
       s._loadSecondary()
     }
   },
+  beginTx: () => set(s => ({ txDepth: s.txDepth + 1 })),
+  endTx: () => set(s => ({ txDepth: Math.max(0, s.txDepth - 1) })),
+  isBusy: () => { const s = get(); return s.txDepth > 0 || s.cart.length > 0 },
+
   setMode: mode => set({ mode }), setCat: cat => set({ selectedCat: cat }),
   setWAFilter: f => set({ waFilter: f }), setPerfPeriod: p => set({ perfPeriod: p }),
   setLoading: (loading, text) => set({ loading, loadingText: text || 'Loading...' }),

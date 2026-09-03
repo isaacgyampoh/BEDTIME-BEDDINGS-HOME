@@ -9,7 +9,7 @@ import { printDocument } from '../lib/printer'
 import { deliveryLabelHTML, qrDataUri } from '../lib/deliveryLabel'
 
 export default function WhatsAppOrders({ onPrintReceipt }) {
-  const { waOrders, waFilter, setWAFilter, refreshWAOrders, user, setLoading, loadAll } = useStore()
+  const { waOrders, waFilter, setWAFilter, refreshWAOrders, user, setLoading, loadAll, beginTx, endTx } = useStore()
   const [search, setSearch] = useState('')
 
   // Auto-reconcile: check recent pending orders against NaloPay and confirm any
@@ -81,6 +81,7 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
     if (!order) { toast.error('Order not found'); return }
 
     setLoading(true, 'Packaging...')
+    beginTx()   // records a sale, deducts stock and prints — do not restart through this
 
     // Record the sale FIRST. This used to run after the status was set to
     // Completed, and complete_wa_order refuses an order that is already
@@ -94,7 +95,7 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
       })
       if (data?.success) sale = data
       else {
-        setLoading(false)
+        setLoading(false); endTx()
         toast.error(data?.error || error?.message || 'Could not record the sale')
         return   // do not advance the order if its revenue was not captured
       }
@@ -106,9 +107,10 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
       processed_by: user?.name || '',
       processed_at: new Date().toISOString(),
     }).eq('id', id)
-    if (upErr) { setLoading(false); toast.error('Could not update order: ' + upErr.message); return }
+    if (upErr) { setLoading(false); endTx(); toast.error('Could not update order: ' + upErr.message); return }
 
     setLoading(false)
+    endTx()
 
     // Print the receipt for the package.
     if (sale) {

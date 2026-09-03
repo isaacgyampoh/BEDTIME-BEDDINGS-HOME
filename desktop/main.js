@@ -25,6 +25,13 @@ const { app, BrowserWindow, ipcMain, screen, shell, dialog } = require('electron
 const path = require('path')
 const fs = require('fs')
 
+// electron-updater is optional at runtime: if it cannot load, the POS must
+// still open and sell. An update mechanism is never allowed to be the reason
+// a till will not start.
+let autoUpdater = null
+try { ({ autoUpdater } = require('electron-updater')) }
+catch (e) { console.warn('electron-updater unavailable, updates disabled:', e.message) }
+
 // serialport is a native module. If it fails to load (missing prebuild on an
 // unusual machine) the app must still run — printing simply falls back.
 let SerialPort = null
@@ -200,10 +207,82 @@ function printSilentHTML(html, { deviceName, widthMicrons = 80000 } = {}) {
   })
 }
 
+// ── updates ────────────────────────────────────────────────────────────────
+/**
+ * Update policy, in order of importance:
+ *
+ *   1. Never interrupt a sale. The renderer reports whether a transaction is
+ *      in progress; we refuse to restart while it is, and install on the next
+ *      natural quit instead.
+ *   2. Never block selling. Every failure path here is caught and reported to
+ *      the renderer as information, never as a blocking dialog.
+ *   3. Download quietly, install deliberately. The download happens in the
+ *      background; restarting is always the operator's decision.
+ */
+const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000   // 6 hours
+const FIRST_CHECK_DELAY = 30 * 1000                // let the till finish loading
+
+let updateState = { status: 'idle', version: null, notes: null, error: null, progress: 0 }
+let transactionBusy = false        // set by the renderer
+let updateTimer = null
+
+function sendUpdate(patch) {
+  updateState = { ...updateState, ...patch }
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) { try { w.webContents.send('pos:update-state', updateState) } catch {} }
+  }
+}
+
+function initUpdater() {
+  if (!autoUpdater) { updateState.status = 'unsupported'; return }
+  // Unpackaged runs have no update path; checking would only log noise.
+  if (!app.isPackaged) { updateState.status = 'dev'; return }
+
+  autoUpdater.autoDownload = true              // fetch quietly once found
+  autoUpdater.autoInstallOnAppQuit = true      // safest install moment there is
+  autoUpdater.logger = null
+
+  autoUpdater.on('checking-for-update', () => sendUpdate({ status: 'checking', error: null }))
+  autoUpdater.on('update-not-available', () => sendUpdate({ status: 'current', version: null }))
+  autoUpdater.on('update-available', (info) =>
+    sendUpdate({ status: 'downloading', version: info?.version || null, notes: info?.releaseNotes || null, progress: 0 }))
+  autoUpdater.on('download-progress', (p) =>
+    sendUpdate({ status: 'downloading', progress: Math.round(p?.percent || 0) }))
+  autoUpdater.on('update-downloaded', (info) =>
+    sendUpdate({ status: 'ready', version: info?.version || null, notes: info?.releaseNotes || null, progress: 100 }))
+  autoUpdater.on('error', (err) => {
+    // No internet, GitHub down, bad metadata, interrupted download — all land
+    // here, and all are non-fatal. The POS carries on.
+    console.warn('update error:', err?.message)
+    sendUpdate({ status: 'error', error: String(err?.message || err) })
+  })
+
+  const check = () => {
+    try { autoUpdater.checkForUpdates().catch(e => console.warn('update check failed:', e?.message)) }
+    catch (e) { console.warn('update check threw:', e?.message) }
+  }
+  setTimeout(check, FIRST_CHECK_DELAY)
+  updateTimer = setInterval(check, UPDATE_CHECK_INTERVAL)
+}
+
+/** Restart into the new version. Refuses while a sale is in progress. */
+function installUpdate({ force = false } = {}) {
+  if (!autoUpdater) return { ok: false, error: 'Updates are not available in this build' }
+  if (updateState.status !== 'ready') return { ok: false, error: 'No update is ready to install' }
+  if (transactionBusy && !force) {
+    return { ok: false, busy: true,
+      error: 'A sale is in progress. The update will be installed when the POS is next closed.' }
+  }
+  // isSilent=true, isForceRunAfter=true — reinstall without a wizard and come
+  // straight back up, so the till is only down for a few seconds.
+  setImmediate(() => { try { autoUpdater.quitAndInstall(true, true) } catch (e) { console.error('quitAndInstall:', e) } })
+  return { ok: true }
+}
+
 // ── IPC ────────────────────────────────────────────────────────────────────
 function registerIpc() {
   ipcMain.handle('pos:info', () => ({
-    desktop: true, version: app.getVersion(),
+    desktop: true, version: app.getVersion(), packaged: app.isPackaged,
     platform: process.platform, arch: process.arch,
     serial: !!SerialPort, settings: readSettings(),
   }))
@@ -271,6 +350,17 @@ function registerIpc() {
   })
 
   ipcMain.handle('pos:relaunch', () => { app.relaunch(); app.exit(0) })
+
+  // ── updates ──
+  ipcMain.handle('pos:updateState', () => updateState)
+  ipcMain.handle('pos:checkForUpdates', () => {
+    if (!autoUpdater || !app.isPackaged) return { ok: false, status: updateState.status }
+    try { autoUpdater.checkForUpdates().catch(() => {}); return { ok: true } }
+    catch (e) { return { ok: false, error: String(e?.message || e) } }
+  })
+  ipcMain.handle('pos:installUpdate', (_e, opts) => installUpdate(opts || {}))
+  // The renderer is the only thing that knows a sale is open.
+  ipcMain.handle('pos:setBusy', (_e, busy) => { transactionBusy = !!busy; return { ok: true, busy: transactionBusy } })
 }
 
 // ── lifecycle ──────────────────────────────────────────────────────────────
@@ -285,8 +375,10 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     registerIpc()
     createMainWindow()
+    initUpdater()
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow() })
   })
 
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+  app.on('before-quit', () => { if (updateTimer) clearInterval(updateTimer) })
 }

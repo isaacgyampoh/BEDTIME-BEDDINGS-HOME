@@ -8,12 +8,14 @@
   "scripts": {
     "start": "electron .",
     "dev": "POS_DEV_URL=http://localhost:3000 electron .",
-    "build:win": "electron-builder --win --x64",
+    "build:win": "electron-builder --win --x64 --publish never",
     "build:mac": "electron-builder --mac",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "release:win": "electron-builder --win --x64 --publish always"
   },
   "dependencies": {
-    "serialport": "^12.0.0"
+    "serialport": "^12.0.0",
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^32.2.0",
@@ -49,22 +51,37 @@
           ]
         }
       ],
-      "artifactName": "BEDTIME-POS-Setup-${version}.${ext}"
+      "artifactName": "BEDTIME-POS-Setup-${version}.${ext}",
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
-      "oneClick": false,
-      "perMachine": true,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "BEDTIME POS"
+      "shortcutName": "BEDTIME POS",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "menuCategory": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
     },
     "mac": {
       "target": [
         "dir"
       ],
       "category": "public.app-category.business"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "isaacgyampoh",
+        "repo": "BEDTIME-BEDDINGS-HOME",
+        "releaseType": "release"
+      }
+    ],
+    "generateUpdatesFilesForAllChannels": true
   },
   "allowScripts": {
     "electron@32.3.3": true,

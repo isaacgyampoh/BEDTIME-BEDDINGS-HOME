@@ -11,6 +11,7 @@ import Navigation from './components/Navigation'
 import CartDrawer from './components/CartDrawer'
 import ReceiptPreview from './components/ReceiptPreview'
 import PromptDialog from './components/PromptDialog'
+import UpdateBanner from './components/UpdateBanner'
 import toast from 'react-hot-toast'
 
 // Lazy load all pages — only loads when needed
@@ -260,6 +261,7 @@ export default function App() {
       <Toaster position="top-center" toastOptions={{ duration: 2000, style: { borderRadius: '14px', padding: '12px 20px', fontWeight: 600, fontSize: '13px', background: darkMode ? '#222' : '#fff', color: darkMode ? '#eee' : '#1a1a1a' } }} />
       <Navigation onOpenCart={() => setCartOpen(true)} />
       <PromptDialog />
+      <UpdateBanner />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} onReceipt={setReceipt} />
       {receipt && <ReceiptPreview sale={receipt} onClose={() => setReceipt(null)} />}
 
