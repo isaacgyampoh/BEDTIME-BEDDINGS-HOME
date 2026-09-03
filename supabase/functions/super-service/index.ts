@@ -151,6 +151,17 @@ async function sendSMS(to: string, message: string, kind = 'generic') {
       })
       const data = await res.text()
       console.log(`SMS to ${phone}: status=${res.status} response=${data.substring(0, 100)}`)
+
+      // A rejected key returns 401 — which is a RESOLVED fetch, not a thrown
+      // error, so the catch below never fired and the message was silently
+      // dropped. Fall back to mNotify's legacy endpoint, which accepts keys the
+      // v2 API rejects, and say plainly when both refuse.
+      if (!res.ok) {
+        const legacy = await fetch(`https://apps.mnotify.net/smsapi?key=${MNOTIFY_API_KEY}&to=${encodeURIComponent(phone)}&msg=${encodeURIComponent(message)}&sender_id=${encodeURIComponent(MNOTIFY_SENDER_ID)}`)
+        const lt = await legacy.text()
+        console.log(`SMS fallback to ${phone}: status=${legacy.status} response=${lt.substring(0, 100)}`)
+        if (!legacy.ok) console.error(`SMS NOT DELIVERED to ${phone}: both mNotify endpoints refused the key`)
+      }
     } catch (e) {
       console.log(`SMS failed for ${phone}: ${e}`)
     }

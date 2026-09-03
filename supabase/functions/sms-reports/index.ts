@@ -36,9 +36,17 @@ const sendSMS = async (phones, message) => {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ recipient: [phone], sender: SENDER_ID, message, is_schedule: false, schedule_date: '' })
         })
-        const text = await res.text()
-        console.log(`report SMS to ${phone}: ${res.status} ${text.slice(0, 120)}`)
-        results.push({ phone, status: res.status })
+        let text = await res.text()
+        let status = res.status
+        if (!res.ok) {
+          // Same fallback as super-service: the v2 API 401s on keys the legacy
+          // endpoint still accepts.
+          const legacy = await fetch(`https://apps.mnotify.net/smsapi?key=${MNOTIFY_API_KEY}&to=${encodeURIComponent(phone)}&msg=${encodeURIComponent(message)}&sender_id=${encodeURIComponent(SENDER_ID)}`)
+          text = await legacy.text(); status = legacy.status
+          console.log(`report SMS fallback to ${phone}: ${status} ${text.slice(0, 120)}`)
+        }
+        console.log(`report SMS to ${phone}: ${status} ${text.slice(0, 120)}`)
+        results.push({ phone, status, delivered: status >= 200 && status < 300 })
       } catch (e) {
         console.error(`report SMS failed for ${phone}:`, e)
         results.push({ phone, error: String(e) })
