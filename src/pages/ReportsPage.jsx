@@ -60,6 +60,9 @@ export default function ReportsPage() {
   const retailSales = fSales.filter(s => s.type === 'Retail')
   const wholesaleSales = fSales.filter(s => s.type === 'Wholesale')
   const waSales = fSales.filter(s => s.type === 'WhatsApp')
+  // Web-shop sales are recorded as 'Online' by complete_wa_order. Without this
+  // row their revenue was counted in the totals but invisible in the breakdown.
+  const onlineSales = fSales.filter(s => s.type === 'Online')
 
   // Top selling products
   const prodMap = {}
@@ -203,6 +206,7 @@ export default function ReportsPage() {
               { label: 'Retail', count: retailSales.length, amount: retailSales.reduce((a, s) => a + s.total, 0), color: 'bg-gray-800' },
               { label: 'Wholesale', count: wholesaleSales.length, amount: wholesaleSales.reduce((a, s) => a + s.total, 0), color: 'bg-amber-500' },
               { label: 'WhatsApp', count: waSales.length, amount: waSales.reduce((a, s) => a + s.total, 0), color: 'bg-green-500' },
+              { label: 'Online shop', count: onlineSales.length, amount: onlineSales.reduce((a, s) => a + s.total, 0), color: 'bg-[#0e7c86]' },
             ].map((p, i) => (
               <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                 <div className="flex items-center gap-3">

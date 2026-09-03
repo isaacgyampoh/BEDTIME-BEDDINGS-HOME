@@ -231,7 +231,7 @@ export default function App() {
   const pages = {
     dash: <Dashboard />,
     pos: <POS />,
-    whatsapp: <WhatsAppOrders />,
+    whatsapp: <WhatsAppOrders onPrintReceipt={(s) => setReceipt(s)} />,
     wachats: <WhatsAppChats />,
     receipts: <Receipts onPrintReceipt={(s) => setReceipt({ receiptNo: s.receiptNo, date: s.date, customer: s.customer, cashier: s.cashier, payment: s.payment, type: s.type, items: s.items, total: s.total, discount: s.discount })} />,
     products: <Products />,

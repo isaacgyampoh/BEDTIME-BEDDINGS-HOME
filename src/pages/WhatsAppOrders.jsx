@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { askText, askConfirm } from '../components/PromptDialog'
 import { printDocument } from '../lib/printer'
 
-export default function WhatsAppOrders() {
+export default function WhatsAppOrders({ onPrintReceipt }) {
   const { waOrders, waFilter, setWAFilter, refreshWAOrders, user, setLoading, loadAll } = useStore()
   const [search, setSearch] = useState('')
 
@@ -75,14 +75,30 @@ export default function WhatsAppOrders() {
 
   const markPackaged = async (id) => {
     const sb = getSupabase()
-
     const { data: orderData } = await sb.from('whatsapp_orders').select('*').eq('id', id).limit(1)
     const order = orderData?.[0]
     if (!order) { toast.error('Order not found'); return }
 
     setLoading(true, 'Packaging...')
 
-    // Update delivery status
+    // Record the sale FIRST. This used to run after the status was set to
+    // Completed, and complete_wa_order refuses an order that is already
+    // Completed — so the sale was never written and online revenue never
+    // appeared in the reports. complete_wa_order is idempotent now, so
+    // packaging twice returns the same receipt instead of double-counting.
+    let sale = null
+    if (order.status === 'Paid' || order.status === 'Completed') {
+      const { data, error } = await sb.rpc('complete_wa_order', {
+        p_order_id: id, p_processed_by: user?.name || '',
+      })
+      if (data?.success) sale = data
+      else {
+        setLoading(false)
+        toast.error(data?.error || error?.message || 'Could not record the sale')
+        return   // do not advance the order if its revenue was not captured
+      }
+    }
+
     const { error: upErr } = await sb.from('whatsapp_orders').update({
       delivery_status: 'Packaged',
       status: 'Completed',
@@ -91,30 +107,32 @@ export default function WhatsAppOrders() {
     }).eq('id', id)
     if (upErr) { setLoading(false); toast.error('Could not update order: ' + upErr.message); return }
 
-    // Record the sale for a paid order. complete_wa_order computes real profit
-    // from product cost and is idempotent, so packaging twice can no longer
-    // double-count the revenue the way the old hand-written insert did.
-    let recorded = false
-    if (order.status === 'Paid' || order.status === 'Completed') {
-      const receiptNo = order.order_no || ''
-      const { data: existing } = await sb.from('sales').select('id').eq('receipt_no', receiptNo).limit(1)
-      if (existing?.length) {
-        recorded = true // already has a sales row — nothing more to do
-      } else {
-        const { data, error } = await sb.rpc('complete_wa_order', { p_order_id: id, p_processed_by: user?.name || '' })
-        if (data?.success) recorded = true
-        else console.error('complete_wa_order failed:', data?.error || error?.message)
-      }
+    setLoading(false)
+
+    // Print the receipt for the package.
+    if (sale) {
+      let items = sale.items
+      if (typeof items === 'string') { try { items = JSON.parse(items) } catch { items = [] } }
+      onPrintReceipt?.({
+        receiptNo: sale.receiptNo,
+        date: sale.date || new Date().toISOString(),
+        customer: sale.customer || order.customer_name || 'Walk-in',
+        cashier: sale.cashier || user?.name || '',
+        payment: 'Momo',
+        type: sale.type || 'Online',
+        items: Array.isArray(items) ? items : [],
+        total: sale.total,
+        discount: 0,
+      })
     }
 
-    setLoading(false)
-    // Tell the customer. Fire-and-forget: a failed SMS must never block the
-    // order moving, and the server refuses to message an unpaid order.
     callFunction('delivery-sms', { orderId: id, stage: 'packaged' }).catch(() => {})
 
     setSelected(s => s ? { ...s, deliveryStatus: 'Packaged', status: 'Completed' } : s)
     loadAll()
-    toast.success(recorded ? 'Packaged — sale recorded, customer notified' : 'Packaged')
+    toast.success(sale
+      ? (sale.alreadyRecorded ? `Packaged — receipt ${sale.receiptNo} (already in sales)` : `Packaged — sale ${sale.receiptNo} recorded`)
+      : 'Packaged')
   }
 
   const markDispatched = async (id, deliveryGuy) => {
