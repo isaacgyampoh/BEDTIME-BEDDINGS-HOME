@@ -1,0 +1,73 @@
+{
+  "name": "bedtime-pos-desktop",
+  "productName": "BEDTIME POS",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BEDTIME BEDDINGS & HOME — point of sale for Windows POS terminals",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "POS_DEV_URL=http://localhost:3000 electron .",
+    "build:win": "electron-builder --win --x64",
+    "build:mac": "electron-builder --mac",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.bedtimehome.pos",
+    "productName": "BEDTIME POS",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "app",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "BEDTIME-POS-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BEDTIME POS"
+    },
+    "mac": {
+      "target": [
+        "dir"
+      ],
+      "category": "public.app-category.business"
+    }
+  },
+  "allowScripts": {
+    "electron@32.3.3": true,
+    "@serialport/bindings-cpp@12.0.1": true
+  }
+}

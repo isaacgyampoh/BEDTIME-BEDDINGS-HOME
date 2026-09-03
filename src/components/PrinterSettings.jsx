@@ -9,6 +9,10 @@ import {
   serialSupported, usbSupported, directSupported,
   BAUD_RATES, getBaud, setBaud,
 } from '../lib/printerLink'
+import {
+  isDesktop, desktopInfo, listSerialPorts, listPrinters,
+  saveTerminalSettings, setKiosk, setAutoLaunch,
+} from '../lib/desktop'
 import toast from 'react-hot-toast'
 
 // Defined at module scope on purpose: a component created inside render is a
@@ -35,14 +39,26 @@ export default function PrinterSettings({ open, onClose }) {
   const [linked, setLinked] = useState(false)
   const [label, setLabel] = useState('Not connected')
   const [pairing, setPairing] = useState(false)
+  const desktop = isDesktop()
+  const [ports, setPorts] = useState([])
+  const [queues, setQueues] = useState([])
+  const [term, setTerm] = useState(null)
 
   // Reconnect silently to a printer paired earlier on this terminal.
   useEffect(() => {
     if (!open) return
     let live = true
     restoreLink().then(ok => { if (live) { setLinked(ok); setLabel(linkLabel()) } })
+    // In the desktop app the machine can tell us what is actually attached,
+    // instead of asking the operator to pick a port out of a browser dialog.
+    if (desktop) {
+      Promise.all([desktopInfo(), listSerialPorts(), listPrinters()]).then(([i, p, q]) => {
+        if (!live) return
+        setTerm(i); setPorts(p || []); setQueues(q || [])
+      })
+    }
     return () => { live = false }
-  }, [open])
+  }, [open, desktop])
 
   const choosePaper = (w) => { setPaper(w); setPaperWidth(w); toast.success(`Paper set to ${w}mm`) }
   const chooseAuto = (m) => { setAuto(m); setAutoPrint(m) }
@@ -85,9 +101,59 @@ export default function PrinterSettings({ open, onClose }) {
       </>}>
       <div className="space-y-6">
 
-        {/* Connection — the built-in head on this terminal is not a Windows
-            printer, so the Chrome print dialog cannot see it. Pairing here
-            talks to it directly instead. */}
+        {desktop && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-2.5">This terminal</label>
+            <div className="rounded-2xl border-2 border-green-500 bg-green-50 p-3.5 mb-2.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[14px] font-bold text-gray-900">Desktop app</div>
+                  <div className="text-[11px] text-gray-500">
+                    v{term?.version || '—'} · prints without a driver or a dialog
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-3.5 mb-2.5">
+              <div className="text-[12px] font-bold text-gray-700 mb-1.5">Detected printer ports</div>
+              {ports.length === 0
+                ? <div className="text-[12px] text-gray-400">No serial ports found. Check the printer cable inside the machine.</div>
+                : ports.map((p, i) => (
+                    <button key={p.path} onClick={async () => { await saveTerminalSettings({ printerPort: p.path }); toast.success('Using ' + p.path) }}
+                      className="w-full flex items-center justify-between gap-2 py-2 border-b border-gray-50 last:border-0 text-left">
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold text-gray-800">{p.path}</div>
+                        <div className="text-[11px] text-gray-400 truncate">{p.friendlyName || p.manufacturer || 'Serial device'}</div>
+                      </div>
+                      {i === 0 && <span className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex-shrink-0">BEST MATCH</span>}
+                    </button>
+                  ))}
+              {queues.length > 0 && (
+                <div className="mt-2.5 pt-2.5 border-t border-gray-100">
+                  <div className="text-[12px] font-bold text-gray-700 mb-1">Windows printers</div>
+                  <div className="text-[11px] text-gray-500">{queues.map(q => q.displayName || q.name).join(', ')}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2.5 flex-wrap">
+              <button onClick={async () => { const r = await setKiosk(!(term?.settings?.kiosk !== false)); setTerm(t => ({ ...t, settings: { ...t?.settings, kiosk: r?.kiosk } })) }}
+                className="flex-1 min-w-[140px] h-11 rounded-xl border border-gray-300 text-[13px] font-semibold text-gray-700">
+                {term?.settings?.kiosk === false ? 'Enable kiosk mode' : 'Exit kiosk mode'}
+              </button>
+              <button onClick={async () => { const r = await setAutoLaunch(!term?.settings?.autoLaunch); setTerm(t => ({ ...t, settings: { ...t?.settings, autoLaunch: r?.autoLaunch } })); toast.success(r?.autoLaunch ? 'Will start on boot' : 'Will not start on boot') }}
+                className="flex-1 min-w-[140px] h-11 rounded-xl border border-gray-300 text-[13px] font-semibold text-gray-700">
+                {term?.settings?.autoLaunch ? 'Do not start on boot' : 'Start on boot'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Browser fallback: only shown when NOT in the desktop app, where the
+            operator must pair the printer by hand. */}
+        {!desktop && (
         <div>
           <label className="block text-xs font-semibold text-gray-500 mb-2.5">Built-in printer</label>
 
@@ -135,8 +201,9 @@ export default function PrinterSettings({ open, onClose }) {
             try USB.
           </p>
         </div>
+        )}
 
-        {serialSupported() && !linked && (
+        {!desktop && serialSupported() && !linked && (
           <div>
             <label className="block text-xs font-semibold text-gray-500 mb-2.5">COM port speed</label>
             <div className="flex gap-2 flex-wrap">

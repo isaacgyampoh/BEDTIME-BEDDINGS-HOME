@@ -22,6 +22,7 @@
 
 import { receiptBytes, testBytes } from './escpos'
 import { sendBytes, isLinked, restoreLink } from './printerLink'
+import { isDesktop, printRaw as desktopPrintRaw, printSilent as desktopPrintSilent } from './desktop'
 
 const PAPER_KEY = 'pos-paper-width'   // '58' | '80'
 const AUTO_KEY = 'pos-auto-print'     // 'all' | 'cash' | 'off'
@@ -319,17 +320,35 @@ export function printDocument(fullHTML, { paper = getPaperWidth(), title = 'Prin
  * Returns { ok, via } so the caller can tell the operator what actually happened.
  */
 export async function printReceipt(sale, shop, { paper = getPaperWidth() } = {}) {
+  // 1. Desktop app: bytes straight to the COM port. No driver, no dialog, and
+  //    the port is auto-detected, so nothing is paired by hand.
+  if (isDesktop()) {
+    if (await desktopPrintRaw(receiptBytes(sale, shop, paper))) return { ok: true, via: 'desktop-serial' }
+    // A Windows print queue may still exist even when the built-in head has none.
+    if (await desktopPrintSilent(buildDocument(receiptHTML(sale, shop), { paper }), { widthMicrons: paperMM(paper) * 1000 })) {
+      return { ok: true, via: 'desktop-silent' }
+    }
+  }
+
+  // 2. Browser: a Web Serial / WebUSB link paired by the operator.
   if (isLinked() || await restoreLink()) {
     const ok = await sendBytes(receiptBytes(sale, shop, paper))
     if (ok) return { ok: true, via: 'direct' }
-    // fall through — a failed direct write should still try the OS path
   }
+
+  // 3. Last resort: the OS print path, which needs an installed printer.
   const ok = await printHTML(receiptHTML(sale, shop), { paper, title: `Receipt ${sale.receiptNo || ''}` })
   return { ok, via: 'browser' }
 }
 
 /** Alignment/darkness check, over whichever transport is available. */
 export async function printTestPage({ paper = getPaperWidth() } = {}) {
+  if (isDesktop()) {
+    if (await desktopPrintRaw(testBytes(paper))) return { ok: true, via: 'desktop-serial' }
+    if (await desktopPrintSilent(buildDocument(testPageHTML(paper), { paper }), { widthMicrons: paperMM(paper) * 1000 })) {
+      return { ok: true, via: 'desktop-silent' }
+    }
+  }
   if (isLinked() || await restoreLink()) {
     const ok = await sendBytes(testBytes(paper))
     if (ok) return { ok: true, via: 'direct' }

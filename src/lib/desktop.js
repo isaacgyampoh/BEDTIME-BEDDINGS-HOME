@@ -1,0 +1,84 @@
+/**
+ * Desktop-app bridge.
+ *
+ * The same build runs in a browser and inside the Electron shell. Everything
+ * here degrades to a no-op on the web, so no call site needs to branch: the
+ * browser paths that already exist stay exactly as they are.
+ *
+ * What the desktop app adds, and why it matters on this hardware:
+ *   - ESC/POS straight to a COM port with no Windows driver and no permission
+ *     prompt. The built-in head on these tills is not a Windows printer, which
+ *     is why the browser's print dialog had nothing to offer.
+ *   - Silent printing to a real Windows printer, when one exists.
+ *   - The customer screen placed on the actual second monitor.
+ */
+
+const api = () => (typeof window !== 'undefined' ? window.posDesktop : null)
+
+/** True only inside the Electron shell. */
+export const isDesktop = () => !!api()?.isDesktop
+
+export async function desktopInfo() {
+  const d = api(); if (!d) return null
+  try { return await d.info() } catch { return null }
+}
+
+/** Windows print queues, if any are installed. */
+export async function listPrinters() {
+  const d = api(); if (!d) return []
+  try { return await d.listPrinters() } catch { return [] }
+}
+
+/** COM ports, most printer-like first. */
+export async function listSerialPorts() {
+  const d = api(); if (!d) return []
+  try { return await d.listSerialPorts() } catch { return [] }
+}
+
+/**
+ * Send ESC/POS bytes to the till's printer.
+ * Returns false on the web so the caller falls back to its existing path.
+ */
+export async function printRaw(bytes, opts = {}) {
+  const d = api(); if (!d) return false
+  try {
+    const r = await d.printRaw(bytes, opts)
+    if (!r?.ok) console.warn('desktop printRaw:', r?.error)
+    return !!r?.ok
+  } catch (e) { console.warn('desktop printRaw threw:', e); return false }
+}
+
+/** Print HTML with no dialog, to a named Windows printer. */
+export async function printSilent(html, opts = {}) {
+  const d = api(); if (!d) return false
+  try {
+    const r = await d.printSilent(html, opts)
+    if (!r?.ok) console.warn('desktop printSilent:', r?.error)
+    return !!r?.ok
+  } catch { return false }
+}
+
+export async function getDisplays() {
+  const d = api(); if (!d) return []
+  try { return await d.getDisplays() } catch { return [] }
+}
+
+export async function openCustomerDisplay(regId) {
+  const d = api(); if (!d) return { ok: false }
+  try { return await d.openCustomerDisplay(regId) } catch (e) { return { ok: false, error: String(e) } }
+}
+
+export async function saveTerminalSettings(patch) {
+  const d = api(); if (!d) return null
+  try { return await d.setSettings(patch) } catch { return null }
+}
+
+export async function setKiosk(on) {
+  const d = api(); if (!d) return null
+  try { return await d.setKiosk(on) } catch { return null }
+}
+
+export async function setAutoLaunch(on) {
+  const d = api(); if (!d) return null
+  try { return await d.setAutoLaunch(on) } catch { return null }
+}

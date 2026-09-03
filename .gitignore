@@ -11,3 +11,5 @@ storefront/dist
 .vercel
 .env*
 .env.local
+desktop/node_modules
+desktop/release

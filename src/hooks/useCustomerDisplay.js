@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from './useStore'
 import { getSupabase } from '../lib/supabase'
+import { isDesktop, openCustomerDisplay as desktopCustomerDisplay } from '../lib/desktop'
 
 /**
  * Customer-facing display sync via Supabase Realtime broadcast.
@@ -134,6 +135,16 @@ async function openOnCustomerScreen({ requireSecondScreen, fallbackPopup }) {
   if (customerWin && !customerWin.closed) { try { customerWin.focus() } catch {}; return customerWin }
 
   const reg = getRegisterId()
+
+  // In the desktop app the OS tells us where the monitors actually are, so the
+  // customer screen is placed rather than guessed. No popup blocker, no
+  // getScreenDetails permission, no window that can be dragged to the wrong one.
+  if (isDesktop()) {
+    const r = await desktopCustomerDisplay(reg)
+    if (r?.ok) return { closed: false, focus() {}, __desktop: true }
+    if (requireSecondScreen) return null
+  }
+
   const url = window.location.origin + '/#/customer-display?reg=' + reg
   const winName = 'customer-display-' + reg
 
