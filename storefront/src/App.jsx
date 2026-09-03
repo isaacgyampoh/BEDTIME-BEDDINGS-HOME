@@ -385,14 +385,16 @@ export default function App() {
     setSubmitting(true)
     const orderNo = 'WEB-' + Date.now().toString(36).toUpperCase()
     const items = cart.map(c => ({ name: c.name.replace(/[<>]/g, ''), qty: c.qty, price: c.price, lineTotal: c.price * c.qty, productId: c.id }))
-    const { data: mc } = await supabase.from('whatsapp_orders').select('ussd_code').order('ussd_code', { ascending: false }).limit(1)
-    const uc = (mc?.[0]?.ussd_code || 0) + 1
     const orderNotes = ['DELIVERY', notes || ''].filter(Boolean).join(' | ')
 
-    // Create order (Pending) and show USSD code
-    const { data: inserted, error } = await supabase.from('whatsapp_orders').insert({ order_no: orderNo, date: new Date().toISOString(), customer_name: name, customer_phone: phone, items: JSON.stringify(items), subtotal: ct, total: ct, address: addr || null, notes: orderNotes, status: 'Pending', ussd_code: uc, source: 'web', details_filled: true }).select('id').single()
+    // Let the database assign the USSD code. ussd_code_seq + the
+    // trg_assign_ussd_code trigger do it atomically; the old client-side
+    // "max + 1" handed two simultaneous checkouts the same code, so one
+    // customer's payment could land on the other customer's order.
+    const { data: inserted, error } = await supabase.from('whatsapp_orders').insert({ order_no: orderNo, date: new Date().toISOString(), customer_name: name, customer_phone: phone, items: JSON.stringify(items), subtotal: ct, total: ct, address: addr || null, notes: orderNotes, status: 'Pending', source: 'web', details_filled: true }).select('id,ussd_code').single()
 
-    if (error) { setSubmitting(false); setToast('Error placing order'); setTimeout(() => setToast(''), 2000); return }
+    if (error || !inserted?.ussd_code) { setSubmitting(false); setToast('Error placing order'); setTimeout(() => setToast(''), 2000); return }
+    const uc = inserted.ussd_code
 
     // Online payment (MoMo prompt) only if enabled for this brand. Otherwise the
     // order is placed and the shop contacts the customer to arrange payment.

@@ -383,6 +383,10 @@ serve(async (req) => {
         if (ref) { const { data: o1 } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name,status,source,ussd_code').eq('paystack_ref', ref).limit(1); order = o1?.[0] }
         if (!order && naloOrderId) { const { data: o2 } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name,status,source,ussd_code').eq('nalopay_order_id', naloOrderId).limit(1); order = o2?.[0] }
         if (!order && ref.startsWith('USSD-')) { const ussdCode = ref.split('-')[1]; if (ussdCode) { const { data: o3 } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name,status,source,ussd_code').eq('ussd_code', parseInt(ussdCode)).eq('status', 'Pending').limit(1); order = o3?.[0] } }
+        // Final fallback: the reference we hand NaloPay IS the order_no for web
+        // (WEB-…) and walk-in (POS-…) orders, so match on that directly. This
+        // is what lets a payment land even if the ref column was never written.
+        if (!order && ref) { const { data: o4 } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name,status,source,ussd_code').eq('order_no', ref).limit(1); order = o4?.[0] }
         if (!order) { console.error('NaloPay callback: no matching order for ref=' + ref); return new Response(JSON.stringify({ success: true, note: 'order not found' }), { headers: { 'Content-Type': 'application/json' } }) }
         if (order.status === 'Paid' || order.status === 'Completed') { return new Response(JSON.stringify({ success: true, note: 'already paid' }), { headers: { 'Content-Type': 'application/json' } }) }
         // Walk-in orders are handed over in-shop, so payment = fully done -> Completed.
@@ -435,8 +439,16 @@ serve(async (req) => {
       // (check by id) AND ones that were charged (have a USSD- ref) but whose
       // order id didn't save — we can still look those up by reference.
       const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-      const { data: pend } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name,status,source,nalopay_order_id,paystack_ref,ussd_code').eq('status', 'Pending').gte('date', since).limit(60)
-      const pending = (pend || []).filter((o: any) => o.nalopay_order_id || (o.paystack_ref && String(o.paystack_ref).startsWith('USSD-')))
+      const { data: pend, error: pendErr } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name,status,source,nalopay_order_id,paystack_ref,ussd_code').eq('status', 'Pending').gte('date', since).limit(60)
+      // A failed select used to look identical to "nothing pending", which hid
+      // this bug for as long as it existed.
+      if (pendErr) {
+        console.error('RECONCILE: could not read pending orders:', pendErr.message)
+        return new Response(JSON.stringify({ success: false, error: 'Could not read pending orders: ' + pendErr.message }), { headers: CORS })
+      }
+      // Previously this accepted only refs beginning with USSD-, so every WEB-
+      // and POS- order was skipped even when it had a NaloPay id to check.
+      const pending = (pend || []).filter((o: any) => o.nalopay_order_id)
       if (pending.length === 0) return new Response(JSON.stringify({ success: true, checked: 0, confirmed: 0, message: 'No pending orders to reconcile' }), { headers: CORS })
       // One NaloPay token for all checks.
       let token = ''
@@ -506,7 +518,15 @@ serve(async (req) => {
       const result = await nalopayCharge({ phone: naloPhone, amount: Number(amount), network: net, reference: ref, accountName: customerName || 'Customer', description: description || `Order ${orderNo || ref}`, callbackUrl })
       if (!result.success) return new Response(JSON.stringify({ success: false, error: result.error || 'Charge failed', reference: ref }), { headers: CORS })
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-      if (orderId) { const updateFields: Record<string, any> = { paystack_ref: ref, customer_phone: phone }; if (result.orderId) updateFields.nalopay_order_id = result.orderId; try { await supabase.from('whatsapp_orders').update(updateFields).eq('id', orderId) } catch {} }
+      if (orderId) {
+        const updateFields: Record<string, any> = { paystack_ref: ref, customer_phone: phone }
+        if (result.orderId) updateFields.nalopay_order_id = result.orderId
+        // This used to be `catch {}`. The update was failing on a missing
+        // column and nobody knew, which is exactly why paystack_ref was never
+        // stored and web orders could never be matched by the callback.
+        const { error: linkErr } = await supabase.from('whatsapp_orders').update(updateFields).eq('id', orderId)
+        if (linkErr) console.error(`CRITICAL: could not link payment to order ${orderId}: ${linkErr.message}. The callback will not be able to match it.`)
+      }
       // No pre-payment SMS. The prompt is instant; the only SMS is the thank-you
       // sent AFTER payment is confirmed (see nalopay-status / reconcile).
       return new Response(JSON.stringify({ success: true, reference: ref, nalopayOrderId: result.orderId, otpCode: result.otpCode, status: result.status || 'PENDING', message: 'Prompt sent to the customer.' }), { headers: CORS })
