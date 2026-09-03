@@ -8,7 +8,10 @@ const ARKESEL_API_KEY = Deno.env.get('ARKESEL_API_KEY') || ''
 const MNOTIFY_API_KEY = Deno.env.get('MNOTIFY_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevlnp.supabase.co'
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-const SENDER_ID = 'EverytnRm'
+// Must match the sender ID registered with mNotify — super-service already
+// sends as BEDTIMEHOME. The previous brand's ID survived the rename here and
+// an unregistered sender is a common silent rejection.
+const SENDER_ID = Deno.env.get('MNOTIFY_SENDER_ID') || 'BEDTIMEHOME'
 
 const ADMIN_PHONES = ['0599084552']
 
@@ -26,6 +29,13 @@ const dateStr = (d) => d.toISOString().slice(0, 10)
 
 const sendSMS = async (phones, message) => {
   const recipients = phones.map(formatPhone)
+
+  // Record the send so system_health() reflects real volume. The shop's own
+  // line is exempt from the cap (029), so this never blocks a report.
+  try {
+    const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
+    for (const p of recipients) await sb.rpc('claim_sms', { p_phone: p, p_kind: 'report' })
+  } catch (e) { console.warn('sms_log write failed (continuing):', e) }
 
   if (MNOTIFY_API_KEY) {
     // Same call shape super-service already uses successfully.

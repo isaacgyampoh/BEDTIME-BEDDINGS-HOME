@@ -1,8 +1,58 @@
+import { useState, useEffect } from 'react'
 import { useStore } from '../hooks/useStore'
-import { money, today, weekStartDate, monthStart, isoDate } from '../lib/utils'
+import { callFunction } from '../lib/supabase'
+import { money, today, weekStartDate, monthStart, isoDate, fmtDateTime } from '../lib/utils'
+
+// Module scope: components declared inside render are a new type every render,
+// so React remounts them and any state or focus inside is lost.
+const HealthRow = ({ ok, warn, label, detail }) => (
+  <div className="flex items-center gap-3 py-2.5 border-b border-gray-50 last:border-0">
+    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${warn ? 'bg-amber-500' : ok ? 'bg-green-500' : 'bg-gray-300'}`} />
+    <span className="text-[13px] font-semibold text-gray-700 flex-1">{label}</span>
+    <span className="text-[12px] text-gray-400 text-right">{detail}</span>
+  </div>
+)
+
+/**
+ * Scheduled reports, payment confirmations and delivery messages all run
+ * unattended, and when one breaks it breaks quietly — which is how orders sat
+ * Pending and the SMS key stayed dead for months. This makes that visible on
+ * the screen the owner already looks at every morning.
+ */
+function SystemHealth({ health, waOrders }) {
+  const calls = health?.recent_outbound_calls || []
+  const lastCall = calls[0]
+  const cronOk = calls.length > 0 && calls.slice(0, 3).every(c => c.code >= 200 && c.code < 300)
+  const smsCount = health?.sms_last_24h ?? null
+  const stuck = (waOrders || []).filter(o =>
+    o.status === 'Pending' && o.date && (Date.now() - new Date(o.date).getTime()) > 2 * 3600 * 1000).length
+
+  return (
+    <div className="bg-white rounded-2xl p-5 border border-gray-200/70 mb-5">
+      <h3 className="text-sm font-bold text-gray-800 mb-1">System health</h3>
+      <p className="text-[12px] text-gray-400 mb-3">The parts that run on their own</p>
+      <HealthRow ok={cronOk} label="Scheduled jobs reaching the server"
+        detail={lastCall ? `last ${fmtDateTime(lastCall.at)} · ${lastCall.code}` : health ? 'no recent calls' : 'checking…'} />
+      <HealthRow ok={smsCount > 0} label="SMS sent (last 24h)"
+        detail={smsCount == null ? 'checking…' : `${smsCount} message${smsCount === 1 ? '' : 's'}`} />
+      <HealthRow ok={stuck === 0} warn={stuck > 0} label="Orders paid but still Pending"
+        detail={stuck === 0 ? 'none' : `${stuck} over 2h — check Orders`} />
+    </div>
+  )
+}
 
 export default function Dashboard() {
-  const { sales, expenses, products, user } = useStore()
+  const { sales, expenses, products, user, waOrders } = useStore()
+
+  // Automation health. Everything below runs unattended — scheduled reports,
+  // payment confirmations, delivery messages — and when one breaks it breaks
+  // quietly. This is the panel that makes that visible.
+  const [health, setHealth] = useState(null)
+  useEffect(() => {
+    let live = true
+    callFunction('cron-check').then(r => { if (live) setHealth(r?.sms || null) }).catch(() => {})
+    return () => { live = false }
+  }, [])
   const t = today(), ws = weekStartDate(), ms = monthStart()
 
   const todaySales = sales.filter(s => !s.voided && isoDate(s.date) === t)
@@ -70,6 +120,8 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      <SystemHealth health={health} waOrders={waOrders} />
 
       {/* Payment Split */}
       <div className="bg-white rounded-2xl p-5 border border-gray-200/70 mb-5">

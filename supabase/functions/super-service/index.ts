@@ -851,6 +851,59 @@ serve(async (req) => {
       }
     }
 
+    // Aggregate-only health probe: HTTP status codes and counts, no phone
+    // numbers and no message content. Lets anyone operating the shop see at a
+    // glance whether the scheduled jobs are actually reaching the functions —
+    // the thing that silently stopped working before.
+    if (action === 'cron-check') {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+      const out: Record<string, unknown> = {}
+      try {
+        const { data } = await supabase.rpc('sms_delivery_summary')
+        out.sms = data
+      } catch (e) { out.sms = { error: String(e) } }
+      return new Response(JSON.stringify({ success: true, ...out }), { headers: CORS })
+    }
+
+    // Tell the customer their paid order is moving. Nothing did this before:
+    // an online customer paid and then heard nothing until it arrived.
+    if (action === 'delivery-sms') {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+      let body: any = {}; try { body = await req.json() } catch (_) {}
+      const { orderId, stage } = body
+      if (!orderId || !stage) {
+        return new Response(JSON.stringify({ success: false, error: 'orderId and stage are required' }), { headers: CORS })
+      }
+
+      const { data: rows } = await supabase.from('whatsapp_orders')
+        .select('order_no,customer_name,customer_phone,total,status,delivery_guy,tracking_no')
+        .eq('id', orderId).limit(1)
+      const o = rows?.[0]
+      if (!o) return new Response(JSON.stringify({ success: false, error: 'Order not found' }), { headers: CORS })
+      if (!o.customer_phone) return new Response(JSON.stringify({ success: false, error: 'No customer phone on this order' }), { headers: CORS })
+
+      // Only a paid order gets a progress message; nothing should imply we are
+      // shipping something that has not been paid for.
+      if (o.status !== 'Paid' && o.status !== 'Completed') {
+        return new Response(JSON.stringify({ success: false, error: 'Order is not paid' }), { headers: CORS })
+      }
+
+      const first = (o.customer_name || 'there').split(' ')[0]
+      let msg = ''
+      if (stage === 'packaged') {
+        msg = `Hi ${first}, your order ${o.order_no} is packed and ready.\n\nWe will contact you shortly to arrange delivery.\n\n${SHOP}\n059 908 4552`
+      } else if (stage === 'dispatched') {
+        msg = `Hi ${first}, your order ${o.order_no} is on its way${o.delivery_guy ? ' with ' + o.delivery_guy : ''}.\n\nPlease keep your phone nearby.\n\n${SHOP}\n059 908 4552`
+      } else if (stage === 'delivered') {
+        msg = `Hi ${first}, your order ${o.order_no} has been delivered.\n\nThank you for shopping with us — we hope to see you again soon!\n\n${SHOP}\n059 908 4552`
+      } else {
+        return new Response(JSON.stringify({ success: false, error: 'Unknown stage' }), { headers: CORS })
+      }
+
+      await sendSMS(o.customer_phone, msg, 'delivery-' + stage)
+      return new Response(JSON.stringify({ success: true, stage, order: o.order_no }), { headers: CORS })
+    }
+
     // ═══════════════ TIKTOK: OAuth ═══════════════
     if (action === 'tiktok-oauth-start') {
       if (!tiktokConfigured()) {

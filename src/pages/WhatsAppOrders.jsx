@@ -108,9 +108,13 @@ export default function WhatsAppOrders() {
     }
 
     setLoading(false)
+    // Tell the customer. Fire-and-forget: a failed SMS must never block the
+    // order moving, and the server refuses to message an unpaid order.
+    callFunction('delivery-sms', { orderId: id, stage: 'packaged' }).catch(() => {})
+
     setSelected(s => s ? { ...s, deliveryStatus: 'Packaged', status: 'Completed' } : s)
     loadAll()
-    toast.success(recorded ? 'Packaged — sale recorded' : 'Packaged')
+    toast.success(recorded ? 'Packaged — sale recorded, customer notified' : 'Packaged')
   }
 
   const markDispatched = async (id, deliveryGuy) => {
@@ -119,9 +123,10 @@ export default function WhatsAppOrders() {
       delivery_status: 'Out for Delivery',
       delivery_guy: deliveryGuy,
     }).eq('id', id)
+    callFunction('delivery-sms', { orderId: id, stage: 'dispatched' }).catch(() => {})
     setSelected(s => s ? { ...s, deliveryStatus: 'Out for Delivery', deliveryGuy } : s)
     refreshWAOrders()
-    toast.success('Dispatched')
+    toast.success('Dispatched — customer notified')
   }
 
   const markPickedUp = async (id, method) => {
@@ -136,6 +141,7 @@ export default function WhatsAppOrders() {
       delivered_at: new Date().toISOString(),
       status: 'Completed',
     }).eq('id', id)
+    callFunction('delivery-sms', { orderId: id, stage: 'delivered' }).catch(() => {})
     setSelected(s => s ? { ...s, deliveryStatus: 'Picked Up', deliveryGuy: who, deliveredAt: new Date().toISOString(), status: 'Completed' } : s)
     refreshWAOrders()
     toast.success(method === 'self' ? 'Customer picked up' : 'Picked up by ' + who)
