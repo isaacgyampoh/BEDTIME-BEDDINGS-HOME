@@ -2,6 +2,10 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const ARKESEL_API_KEY = Deno.env.get('ARKESEL_API_KEY') || ''
+// mNotify is the provider this shop actually pays for and has configured; the
+// Arkesel key has never been set, so every scheduled report was built and then
+// dropped. Prefer mNotify, keep Arkesel as a fallback if a key ever appears.
+const MNOTIFY_API_KEY = Deno.env.get('MNOTIFY_KEY') || ''
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevlnp.supabase.co'
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const SENDER_ID = 'EverytnRm'
@@ -22,19 +26,46 @@ const dateStr = (d) => d.toISOString().slice(0, 10)
 
 const sendSMS = async (phones, message) => {
   const recipients = phones.map(formatPhone)
-  try {
-    const res = await fetch('https://sms.arkesel.com/api/v2/sms/send', {
-      method: 'POST',
-      headers: { 'api-key': ARKESEL_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sender: SENDER_ID, message, recipients })
-    })
-    const data = await res.json()
-    console.log('SMS sent:', data)
-    return data
-  } catch (e) {
-    console.error('SMS error:', e)
-    return { error: e.message }
+
+  if (MNOTIFY_API_KEY) {
+    // Same call shape super-service already uses successfully.
+    const results = []
+    for (const phone of recipients) {
+      try {
+        const res = await fetch(`https://api.mnotify.com/api/sms/quick?key=${MNOTIFY_API_KEY}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recipient: [phone], sender: SENDER_ID, message, is_schedule: false, schedule_date: '' })
+        })
+        const text = await res.text()
+        console.log(`report SMS to ${phone}: ${res.status} ${text.slice(0, 120)}`)
+        results.push({ phone, status: res.status })
+      } catch (e) {
+        console.error(`report SMS failed for ${phone}:`, e)
+        results.push({ phone, error: String(e) })
+      }
+    }
+    return { provider: 'mnotify', results }
   }
+
+  if (ARKESEL_API_KEY) {
+    try {
+      const res = await fetch('https://sms.arkesel.com/api/v2/sms/send', {
+        method: 'POST',
+        headers: { 'api-key': ARKESEL_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sender: SENDER_ID, message, recipients })
+      })
+      const data = await res.json()
+      console.log('SMS sent:', data)
+      return { provider: 'arkesel', ...data }
+    } catch (e) {
+      console.error('SMS error:', e)
+      return { error: e.message }
+    }
+  }
+
+  // Say so rather than reporting success for a message nobody received.
+  console.error('No SMS provider configured (MNOTIFY_KEY / ARKESEL_API_KEY)')
+  return { error: 'No SMS provider configured', delivered: false }
 }
 
 const getSalesData = async (fromDate, toDate) => {
