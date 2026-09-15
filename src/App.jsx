@@ -12,6 +12,7 @@ import CartDrawer from './components/CartDrawer'
 import ReceiptPreview from './components/ReceiptPreview'
 import PromptDialog from './components/PromptDialog'
 import UpdateBanner from './components/UpdateBanner'
+import FirstRunSetup from './components/FirstRunSetup'
 import toast from 'react-hot-toast'
 
 // Lazy load all pages — only loads when needed
@@ -262,6 +263,7 @@ export default function App() {
       <Navigation onOpenCart={() => setCartOpen(true)} />
       <PromptDialog />
       <UpdateBanner />
+      <FirstRunSetup />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} onReceipt={setReceipt} />
       {receipt && <ReceiptPreview sale={receipt} onClose={() => setReceipt(null)} />}
 
