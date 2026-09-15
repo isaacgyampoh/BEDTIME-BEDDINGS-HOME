@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from './lib/supabase'
 import { money, thumb, SHOP, PAYMENTS_ENABLED, EDGE_URL } from './lib/utils'
 
@@ -73,21 +73,17 @@ export default function App() {
   const [custPhone, setCustPhone] = useState('')
   const [custAddress, setCustAddress] = useState('')
   const [custNotes, setCustNotes] = useState('')
-  const [fulfillment, setFulfillment] = useState('delivery') // 'delivery' or 'pickup'
+  const fulfillment = 'delivery' // no pickup location yet; see the checkout form
   const [submitting, setSubmitting] = useState(false)
   const [orderResult, setOrderResult] = useState(null)
   const [retrying, setRetrying] = useState(false)
   const [retryWait, setRetryWait] = useState(0)
-  const [checkoutStep, setCheckoutStep] = useState(1)
   const [trackQuery, setTrackQuery] = useState('')
   const [trackResult, setTrackResult] = useState(null)
   const [tracking, setTracking] = useState(false)
   const [toast, setToast] = useState('')
   const [recentlyViewed, setRecentlyViewed] = useState(() => { try { return JSON.parse(localStorage.getItem('etr_recent') || '[]') } catch { return [] } })
   const [zoomOpen, setZoomOpen] = useState(false)
-  const [notifyPhone, setNotifyPhone] = useState('')
-  const [notifySubmit, setNotifySubmit] = useState(false)
-  const [notifyDone, setNotifyDone] = useState(false)
   const [shopOpen, setShopOpen] = useState(true)
   const [shopChecked, setShopChecked] = useState(false)
   const [closedMsg, setClosedMsg] = useState('We are currently closed. Please check back soon.')
@@ -223,7 +219,7 @@ export default function App() {
 
   const go = (p, h) => { setPage(p); window.location.hash = h || '/' }
   const open = p => {
-    setSel(p); go('product', `/product/${p.id}`); setZoomOpen(false); setNotifyDone(false); setNotifyPhone('')
+    setSel(p); go('product', `/product/${p.id}`); setZoomOpen(false)
     // Track recently viewed
     setRecentlyViewed(prev => {
       const filtered = prev.filter(x => x.id !== p.id)
@@ -312,19 +308,10 @@ export default function App() {
     }
   }
 
-  // Notify when back in stock
-  const notifyBackInStock = async (productId) => {
-    if (!notifyPhone.trim() || notifyPhone.trim().length < 10) { setToast('Enter a valid phone number'); setTimeout(() => setToast(''), 2000); return }
-    setNotifySubmit(true)
-    await supabase.from('stock_notifications').insert({ product_id: productId, phone: notifyPhone.trim() })
-    setNotifyDone(true); setNotifySubmit(false)
-    setToast('We\'ll notify you when it\'s back'); setTimeout(() => setToast(''), 2000)
-  }
 
   // Promo products
   const promoProducts = useMemo(() => products.filter(p => promoMap[p.id]), [products, promoMap])
   // "Trending" — shuffle products deterministically by day
-  const trending = useMemo(() => { const day = new Date().getDate(); return [...products].sort((a, b) => ((a.id.charCodeAt(0) + day) % 7) - ((b.id.charCodeAt(0) + day) % 7)).slice(0, 6) }, [products])
 
   // Hero slideshow — pick products with images for banner
   const heroProducts = useMemo(() => products.filter(p => p.image).slice(0, 5), [products])
@@ -558,7 +545,7 @@ export default function App() {
           </section>
         )}
 
-        {/* Promo & Bundle Showcase — replaces trending */}
+        {/* Promo & Bundle Showcase */}
         {(promoProducts.length > 0 || bundles.length > 0) && (
           <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
             <div className="flex items-center justify-between mb-3">
@@ -781,7 +768,7 @@ export default function App() {
             <div className="flex items-center gap-1"><button onClick={() => updQty(c.id,-1)} className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-zinc-600 border border-zinc-200 hover:border-black transition">{I.minus}</button><span className="w-6 text-center text-[12px] font-bold text-zinc-900">{c.qty}</span><button onClick={() => updQty(c.id,1)} className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-zinc-600 border border-zinc-200 hover:border-black transition">{I.plus}</button></div>
           </div>)}</div>
           <div className="bg-black text-white rounded-xl p-4 mb-4 flex justify-between items-center"><span className="text-sm text-zinc-200">Total</span><span className="text-lg font-bold">{money(ct)}</span></div>
-          <button onClick={() => { setCheckoutStep(1); setPage('checkout'); window.location.hash = '/checkout' }} className="w-full h-12 bg-black text-white rounded-full text-sm font-bold hover:bg-black transition btn-press flex items-center justify-center gap-2">Proceed to Checkout {I.arrow}</button>
+          <button onClick={() => { setPage('checkout'); window.location.hash = '/checkout' }} className="w-full h-12 bg-black text-white rounded-full text-sm font-bold hover:bg-black transition btn-press flex items-center justify-center gap-2">Proceed to Checkout {I.arrow}</button>
           <p className="text-[10px] text-gray-300 text-center mt-3">Delivery arranged after checkout</p>
         </>}
       </div>}

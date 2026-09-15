@@ -30,6 +30,7 @@ jobs:
         working-directory: storefront
         run: |
           npm install --no-audit --no-fund
+          npx eslint src
           npm run build
 
       # A secret in the client bundle is the failure mode that matters most
@@ -39,8 +40,10 @@ jobs:
         run: |
           set -e
           for pat in TIKTOK_CLIENT_SECRET SUPABASE_SERVICE_ROLE_KEY NALOPAY_API_KEY MNOTIFY_KEY service_role; do
-            if grep -rq "$pat" dist/assets/*.js 2>/dev/null; then
-              echo "::error::'$pat' found in the built client bundle"; exit 1
-            fi
+            for bundle in dist/assets storefront/dist/assets; do
+              if grep -rq "$pat" "$bundle"/*.js 2>/dev/null; then
+                echo "::error::'$pat' found in $bundle"; exit 1
+              fi
+            done
           done
           echo "clean"
