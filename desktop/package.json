@@ -1,9 +1,9 @@
 {
   "name": "bedtime-pos-desktop",
   "productName": "BEDTIME POS",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
-  "description": "BEDTIME BEDDINGS & HOME \u2014 point of sale for Windows POS terminals",
+  "description": "BEDTIME BEDDINGS & HOME — point of sale for Windows POS terminals",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
