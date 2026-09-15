@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../hooks/useStore'
-import { getSupabase } from '../lib/supabase'
+import { getSupabase, startStaffSession } from '../lib/supabase'
 import { usePosMode } from '../hooks/usePosMode'
 import Keypad from './Keypad'
 import { Logo } from './Logo'
@@ -20,8 +20,26 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const sb = getSupabase()
-      const { data } = await sb.rpc('verify_pin', { p_pin: candidate })
+      // Prefer the server exchange: it checks the PIN and hands back a real
+      // Supabase session, so this browser stops being indistinguishable from
+      // any stranger holding the public key. It falls back on its own if the
+      // function is unreachable, and only then do we ask the database
+      // directly — calling verify_pin twice for one wrong PIN would burn two
+      // attempts against the throttle.
+      const viaSession = await startStaffSession(candidate)
+      let data = null
+      if (viaSession.ok) {
+        data = { success: true, ...viaSession.staff }
+      } else if (viaSession.error) {
+        setError(viaSession.error)
+        setLoading(false)
+        setPin('')
+        return
+      } else {
+        const sb = getSupabase()
+        ;({ data } = await sb.rpc('verify_pin', { p_pin: candidate }))
+      }
+
       if (data?.success) {
         const isAdmin = data.role === 'Admin'
         // The login tap is the user gesture browsers require for fullscreen.

@@ -1171,6 +1171,89 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: true, checked: pending?.length || 0, confirmed, failed }), { headers: CORS })
     }
 
+    // -----------------------------------------------------------------------
+    // staff-login — turn a correct PIN into a real Supabase session.
+    //
+    // Every screen in the admin portal currently talks to PostgREST as `anon`,
+    // using the key printed in the JavaScript bundle. That means the row
+    // policies cannot tell a cashier from a stranger, so everything staff can
+    // read the public can read too. Giving the browser a genuine session is
+    // what lets those policies say `TO authenticated` instead of `TO anon`.
+    //
+    // The PIN never becomes a password and no password reaches the browser:
+    // the PIN is checked here with verify_pin (SECURITY DEFINER, and throttled
+    // by pin_attempts), and the session is minted with the service-role key,
+    // which only ever exists inside this function.
+    // -----------------------------------------------------------------------
+    if (action === 'staff-login') {
+      const { pin } = await req.json().catch(() => ({}))
+      if (!pin || typeof pin !== 'string') {
+        return new Response(JSON.stringify({ success: false, error: 'PIN required' }), { status: 400, headers: CORS })
+      }
+
+      const admin = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+      // verify_pin does the throttling, so brute force is handled before we
+      // spend any work here.
+      const { data: v, error: vErr } = await admin.rpc('verify_pin', { p_pin: pin })
+      if (vErr) {
+        console.error('staff-login: verify_pin failed:', vErr.message)
+        return new Response(JSON.stringify({ success: false, error: 'Could not reach the server' }), { status: 500, headers: CORS })
+      }
+      if (!v?.success) {
+        return new Response(JSON.stringify({ success: false, error: v?.error || 'Incorrect PIN' }), { status: 401, headers: CORS })
+      }
+
+      // A stable, unroutable address per staff row. Nobody receives mail here;
+      // it exists because Supabase Auth identifies a user by email.
+      const email = `staff.${v.id}@staff.invalid`
+      const claims = { staff_id: v.id, staff_name: v.name, staff_role: v.role }
+
+      // Create on first login, and refresh the claims every time so a role
+      // change in the staff table reaches the token on the next sign-in.
+      const { error: cErr } = await admin.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        password: crypto.randomUUID() + crypto.randomUUID(),
+        app_metadata: claims,
+        user_metadata: { name: v.name },
+      })
+      if (cErr && !/already|registered|exists/i.test(cErr.message)) {
+        console.error('staff-login: createUser failed:', cErr.message)
+        return new Response(JSON.stringify({ success: false, error: 'Could not start a session' }), { status: 500, headers: CORS })
+      }
+      if (cErr) {
+        const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 })
+        const existing = list?.users?.find((u: { email?: string }) => u.email === email)
+        if (existing) await admin.auth.admin.updateUserById(existing.id, { app_metadata: claims })
+      }
+
+      // generateLink hands back a one-time token without sending any mail;
+      // redeeming it here produces the access/refresh pair the browser needs.
+      const { data: link, error: lErr } = await admin.auth.admin.generateLink({ type: 'magiclink', email })
+      const hashed = link?.properties?.hashed_token
+      if (lErr || !hashed) {
+        console.error('staff-login: generateLink failed:', lErr?.message)
+        return new Response(JSON.stringify({ success: false, error: 'Could not start a session' }), { status: 500, headers: CORS })
+      }
+
+      const pub = createClient(SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') || '')
+      const { data: sess, error: sErr } = await pub.auth.verifyOtp({ token_hash: hashed, type: 'email' })
+      if (sErr || !sess?.session) {
+        console.error('staff-login: verifyOtp failed:', sErr?.message)
+        return new Response(JSON.stringify({ success: false, error: 'Could not start a session' }), { status: 500, headers: CORS })
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        id: v.id, name: v.name, role: v.role,
+        session: {
+          access_token: sess.session.access_token,
+          refresh_token: sess.session.refresh_token,
+        },
+      }), { headers: CORS })
+    }
+
     return new Response(JSON.stringify({ error: 'Use ?action=initialize, charge, verify, ussd, webhook, report, remind, or resend-sms' }), { headers: CORS })
   } catch (e) {
     console.error('Error:', e)

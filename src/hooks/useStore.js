@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getSupabase } from '../lib/supabase'
+import { getSupabase, endStaffSession } from '../lib/supabase'
 import { num } from '../lib/utils'
 
 const mapProduct = p => ({ id: p.id, name: p.name, category: p.category || '', costPrice: num(p.cost_price), price: num(p.price), wholesalePrice: num(p.wholesale_price), wholesaleMinQty: num(p.wholesale_min_qty) || 0, quantity: num(p.quantity), image: p.image || '', groupTag: (p.group_tag || '').trim().toLowerCase(), description: p.description || '' })
@@ -93,6 +93,10 @@ export const useStore = create((set, get) => ({
         localStorage.setItem('carts-by-cashier', JSON.stringify(saved))
       } catch {}
     }
+    // Drop the Supabase session as well, or the next person at the terminal
+    // inherits the last cashier's access. Fire-and-forget: signing out must
+    // never be able to hold up the screen returning to the PIN pad.
+    endStaffSession()
     set({ user: null, isAdmin: false, cart: [] })
   },
 

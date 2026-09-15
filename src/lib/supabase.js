@@ -26,8 +26,50 @@ export async function callFunction(action, body) {
   return res.json()
 }
 
-const supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+const supabaseInstance = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    // Staff sign in with a PIN, which the server exchanges for a real session
+    // (see startStaffSession). Persisting it means a refresh or a reopened
+    // browser on the terminal does not drop the cashier back to `anon`.
+    persistSession: true,
+    autoRefreshToken: true,
+    // Nothing here uses email links or OAuth redirects, and the POS runs on a
+    // hash router, so leave the URL alone.
+    detectSessionInUrl: false,
+  },
+})
 
 export function getSupabase() {
   return supabaseInstance
+}
+
+/**
+ * Exchange a verified PIN for a Supabase session.
+ *
+ * Until every staff member has one of these, the row policies cannot
+ * distinguish the admin portal from a stranger holding the public key, because
+ * both arrive as `anon`. Returns the staff record on success.
+ *
+ * Deliberately falls back: if the function is unreachable or the project has
+ * not been migrated yet, this returns null and the caller carries on with the
+ * old verify_pin path, so a till can always sell.
+ */
+export async function startStaffSession(pin) {
+  try {
+    const res = await callFunction('staff-login', { pin })
+    if (!res?.success || !res?.session) return { ok: false, error: res?.error || null }
+    const { error } = await supabaseInstance.auth.setSession({
+      access_token: res.session.access_token,
+      refresh_token: res.session.refresh_token,
+    })
+    if (error) return { ok: false, error: null }
+    return { ok: true, staff: { id: res.id, name: res.name, role: res.role } }
+  } catch {
+    return { ok: false, error: null }
+  }
+}
+
+/** Drop the staff session. Safe to call when there is none. */
+export async function endStaffSession() {
+  try { await supabaseInstance.auth.signOut() } catch { /* already gone */ }
 }
