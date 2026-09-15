@@ -79,6 +79,13 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
         p_split_cash: num(extraData.splitCash), p_split_momo: num(extraData.splitMomo),
       })
       if (data?.success) {
+        // Link the sale back to the payment order. The walk-in MoMo flow
+        // creates a whatsapp_orders row as a durable payment anchor and then
+        // records the sale separately, so without this the order looks
+        // unrecorded forever and shows up in every reconciliation.
+        if (promptOrderId) {
+          try { await sb.from('whatsapp_orders').update({ sale_receipt_no: data.receiptNo }).eq('id', promptOrderId) } catch {}
+        }
         deductStock(cart)
         return { receiptNo: data.receiptNo, date: new Date().toISOString(), customer: phone.trim(), cashier: user?.name || '', payment: paymentMethod, type: mode === 'wholesale' ? 'Wholesale' : 'Retail', items: cart, total: data.total, discount: data.discount, splitCash: extraData.splitCash, splitMomo: extraData.splitMomo }
       } else {

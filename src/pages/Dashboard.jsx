@@ -27,6 +27,13 @@ function SystemHealth({ health, waOrders }) {
   const stuck = (waOrders || []).filter(o =>
     o.status === 'Pending' && o.date && (Date.now() - new Date(o.date).getTime()) > 2 * 3600 * 1000).length
 
+  // Paid, closed out, but never recorded as a sale. This is the one that
+  // silently costs money: the goods have gone and the revenue is missing from
+  // every report. Two orders sat like this for eleven days.
+  const unbooked = (waOrders || []).filter(o =>
+    (o.status === 'Paid' || o.status === 'Completed') && !o.saleReceiptNo)
+  const unbookedValue = unbooked.reduce((a, o) => a + (Number(o.total) || 0), 0)
+
   return (
     <div className="bg-white rounded-2xl p-5 border border-gray-200/70 mb-5">
       <h3 className="text-sm font-bold text-gray-800 mb-1">System health</h3>
@@ -37,6 +44,9 @@ function SystemHealth({ health, waOrders }) {
         detail={smsCount == null ? 'checking…' : `${smsCount} message${smsCount === 1 ? '' : 's'}`} />
       <HealthRow ok={stuck === 0} warn={stuck > 0} label="Orders paid but still Pending"
         detail={stuck === 0 ? 'none' : `${stuck} over 2h — check Orders`} />
+      <HealthRow ok={unbooked.length === 0} warn={unbooked.length > 0} label="Paid orders missing from sales"
+        detail={unbooked.length === 0 ? 'none'
+          : `${unbooked.length} · GHS ${unbookedValue.toFixed(2)} — press Process & Package`} />
     </div>
   )
 }
