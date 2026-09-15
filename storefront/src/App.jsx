@@ -454,7 +454,7 @@ export default function App() {
       {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-2 rounded-full text-sm font-medium z-[100] shadow-lg" style={{ animation: 'fadeIn 0.2s ease' }}>{toast}</div>}
 
       {/* NAV */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-zinc-100">
+      <nav className="sticky top-0 z-50 bg-white border-b border-zinc-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <button onClick={() => go('home', '/')} className="font-bold text-[15px] tracking-[0.12em] text-zinc-900 shrink-0 uppercase" style={{ fontFamily: 'var(--font-body)' }}>Bedtime<span className="text-zinc-400"> Beddings & Home</span></button>
           <div className="hidden md:flex items-center gap-6">
@@ -478,13 +478,13 @@ export default function App() {
               <img src={thumb(p.image, 1400)} alt="" className="w-full h-full object-cover" />
             </div>
           ))}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10 z-[1]" />
+          <div className="absolute inset-0 bg-black/40 z-[1]" />
           <div className="relative z-10 h-full flex flex-col justify-end max-w-7xl mx-auto px-5 sm:px-8 pb-12">
             <h1 className="text-white text-4xl sm:text-6xl font-bold leading-[1.05] tracking-tight mb-4 max-w-2xl">Sleep better, every single night.</h1>
             <p className="text-white/80 text-sm sm:text-base max-w-md mb-7 font-light">Soft bedsheets, warm duvets and everything that makes your bed a place you look forward to.</p>
             <div className="flex items-center gap-3">
-              <button onClick={() => go('shop', '/shop')} className="h-12 px-8 bg-white text-black rounded-full text-sm font-semibold hover:bg-zinc-100 transition btn-press flex items-center gap-2">Shop now {I.arrow}</button>
-              <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="h-12 px-6 bg-white/10 backdrop-blur-sm border border-white/30 text-white rounded-full text-sm font-medium hover:bg-white/20 transition flex items-center gap-1.5">{I.phone} Call</a>
+              <button onClick={() => go('shop', '/shop')} className="h-12 px-8 bg-white text-black rounded-lg text-sm font-semibold hover:bg-zinc-100 transition btn-press flex items-center gap-2">Shop now {I.arrow}</button>
+              <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="h-12 px-6 bg-white/15 border border-white/40 text-white rounded-full text-sm font-medium hover:bg-white/20 transition flex items-center gap-1.5">{I.phone} Call</a>
             </div>
             {heroProducts.length > 1 && <div className="flex gap-2 mt-7">
               {heroProducts.map((_, i) => (
@@ -509,7 +509,7 @@ export default function App() {
                 <div className="text-[10px] font-bold tracking-[0.3em] uppercase text-zinc-500 mb-2">Limited offer</div>
                 <div className="text-4xl sm:text-6xl font-black leading-none mb-2" style={{ fontFamily: 'var(--font-display)' }}>{activePromo.name}</div>
                 {activePromo.end_date && <div className="flex justify-center mb-5"><Timer endDate={activePromo.end_date} /></div>}
-                <button onClick={() => go('shop','/shop')} className="h-11 px-8 bg-[var(--color-brand)] text-white rounded-full text-sm font-bold hover:bg-[var(--color-brand-light)] transition inline-flex items-center gap-2">Shop the sale {I.arrow}</button>
+                <button onClick={() => go('shop','/shop')} className="h-11 px-8 bg-[var(--color-brand)] text-white rounded-lg text-sm font-bold hover:bg-[var(--color-brand-light)] transition inline-flex items-center gap-2">Shop the sale {I.arrow}</button>
               </div>
               <div className="absolute -left-10 -bottom-12 w-48 h-48 rounded-full bg-[var(--color-brand)]/20" />
               <div className="absolute -right-8 -top-10 w-36 h-36 rounded-full bg-[var(--color-brand)]/15" />
@@ -528,8 +528,7 @@ export default function App() {
               {catTiles.map(({ name, img }) => (
                 <button key={name} onClick={() => { setCat(name); setTimeout(() => go('shop','/shop'), 0) }} className="group relative aspect-square rounded-2xl overflow-hidden bg-gray-100">
                   {img && <img src={thumb(img, 300)} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-                  <span className="absolute bottom-2 left-2 right-2 text-white text-[11px] font-bold leading-tight capitalize text-left">{name}</span>
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/75 text-white text-[11px] font-bold leading-tight capitalize text-left px-2 py-1.5">{name}</span>
                 </button>
               ))}
             </div>
@@ -652,7 +651,7 @@ export default function App() {
               </div>
               <h2 className="text-base font-bold text-zinc-900 mb-1" style={{ fontFamily: 'var(--font-display)' }}>New arrivals coming soon</h2>
               <p className="text-sm text-zinc-500 max-w-xs mx-auto">We're getting our bedding collection ready. Check back shortly or call us to order.</p>
-              <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="inline-flex items-center gap-2 mt-5 h-10 px-6 bg-[var(--color-brand)] text-white rounded-full text-xs font-bold">{I.phone} {SHOP.phone}</a>
+              <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="inline-flex items-center gap-2 mt-5 h-10 px-6 bg-[var(--color-brand)] text-white rounded-lg text-xs font-bold">{I.phone} {SHOP.phone}</a>
             </div>
           ) : (<>
           <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-4">All products</h2>
@@ -681,7 +680,7 @@ export default function App() {
             <div onClick={() => setZoomOpen(true)} className="aspect-square bg-gray-100 rounded-2xl overflow-hidden cursor-zoom-in">
               {sel.image ? <img src={thumb(sel.image, 900)} alt={sel.name} className="w-full h-full object-cover" /> : <div className="w-full h-full" />}
             </div>
-            <button onClick={() => setZoomOpen(true)} className="absolute bottom-3 right-3 w-8 h-8 bg-white/80 rounded-full flex items-center justify-center text-gray-500 shadow-sm backdrop-blur-sm">
+            <button onClick={() => setZoomOpen(true)} className="absolute bottom-3 right-3 w-8 h-8 bg-white border border-zinc-300 rounded-full flex items-center justify-center text-gray-500">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
             </button>
           </div>
@@ -765,7 +764,7 @@ export default function App() {
       {page === 'cart' && <div className="max-w-xl mx-auto px-4 sm:px-6 py-6 page-enter">
         <h1 className="text-lg font-bold mb-1" style={{ fontFamily: 'var(--font-display)' }}>Your Cart</h1>
         <p className="text-xs text-gray-400 mb-5">{cc > 0 ? `${cc} item${cc !== 1 ? 's' : ''} ready for checkout` : ''}</p>
-        {cart.length === 0 ? <div className="text-center py-16"><div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="1.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg></div><p className="text-zinc-900 text-sm mb-1">Nothing here yet</p><p className="text-gray-400 text-xs mb-5">Browse our collection and add items you love</p><button onClick={() => go('shop','/shop')} className="h-10 px-6 bg-black text-white rounded-full text-xs font-bold hover:bg-black transition btn-press">Start Shopping</button></div> : <>
+        {cart.length === 0 ? <div className="text-center py-16"><div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mx-auto mb-4"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#111" strokeWidth="1.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg></div><p className="text-zinc-900 text-sm mb-1">Nothing here yet</p><p className="text-gray-400 text-xs mb-5">Browse our collection and add items you love</p><button onClick={() => go('shop','/shop')} className="h-10 px-6 bg-black text-white rounded-lg text-xs font-bold hover:bg-black transition btn-press">Start Shopping</button></div> : <>
           <div className="flex justify-end mb-3"><button onClick={clearCart} className="text-[11px] text-gray-400 hover:text-red-500 transition">Clear all</button></div>
           <div className="space-y-2.5 mb-5">{cart.map(c => <div key={c.id} className="flex gap-3 items-center p-3 rounded-xl bg-zinc-50 border border-zinc-100 relative group">
             <button onClick={() => removeFromCart(c.id)} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-300 hover:bg-red-500 text-white rounded-full flex items-center justify-center transition opacity-0 group-hover:opacity-100 md:opacity-0">
@@ -951,8 +950,8 @@ export default function App() {
             <p className="text-sm text-zinc-600 leading-relaxed mb-1">McCarthy Hills Junction, Accra.</p>
             <p className="text-sm text-zinc-600 leading-relaxed mb-4">Come see and feel the quality in person, or we deliver straight to you.</p>
             <div className="flex flex-wrap gap-3">
-              <a href="https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6" target="_blank" rel="noreferrer" className="inline-flex items-center h-10 px-5 bg-black text-white text-sm font-medium rounded-full hover:bg-zinc-800 transition">Open in Maps</a>
-              <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="inline-flex items-center h-10 px-5 border border-zinc-300 text-sm font-medium rounded-full hover:border-black transition">Call {SHOP.phone}</a>
+              <a href="https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6" target="_blank" rel="noreferrer" className="inline-flex items-center h-10 px-5 bg-black text-white text-sm font-medium rounded-lg hover:bg-zinc-800 transition">Open in Maps</a>
+              <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="inline-flex items-center h-10 px-5 border border-zinc-300 text-sm font-medium rounded-lg hover:border-black transition">Call {SHOP.phone}</a>
             </div>
           </div>
           <a href="https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6" target="_blank" rel="noreferrer" className="block rounded-2xl overflow-hidden border border-zinc-200 aspect-[16/10] bg-white">
@@ -997,7 +996,7 @@ export default function App() {
       </footer>
 
       {/* ═══ MOBILE BOTTOM NAV ═══ */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-zinc-100 z-50 px-2 pb-[env(safe-area-inset-bottom)]">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-zinc-200 z-50 px-2 pb-[env(safe-area-inset-bottom)]">
         <div className="flex justify-around h-[58px] items-center">
           {[
             ['Home','home','/',I.home],

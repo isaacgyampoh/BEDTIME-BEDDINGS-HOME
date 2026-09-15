@@ -23,3 +23,35 @@
 .card-lift { transition: transform 0.35s ease, box-shadow 0.35s ease; }
 .card-lift:hover { transform: translateY(-3px); box-shadow: 0 8px 24px -6px rgba(0,0,0,0.08); }
 .btn-press:active { transform: scale(0.97); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DESIGN SYSTEM
+   The same rules as the admin portal, so the shop and the till look like one
+   business. Depth comes from one thing at a time: a flat fill, a thin border,
+   or size and weight of type. Never a gradient, a blur or a glow.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --ink: #14171a;
+  --ink-soft: #3d434a;
+  --muted: #71767d;
+  --line: #e3e3df;
+  --line-firm: #c9cac4;
+  --surface: #ffffff;
+  --surface-2: #f7f7f5;
+  --canvas: #f1f1ee;
+  --r-sm: 3px;
+  --r: 5px;
+  --r-lg: 7px;
+}
+
+/* One radius scale, chosen by the size of the thing it is on. */
+.rounded-lg, .rounded-xl { border-radius: var(--r) !important; }
+.rounded-2xl, .rounded-3xl { border-radius: var(--r-lg) !important; }
+
+/* Shadows are for things that genuinely float. A product card does not. */
+.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl { box-shadow: none !important; }
+.card-lift { transition: none; }
+.card-lift:hover { transform: none; box-shadow: none; }
+
+/* Prices line up in a column when the digits are all one width. */
+.font-bold, .font-semibold, .tabular { font-variant-numeric: tabular-nums; }
