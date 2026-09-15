@@ -18,15 +18,12 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Inter', -apple-system, system-ui, sans-se
 @layer utilities {
   .safe-top { padding-top: env(safe-area-inset-top); }
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-  .glass { background: rgba(245,245,243,.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+  .glass { background: var(--surface); }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 }
 
-/* Refined surfaces — crisp hairline + whisper shadow on the common card
-   pattern, the way Square/Linear-class apps do it. */
-.bg-white.rounded-2xl { box-shadow: 0 1px 2px rgba(16,24,29,.04), 0 1px 1px rgba(16,24,29,.03); border: 1px solid rgba(16,24,29,.05); }
-body.dark .bg-white.rounded-2xl { box-shadow: none; border-color: rgba(255,255,255,.06); }
+/* Separation comes from a hairline, not a shadow. See the design system below. */
 
 /* Receipt printing is done in an isolated iframe (src/lib/printer.js), which
    brings its own stylesheet. Nothing in the app document is ever printed, so
@@ -59,6 +56,145 @@ body.dark .bg-white.rounded-2xl { box-shadow: none; border-color: rgba(255,255,2
 .idle-drift { animation: idleDrift 9s ease-in-out infinite; }
 .idle-rise { animation: idleRise .9s ease-out both; }
 .idle-halo { animation: idleHalo 8s ease-in-out infinite; }
+
+/* ════════════════════════════════════════════════════════════
+   DESIGN SYSTEM
+   Built to read like a till, not like a template.
+
+   The look is defined once, here, rather than by editing class
+   names across twenty-three screens — so it stays coherent and
+   nothing in the selling logic is touched to change an edge.
+
+   Rules:
+     · flat fills only. No gradients, no blur, no tinted glass.
+     · a 1px rule separates things. Shadows are for overlays only,
+       where something genuinely floats above the page.
+     · tight corners. Very round edges are the giveaway of a
+       generated interface; a POS reads as a tool, not a toy.
+     · hierarchy from size and weight, not from colour. Colour is
+       reserved for money and for state.
+     · figures are tabular so columns line up down the page.
+   ════════════════════════════════════════════════════════════ */
+:root {
+  --ink:        #14171a;   /* primary text, primary actions   */
+  --ink-soft:   #3d434a;   /* secondary text                  */
+  --muted:      #71767d;   /* labels, captions                */
+  --faint:      #9aa0a6;   /* least important                 */
+  --line:       #e3e3df;   /* every separator                 */
+  --line-firm:  #c9cac4;   /* emphasised separator            */
+  --surface:    #ffffff;   /* cards, sheets, rows             */
+  --surface-2:  #f7f7f5;   /* inset areas, table heads        */
+  --canvas:     #f1f1ee;   /* the page behind everything      */
+  --accent:     #0e6d75;   /* brand, used sparingly           */
+  --positive:   #15703f;
+  --negative:   #a53a26;
+  --warning:    #8a6100;
+
+  --r-sm: 3px;
+  --r:    5px;
+  --r-lg: 7px;
+}
+
+body.dark {
+  --ink: #f2f3f4; --ink-soft: #c6cad0; --muted: #949aa1; --faint: #757b83;
+  --line: #2a2e34; --line-firm: #3b4048;
+  --surface: #17191d; --surface-2: #1e2126; --canvas: #101215;
+  --accent: #3fa4ac; --positive: #46b37a; --negative: #d2705c; --warning: #d0a24a;
+}
+
+body { background: var(--canvas); color: var(--ink); }
+
+/* ── corners ─────────────────────────────────────────────── */
+.rounded-md   { border-radius: var(--r-sm) !important; }
+.rounded-lg   { border-radius: var(--r)    !important; }
+.rounded-xl   { border-radius: var(--r)    !important; }
+.rounded-2xl  { border-radius: var(--r-lg) !important; }
+.rounded-3xl,
+.rounded-4xl  { border-radius: var(--r-lg) !important; }
+.rounded-t-2xl { border-radius: var(--r-lg) var(--r-lg) 0 0 !important; }
+/* rounded-full stays: it is functional on avatars, pills and dots. */
+
+/* ── elevation ───────────────────────────────────────────── */
+.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl { box-shadow: none !important; }
+/* Only things that genuinely float keep a shadow, and a restrained one. */
+.shadow-2xl,
+.cart-drawer,
+.pos-modal { box-shadow: 0 8px 28px rgba(12, 16, 20, .16) !important; }
+
+/* ── surfaces ────────────────────────────────────────────── */
+.bg-white      { background-color: var(--surface) !important; }
+.bg-gray-50,
+.bg-stone-50   { background-color: var(--surface-2) !important; }
+.bg-gray-100,
+.bg-stone-100  { background-color: var(--surface-2) !important; }
+
+/* A card is a white plane with a hairline. Consistently, everywhere. */
+.bg-white.rounded-2xl,
+.bg-white.rounded-xl { border: 1px solid var(--line); }
+
+/* ── rules ───────────────────────────────────────────────── */
+.border-gray-100, .border-gray-200, .border-gray-200\/70, .border-gray-200\/80,
+.border-stone-100, .border-stone-200, .border-stone-300,
+.border-gray-50 { border-color: var(--line) !important; }
+.border-2.border-gray-200, .border-2.border-stone-300 { border-color: var(--line-firm) !important; }
+
+/* ── type ────────────────────────────────────────────────── */
+.text-gray-900, .text-gray-800, .text-black { color: var(--ink) !important; }
+.text-gray-700, .text-gray-600, .text-stone-700, .text-stone-600 { color: var(--ink-soft) !important; }
+.text-gray-500, .text-stone-500 { color: var(--muted) !important; }
+.text-gray-400, .text-gray-300, .text-stone-400, .text-stone-300 { color: var(--faint) !important; }
+
+/* Money and quantities line up down a column. */
+table td, table th,
+.tabular-nums, [class*="text-["] { font-variant-numeric: tabular-nums; }
+
+/* ── primary action ──────────────────────────────────────── */
+.bg-\[\#16181d\], .bg-gray-900, .bg-gray-800 { background-color: var(--ink) !important; }
+.hover\:bg-\[\#2a2d34\]:hover, .hover\:bg-gray-800:hover, .hover\:bg-gray-700:hover {
+  background-color: var(--ink-soft) !important;
+}
+.text-\[\#16181d\] { color: var(--ink) !important; }
+
+/* ── brand accent, used only where it means something ────── */
+.bg-\[\#0e7c86\] { background-color: var(--accent) !important; }
+.text-\[\#0e7c86\] { color: var(--accent) !important; }
+.border-\[\#0e7c86\] { border-color: var(--accent) !important; }
+
+/* ── state ───────────────────────────────────────────────── */
+.text-green-600, .text-green-500 { color: var(--positive) !important; }
+.text-red-600, .text-red-500, .text-\[\#c0492f\] { color: var(--negative) !important; }
+.text-amber-600, .text-amber-500, .text-amber-700 { color: var(--warning) !important; }
+.bg-\[\#c0492f\], .bg-red-500 { background-color: var(--negative) !important; }
+
+/* Status tints: a wash, never a slab. */
+.bg-green-50  { background-color: color-mix(in srgb, var(--positive) 9%, var(--surface)) !important; }
+.bg-red-50    { background-color: color-mix(in srgb, var(--negative) 9%, var(--surface)) !important; }
+.bg-amber-50  { background-color: color-mix(in srgb, var(--warning)  12%, var(--surface)) !important; }
+.bg-blue-50   { background-color: var(--surface-2) !important; }
+.bg-violet-50 { background-color: var(--surface-2) !important; }
+.border-green-200, .border-green-100 { border-color: color-mix(in srgb, var(--positive) 28%, var(--line)) !important; }
+.border-red-200,   .border-red-100   { border-color: color-mix(in srgb, var(--negative) 28%, var(--line)) !important; }
+.border-amber-200, .border-amber-100 { border-color: color-mix(in srgb, var(--warning)  32%, var(--line)) !important; }
+
+/* ── tables read like a ledger ───────────────────────────── */
+table thead th {
+  background: var(--surface-2) !important;
+  color: var(--muted) !important;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+table tbody tr { border-bottom: 1px solid var(--line); }
+table tbody tr:last-child { border-bottom: 0; }
+
+/* ── sidebar: one solid plane ────────────────────────────── */
+.bg-\[\#0f1115\] { background-color: var(--ink) !important; }
+body.dark .bg-\[\#0f1115\] { background-color: #0b0d0f !important; }
+
+/* ── inputs ──────────────────────────────────────────────── */
+input, select, textarea { border-radius: var(--r) !important; }
+input:focus, select:focus, textarea:focus {
+  outline: none; border-color: var(--ink) !important;
+}
 
 /* ════════════════════════════════════════════════════════════
    DARK THEME
@@ -274,13 +410,6 @@ body.dark .border-violet-100,body.dark .border-violet-200 { border-color: rgba(1
 /* Wide tables scroll sideways. With a mouse the scrollbar says so; on a touch
    terminal there is no visible cue, so fade the right edge while more content
    remains to be scrolled to. */
-[data-pos="touch"] .overflow-x-auto {
-  scroll-snap-type: none;
-  background:
-    linear-gradient(to right, transparent 88%, rgba(0,0,0,.05)) right / 36px 100% no-repeat local;
-}
-body.dark[data-pos="touch"] .overflow-x-auto,
-[data-pos="touch"] body.dark .overflow-x-auto {
-  background:
-    linear-gradient(to right, transparent 88%, rgba(255,255,255,.06)) right / 36px 100% no-repeat local;
-}
+/* A scrollable table gets a hard right rule rather than a gradient fade —
+   same signal, no soft edge. */
+[data-pos="touch"] .overflow-x-auto { border-right: 2px solid var(--line-firm); }

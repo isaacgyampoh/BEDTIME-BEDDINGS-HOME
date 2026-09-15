@@ -90,7 +90,7 @@ export default function Catalog() {
       {toast && <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-2 rounded-full text-sm font-medium z-[500] shadow-lg">{toast}</div>}
 
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-stone-100 cat-nav">
+      <nav className="sticky top-0 z-50 bg-white border-b border-stone-200 cat-nav">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <span className="text-base font-bold tracking-tight text-stone-900">BEDTIME BEDDINGS & HOME</span>
           <a href={`tel:${SHOP.phone.split('/')[0].trim().replace(/\s/g, '')}`} className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-full px-4 py-2 hover:bg-gray-100 transition">
@@ -256,8 +256,8 @@ export default function Catalog() {
             <div className="flex-1 overflow-y-auto">
               <div className="w-full aspect-square bg-stone-100 relative">
                 {view.image ? <img src={thumb(view.image, 800)} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-stone-50" />}
-                <button onClick={close} className="absolute top-3 right-3 w-9 h-9 bg-white/90 backdrop-blur rounded-xl flex items-center justify-center text-stone-500 text-sm shadow">✕</button>
-                <button onClick={() => share(view)} className="absolute top-3 left-3 w-9 h-9 bg-white/90 backdrop-blur rounded-xl flex items-center justify-center shadow">
+                <button onClick={close} className="absolute top-3 right-3 w-9 h-9 bg-white border border-stone-200 rounded-lg flex items-center justify-center text-stone-500 text-sm">✕</button>
+                <button onClick={() => share(view)} className="absolute top-3 left-3 w-9 h-9 bg-white border border-stone-200 rounded-lg flex items-center justify-center">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
                 </button>
                 {pr && <div className="absolute bottom-3 left-3 bg-[#16181d] text-white text-[11px] font-bold px-3 py-1.5 rounded-xl">{pr.name}</div>}

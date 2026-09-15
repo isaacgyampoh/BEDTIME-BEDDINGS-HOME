@@ -123,7 +123,7 @@ export default function POS() {
       <div className="flex gap-2 mb-3">
         {[{ id: 'retail', l: 'Retail' }, { id: 'wholesale', l: 'Wholesale' }, { id: 'bundle', l: 'Bundles' }].map(m => (
           <button key={m.id} onClick={() => setMode(m.id)}
-            className={`h-11 px-5 rounded-full text-[13px] font-bold transition active:scale-95 ${mode === m.id ? 'bg-gray-900 text-white' : 'bg-white text-stone-500 hover:text-stone-700'}`}>
+            className={`h-11 px-5 rounded-lg text-[13px] font-bold transition active:scale-95 ${mode === m.id ? 'bg-gray-900 text-white' : 'bg-white text-stone-500 hover:text-stone-700'}`}>
             {m.l}
           </button>
         ))}
@@ -133,7 +133,7 @@ export default function POS() {
         <div className="flex gap-1.5 overflow-x-auto mb-3.5 scrollbar-hide">
           {categories.map(c => (
             <button key={c} onClick={() => setCat(c)}
-              className={`h-10 px-4 rounded-full text-[13px] font-semibold whitespace-nowrap transition active:scale-95 ${selectedCat === c ? 'bg-gray-800 text-white' : 'bg-white text-stone-400 hover:text-stone-600'}`}>
+              className={`h-10 px-4 rounded-lg text-[13px] font-semibold whitespace-nowrap transition active:scale-95 ${selectedCat === c ? 'bg-gray-800 text-white' : 'bg-white text-stone-400 hover:text-stone-600'}`}>
               {c === 'all' ? 'All' : c}
             </button>
           ))}

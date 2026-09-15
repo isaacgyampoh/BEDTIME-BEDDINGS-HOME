@@ -122,12 +122,12 @@ export default function StockAdjustmentsPage() {
       {/* Filter */}
       <div className="flex gap-2 overflow-x-auto mb-4 pb-1 scrollbar-hide">
         <button onClick={() => setFilterReason('all')}
-          className={`h-9 px-4 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${filterReason === 'all' ? 'bg-gray-700 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>
+          className={`h-9 px-4 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${filterReason === 'all' ? 'bg-gray-700 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>
           All
         </button>
         {REASONS.map(r => (
           <button key={r} onClick={() => setFilterReason(r)}
-            className={`h-9 px-4 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${filterReason === r ? 'bg-gray-700 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>
+            className={`h-9 px-4 rounded-lg text-sm font-semibold whitespace-nowrap transition-all ${filterReason === r ? 'bg-gray-700 text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>
             {r}
           </button>
         ))}

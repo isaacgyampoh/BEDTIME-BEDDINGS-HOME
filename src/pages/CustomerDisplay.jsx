@@ -115,7 +115,6 @@ export default function CustomerDisplay() {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-[#16181d] text-white px-6 overflow-hidden">
         {!isFs && <button onClick={() => { try { document.documentElement.requestFullscreen({ navigationUI: 'hide' }) } catch {} }} className="fixed bottom-4 right-4 z-50 bg-white/15 text-white text-xs px-4 py-2 rounded-full hover:bg-white/25 transition">Tap for fullscreen</button>}
-        <div className="absolute inset-0 opacity-[0.06]" style={{ backgroundImage: 'radial-gradient(circle at 30% 20%, #fff 0, transparent 45%), radial-gradient(circle at 70% 80%, #fff 0, transparent 40%)' }} />
         <div className="w-24 h-24 rounded-full border-2 border-white/25 flex items-center justify-center mb-9 animate-fade relative">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
         </div>
@@ -141,7 +140,6 @@ export default function CustomerDisplay() {
       {empty ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 bg-white overflow-hidden">
           {/* soft breathing halo behind the logo */}
-          <div className="absolute w-[460px] h-[460px] rounded-full idle-halo" style={{ background: 'radial-gradient(circle, rgba(16,24,29,0.05) 0%, rgba(16,24,29,0) 70%)' }} />
           <div className="relative idle-breath">
             <Logo height={120} color="#16181d" accent="#9a9da3" tagline={true} className="mb-10" />
           </div>

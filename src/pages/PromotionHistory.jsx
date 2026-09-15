@@ -38,7 +38,7 @@ export default function PromotionHistory() {
 
   const Chip = ({ active, onClick, children }) => (
     <button onClick={onClick}
-      className={`h-9 px-3.5 rounded-full text-[12px] font-semibold whitespace-nowrap capitalize transition ${
+      className={`h-9 px-3.5 rounded-lg text-[12px] font-semibold whitespace-nowrap capitalize transition ${
         active ? 'bg-[#16181d] text-white' : 'bg-white border border-gray-200 text-gray-500'}`}>
       {children}
     </button>

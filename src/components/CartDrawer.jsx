@@ -394,7 +394,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
 
   return (
     <>
-      {open && <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[300]" onClick={onClose} />}
+      {open && <div className="fixed inset-0 bg-black/45 z-[300]" onClick={onClose} />}
       <div className={`cart-drawer fixed bottom-0 left-0 right-0 md:left-auto md:top-0 md:w-[400px] bg-white md:border-l border-gray-200 max-h-[92vh] md:max-h-full z-[301] flex flex-col transition-transform duration-300 ${open ? 'translate-y-0 md:translate-x-0' : 'translate-y-full md:translate-y-0 md:translate-x-full'} md:rounded-none rounded-t-2xl shadow-2xl`}>
 
         <div className="md:hidden w-10 h-1 bg-gray-200 rounded-full mx-auto mt-2.5" />

@@ -154,12 +154,10 @@ export default function StockTakesPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <div className="bg-white rounded-2xl p-4 border border-gray-100 text-center relative overflow-hidden">
-          <div className="absolute -right-3 -top-3 w-14 h-14 rounded-full border border-gray-400/10" />
           <div className="text-xs text-gray-400 font-medium">Total Products</div>
           <div className="text-2xl font-bold mt-1">{products.length}</div>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-gray-100 text-center relative overflow-hidden">
-          <div className="absolute -right-3 -top-3 w-14 h-14 rounded-full border border-gray-400/10" />
           <div className="text-xs text-gray-400 font-medium">Stock Value</div>
           <div className="text-xl font-bold text-gray-700 mt-1">{money(totalStockValue)}</div>
         </div>
