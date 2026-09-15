@@ -38,7 +38,25 @@ jobs:
         run: npm test
 
       - name: Build web app
-        run: npm run build
+        # build:desktop, not build: the packaged app loads index.html from disk
+        # over file://, where Vite's default absolute /assets/... paths resolve
+        # to the drive root and the window comes up blank.
+        run: npm run build:desktop
+
+      # The installed app loads index.html from disk. An absolute /assets/...
+      # path resolves to the drive root there, so nothing loads and the window
+      # comes up white with no error anywhere a shop could see it. That shipped
+      # once. Never package a build that would do it again.
+      - name: Bundle must not reference absolute paths
+        shell: bash
+        run: |
+          set -e
+          if grep -oE '(src|href)="/[^"]*"' dist/index.html; then
+            echo "::error::dist/index.html has absolute asset paths; it will load blank over file://"
+            exit 1
+          fi
+          test -f dist/index.html
+          echo "all asset paths are relative"
 
       - name: No server secrets in the client bundle
         shell: bash

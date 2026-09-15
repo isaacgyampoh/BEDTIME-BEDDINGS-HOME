@@ -25,7 +25,10 @@
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
   <script>
-    if ('serviceWorker' in navigator) {
+    // Not in the desktop app: it loads from file://, where registration
+    // throws anyway, and a worker caching the bundle would serve stale
+    // assets after an update installs.
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => {})
       })
