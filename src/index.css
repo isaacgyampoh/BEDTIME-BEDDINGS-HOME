@@ -78,8 +78,8 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Inter', -apple-system, system-ui, sans-se
 :root {
   --ink:        #14171a;   /* primary text, primary actions   */
   --ink-soft:   #3d434a;   /* secondary text                  */
-  --muted:      #71767d;   /* labels, captions                */
-  --faint:      #9aa0a6;   /* least important                 */
+  --muted:      #6d7279;   /* labels, captions                */
+  --faint:      #8a9096;   /* least important                 */
   --line:       #e3e3df;   /* every separator                 */
   --line-firm:  #c9cac4;   /* emphasised separator            */
   --surface:    #ffffff;   /* cards, sheets, rows             */
@@ -94,6 +94,26 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Inter', -apple-system, system-ui, sans-se
   --r:    5px;
   --r-lg: 7px;
 }
+
+/* ── Touch ────────────────────────────────────────────────────────────────
+   The till is a finger-only Windows terminal. On a coarse pointer nothing
+   interactive may be smaller than 44px, which is about the width of an adult
+   fingertip; a 36px chip gets mis-tapped on a busy counter. Mouse users keep
+   the tighter sizes, so the admin view on a laptop is unchanged. */
+@media (pointer: coarse) {
+  button, [role="button"], a.h-8, a.h-9, a.h-10, select, summary { min-height: 44px; }
+  button.w-8, button.w-9, button.w-10 { min-width: 44px; }
+  /* Square controls need both, or a 24px checkbox becomes a 24x44 slot. */
+  input[type="checkbox"], input[type="radio"] { min-width: 44px; min-height: 44px; }
+}
+
+/* No 300ms wait for a double-tap that is never coming, and no text selection
+   popup when a cashier rests a finger on a button. */
+button, [role="button"], a, label, select {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button, [role="button"], label { -webkit-user-select: none; user-select: none; }
 
 body.dark {
   --ink: #f2f3f4; --ink-soft: #c6cad0; --muted: #949aa1; --faint: #757b83;
