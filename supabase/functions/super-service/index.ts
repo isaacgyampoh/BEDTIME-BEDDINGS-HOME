@@ -511,6 +511,39 @@ serve(async (req) => {
     if (action === 'nalopay-charge') {
       const body = await req.json(); const { phone, amount, network, customerName, orderNo, orderId, description } = body
       if (!phone || !amount) return new Response(JSON.stringify({ success: false, error: 'Phone and amount required' }), { headers: CORS })
+
+      // This endpoint takes an unauthenticated POST, because the customer
+      // paying has no account. As it stood it would send a mobile-money prompt
+      // to any number, for any amount, as often as it was called — a way to
+      // harass a phone, or to make a prompt appear to come from this shop.
+      //
+      // Every caller (both shop-front paths and the walk-in POS) already sends
+      // the id of the order it just created, so the prompt can be tied to it:
+      // the order must exist, still be outstanding, and the amount must be the
+      // amount actually owed. That leaves no way to choose the figure, and no
+      // way to send a prompt at all without a real unpaid order.
+      {
+        if (!orderId) {
+          return new Response(JSON.stringify({ success: false, error: 'Order reference required' }), { status: 400, headers: CORS })
+        }
+        const check = createClient(SUPABASE_URL, SUPABASE_KEY)
+        const { data: ord } = await check.from('whatsapp_orders')
+          .select('id,total,status,paid_at').eq('id', orderId).maybeSingle()
+        if (!ord) {
+          return new Response(JSON.stringify({ success: false, error: 'Order not found' }), { status: 404, headers: CORS })
+        }
+        if (ord.status === 'Cancelled') {
+          return new Response(JSON.stringify({ success: false, error: 'This order has been cancelled' }), { status: 409, headers: CORS })
+        }
+        if (ord.status === 'Paid' || ord.status === 'Completed' || ord.paid_at) {
+          return new Response(JSON.stringify({ success: false, error: 'This order has already been paid' }), { status: 409, headers: CORS })
+        }
+        // Compared in pesewas so a float cannot drift the two apart.
+        if (Math.round(Number(amount) * 100) !== Math.round(Number(ord.total) * 100)) {
+          console.error(`nalopay-charge: amount ${amount} does not match order ${orderId} total ${ord.total}`)
+          return new Response(JSON.stringify({ success: false, error: 'Amount does not match the order' }), { status: 400, headers: CORS })
+        }
+      }
       let naloPhone = String(phone).replace(/\s+/g, '').replace(/^\+/, '').replace(/^0/, '233'); if (!naloPhone.startsWith('233')) naloPhone = '233' + naloPhone
       const net = (network as 'MTN' | 'AT' | 'TELECEL') || detectGhanaNetwork(naloPhone)
       const ref = body.reference || `ETR-WEB-${Date.now().toString(36).toUpperCase()}`
