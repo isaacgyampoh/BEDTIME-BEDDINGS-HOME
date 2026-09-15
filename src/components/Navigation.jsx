@@ -5,6 +5,7 @@ import { ECOMMERCE_ENABLED } from '../lib/utils'
 import { openCustomerScreenManual } from '../hooks/useCustomerDisplay'
 import { usePosMode, isTouchPOS, setPosOverride } from '../hooks/usePosMode'
 import PrinterSettings from './PrinterSettings'
+import InstallDesktop, { canInstallDesktop } from './InstallDesktop'
 import toast from 'react-hot-toast'
 
 // Clean minimal SVG icons
@@ -95,6 +96,8 @@ export default function Navigation({ onOpenCart }) {
   useEffect(() => () => clearTimeout(hoverTimer.current), [])
   const [mobileOpen, setMobileOpen] = useState(false)
   const [printerOpen, setPrinterOpen] = useState(false)
+  const [installOpen, setInstallOpen] = useState(false)
+  const showInstall = canInstallDesktop()
   const { page, setPage, user, isAdmin, logout, waOrders, cart, darkMode, toggleDark, shopOpen, shopSettingLoaded, fetchShopOpen, setShopOpen } = useStore()
   useEffect(() => { if (ECOMMERCE_ENABLED && isAdmin) fetchShopOpen() }, [isAdmin])
   useEffect(() => { document.documentElement.style.setProperty('--sidebar-w', (pinned ? 236 : 68) + 'px') }, [pinned])
@@ -140,6 +143,7 @@ export default function Navigation({ onOpenCart }) {
 
   return (<>
     <PrinterSettings open={printerOpen} onClose={() => setPrinterOpen(false)} />
+    <InstallDesktop open={installOpen} onClose={() => setInstallOpen(false)} />
 
     {/* Desktop Sidebar — solid, structured, enterprise */}
     <aside className={`hidden md:flex fixed top-0 left-0 bottom-0 z-[100] flex-col bg-[#0f1115] border-r border-black/20 transition-[width] duration-200 ease-out ${expanded && !pinned ? 'shadow-2xl shadow-black/40' : ''}`}
@@ -190,6 +194,11 @@ export default function Navigation({ onOpenCart }) {
 
       {/* Bottom — tools + user */}
       <div className="flex-shrink-0 border-t border-white/5 px-2 py-2 space-y-0.5">
+        {showInstall && <button onClick={() => setInstallOpen(true)} className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-white/45 hover:bg-white/8 hover:text-white transition group relative">
+          <span className="flex-shrink-0 w-5 flex justify-center"><I d="M12 3v12M7 10l5 5 5-5M5 21h14" /></span>
+          {expanded && <span className="text-[13px]">Install Desktop App</span>}
+          {!expanded && <div className="absolute left-full ml-2 px-2.5 py-1 bg-[#0f1115] border border-white/10 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50">Install Desktop App</div>}
+        </button>}
         <button onClick={() => setPrinterOpen(true)} className="w-full flex items-center gap-3 h-9 px-3 rounded-lg text-white/45 hover:bg-white/8 hover:text-white transition group relative">
           <span className="flex-shrink-0 w-5 flex justify-center"><I d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" /></span>
           {expanded && <span className="text-[13px]">Receipt Printer</span>}
@@ -284,6 +293,9 @@ export default function Navigation({ onOpenCart }) {
           <span className={`relative w-10 h-6 rounded-full transition-colors flex-shrink-0 ${shopOpen ? 'bg-[#16181d]' : 'bg-stone-300'}`}>
             <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${shopOpen ? 'left-[18px]' : 'left-0.5'}`} />
           </span>
+        </button>}
+        {showInstall && <button onClick={() => { setInstallOpen(true); setMobileOpen(false) }} className="w-full py-3 bg-[#16181d] text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
+          <I d="M12 3v12M7 10l5 5 5-5M5 21h14" /> Install Desktop App
         </button>}
         <button onClick={() => { setPrinterOpen(true); setMobileOpen(false) }} className="w-full py-3 bg-stone-100 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
           <I d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" /> Receipt Printer

@@ -904,6 +904,35 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: true, stage, order: o.order_no }), { headers: CORS })
     }
 
+    // Tell the admin portal which desktop version is current, so staff can
+    // install it from the POS itself instead of being sent to GitHub.
+    //
+    // Proxied because GitHub serves release assets without an
+    // Access-Control-Allow-Origin header, so the browser cannot read
+    // latest.yml directly. /releases/latest/download/<name> always resolves to
+    // the newest release, so nothing here needs updating when a version ships.
+    if (action === 'desktop-latest') {
+      const REPO = Deno.env.get('DESKTOP_REPO') || 'isaacgyampoh/BEDTIME-BEDDINGS-HOME'
+      const base = `https://github.com/${REPO}/releases/latest/download`
+      try {
+        const r = await fetch(`${base}/latest.yml`, { redirect: 'follow' })
+        if (!r.ok) throw new Error(`GitHub returned ${r.status}`)
+        const yml = await r.text()
+        const version = yml.match(/^version:\s*(\S+)/m)?.[1] || null
+        const file = yml.match(/^path:\s*(\S+)/m)?.[1] || null
+        const size = Number(yml.match(/^\s*size:\s*(\d+)/m)?.[1] || 0)
+        if (!version || !file) throw new Error('Could not read the release metadata')
+        return new Response(JSON.stringify({
+          success: true, version, file, size,
+          url: `${base}/${file}`,
+          releasePage: `https://github.com/${REPO}/releases/latest`,
+        }), { headers: { ...CORS, 'Cache-Control': 'public, max-age=900' } })
+      } catch (e) {
+        // Never a hard failure: the portal simply does not offer the download.
+        return new Response(JSON.stringify({ success: false, error: String((e as Error).message || e) }), { headers: CORS })
+      }
+    }
+
     // ═══════════════ TIKTOK: OAuth ═══════════════
     if (action === 'tiktok-oauth-start') {
       if (!tiktokConfigured()) {
