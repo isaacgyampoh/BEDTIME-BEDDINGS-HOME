@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '../hooks/useStore'
 import { callFunction } from '../lib/supabase'
+import { unknownCostExposure } from '../lib/dataHealth'
 import { money, today, weekStartDate, monthStart, isoDate, fmtDateTime } from '../lib/utils'
 
 // Module scope: components declared inside render are a new type every render,
@@ -88,6 +89,10 @@ export default function Dashboard() {
   // Stock value
   const stockValue = products.reduce((a, p) => a + p.price * p.quantity, 0)
 
+  // How much of the month's profit figure rests on items with no cost price.
+  // Profit is (price - cost), so a missing cost books the whole sale as profit.
+  const exposure = unknownCostExposure(monthSales)
+
   const greetHour = new Date().getHours()
   const greet = greetHour < 12 ? 'Good Morning' : greetHour < 17 ? 'Good Afternoon' : 'Good Evening'
 
@@ -157,6 +162,16 @@ export default function Dashboard() {
           <span className="text-gray-400">Month Expenses</span>
           <span className="font-bold text-red-500">{money(monthExp)}</span>
         </div>
+        {exposure.value > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-100 bg-amber-50 -mx-5 -mb-5 px-5 py-3 rounded-b-2xl">
+            <div className="text-[12px] font-bold text-amber-900">Profit is overstated</div>
+            <div className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+              GHS {exposure.value.toFixed(2)} across {exposure.affected} sale{exposure.affected === 1 ? '' : 's'} this month
+              is counted as profit because those products have no cost price.
+              Set them in Products → Catalogue health.
+            </div>
+          </div>
+        )}
         <div className="flex justify-between text-xs mt-1">
           <span className="text-gray-400">Net Profit</span>
           <span className={`font-bold ${monthProfit - monthExp >= 0 ? 'text-[#0e7c86]' : 'text-red-500'}`}>{money(monthProfit - monthExp)}</span>

@@ -4,11 +4,7 @@ import {
   PAPER, getPaperWidth, setPaperWidth,
   getAutoPrint, setAutoPrint, printTestPage,
 } from '../lib/printer'
-import {
-  pairSerial, pairUsb, unlink, isLinked, restoreLink, linkLabel,
-  serialSupported, usbSupported, directSupported,
-  BAUD_RATES, getBaud, setBaud,
-} from '../lib/printerLink'
+import { pairSerial, pairUsb, unlink, restoreLink, linkLabel, serialSupported, usbSupported, directSupported, BAUD_RATES, getBaud, setBaud } from '../lib/printerLink'
 import {
   isDesktop, desktopInfo, listSerialPorts, listPrinters,
   saveTerminalSettings, setKiosk, setAutoLaunch,

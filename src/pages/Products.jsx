@@ -6,6 +6,7 @@ import Modal from '../components/Modal'
 import PromoteProduct from '../components/PromoteProduct'
 import toast from 'react-hot-toast'
 import { adminDelete } from '../lib/adminActions'
+import { auditProducts } from '../lib/dataHealth'
 
 // Shrink an image file client-side to a max width, re-encoded as JPEG. Keeps
 // stored product photos small and uploads fast. Falls back to the original
@@ -40,14 +41,21 @@ export default function Products() {
   const [preview, setPreview] = useState('')
   const [photoFilter, setPhotoFilter] = useState(false)
   const [promoting, setPromoting] = useState(null)   // product being promoted
+  const [issueFilter, setIssueFilter] = useState(null)   // data-health filter
 
   // Old Cloudinary images are unrecoverable (account blocked); those products
   // need a fresh photo. This flags them so staff can work through re-uploads.
   const needsPhoto = (p) => !p.image || p.image.includes('res.cloudinary.com')
 
+  // Catalogue problems that distort the figures — missing cost prices above
+  // all, since those record profit as the full selling price.
+  const issues = auditProducts(products)
+  const activeIssue = issues.find(i => i.id === issueFilter) || null
+
   const filtered = products
     .filter(p => (p.name || '').toLowerCase().includes(query.toLowerCase()))
     .filter(p => !photoFilter || needsPhoto(p))
+    .filter(p => !activeIssue || activeIssue.test(p))
 
   const openNew = () => { setForm({ id: '', name: '', category: '', description: '', costPrice: '', price: '', wholesalePrice: '', wholesaleMinQty: '', quantity: '', groupTag: '', file: null, existingImage: '' }); setPreview(''); setModal(true) }
   const openEdit = (p) => { setForm({ id: p.id, name: p.name, category: p.category, description: p.description || '', costPrice: p.costPrice, price: p.price, wholesalePrice: p.wholesalePrice, wholesaleMinQty: p.wholesaleMinQty || '', quantity: p.quantity, groupTag: p.groupTag || '', file: null, existingImage: p.image }); setPreview(p.image || ''); setModal(true) }
@@ -86,6 +94,41 @@ export default function Products() {
   return (
     <div >
       <div className="flex justify-between items-start flex-wrap gap-4 mb-6"><h1 className="text-[22px] md:text-[26px] font-bold">Products</h1><div className="flex gap-2">{products.some(needsPhoto) && <button onClick={() => setPhotoFilter(v => !v)} className={`h-12 px-4 rounded-xl text-xs font-semibold border transition ${photoFilter ? 'bg-amber-500 border-amber-500 text-white' : 'border-amber-400 bg-amber-50 text-amber-700'}`}>{photoFilter ? 'Showing: needs photo' : `${products.filter(needsPhoto).length} need new photos`}</button>}<button onClick={openNew} className="h-12 px-5 bg-gray-700 text-white rounded-xl text-sm font-semibold">Add</button></div></div>
+      {issues.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200/70 p-5 mb-4">
+          <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+            <h3 className="text-sm font-bold text-gray-800">Catalogue health</h3>
+            {activeIssue && (
+              <button onClick={() => setIssueFilter(null)} className="text-[12px] font-semibold text-[#0e7c86]">
+                Clear filter
+              </button>
+            )}
+          </div>
+          <p className="text-[12px] text-gray-400 mb-3">Tap one to see and fix those products</p>
+          <div className="flex flex-wrap gap-2">
+            {issues.map(i => {
+              const on = issueFilter === i.id
+              const tone = i.severity === 'high'
+                ? (on ? 'bg-red-600 border-red-600 text-white' : 'bg-red-50 border-red-200 text-red-700')
+                : i.severity === 'medium'
+                ? (on ? 'bg-amber-600 border-amber-600 text-white' : 'bg-amber-50 border-amber-200 text-amber-700')
+                : (on ? 'bg-gray-800 border-gray-800 text-white' : 'bg-gray-50 border-gray-200 text-gray-600')
+              return (
+                <button key={i.id} onClick={() => setIssueFilter(on ? null : i.id)}
+                  className={`h-10 px-3.5 rounded-xl border text-[12px] font-semibold transition ${tone}`}>
+                  {i.products.length} {i.label}
+                </button>
+              )
+            })}
+          </div>
+          {activeIssue && (
+            <div className="mt-3 text-[12px] text-gray-600 bg-gray-50 rounded-xl px-3.5 py-2.5 border border-gray-100">
+              {activeIssue.why}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl p-6 shadow-md">
         <input className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base mb-5" placeholder="Search..." value={query} onChange={e => setQuery(e.target.value)} />
         <div className="overflow-x-auto"><table className="w-full min-w-[600px]"><thead><tr><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Product</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Price</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Margin</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Stock</th><th className="p-3 bg-gray-50 text-[11px] font-bold text-gray-500 uppercase">Actions</th></tr></thead>
@@ -105,6 +148,24 @@ export default function Products() {
           <div><label className="block text-xs font-semibold text-gray-500 mb-2">Stock Quantity</label><input type="number" className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base" placeholder="e.g. 20" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-3.5"><div><label className="block text-xs font-semibold text-gray-500 mb-2">Wholesale Price <span className="font-normal text-gray-400">(optional)</span></label><input type="number" className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base" placeholder="0.00" value={form.wholesalePrice} onChange={e => setForm({ ...form, wholesalePrice: e.target.value })} /></div><div><label className="block text-xs font-semibold text-gray-500 mb-2">Wholesale Min Qty</label><input type="number" className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base" placeholder="e.g. 5" value={form.wholesaleMinQty} onChange={e => setForm({ ...form, wholesaleMinQty: e.target.value })} /></div></div>
           <div><label className="block text-xs font-semibold text-gray-500 mb-2">Variant Group <span className="font-normal text-gray-400">(optional)</span></label><input className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base" placeholder="e.g. sunblock-curtains" value={form.groupTag} onChange={e => setForm({ ...form, groupTag: e.target.value })} /><p className="text-xs text-gray-400 mt-1.5">Give every colour/type of the same product the SAME group so 5 across colours triggers wholesale. Leave blank if no variants.</p></div>
+          {num(form.price) > 0 && !num(form.costPrice) && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
+              Without a cost price this product's profit is recorded as the full
+              selling price, which overstates profit on every sale of it.
+            </div>
+          )}
+          {num(form.costPrice) > 0 && num(form.price) > 0 && num(form.price) < num(form.costPrice) && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
+              The selling price is below the cost price — every sale loses
+              {' '}GHS {(num(form.costPrice) - num(form.price)).toFixed(2)}.
+            </div>
+          )}
+          {num(form.wholesalePrice) > 0 && num(form.price) > 0 && num(form.wholesalePrice) >= num(form.price) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+              The wholesale price is not lower than retail, so buying more costs
+              the same or more.
+            </div>
+          )}
           {num(form.wholesalePrice) > 0 && num(form.wholesaleMinQty) > 0 && <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">When a customer buys <b>{form.wholesaleMinQty}+</b> units, price switches from <b>GHS {num(form.price).toFixed(2)}</b> to <b>GHS {num(form.wholesalePrice).toFixed(2)}</b></div>}
         </div>
       </Modal>

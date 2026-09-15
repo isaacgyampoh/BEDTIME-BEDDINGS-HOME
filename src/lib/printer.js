@@ -118,7 +118,6 @@ export function paperMM(paper = getPaperWidth()) {
 
 export function printHTML(bodyHTML, { paper = getPaperWidth(), title = 'Receipt' } = {}) {
   return new Promise((resolve) => {
-    const p = PAPER[paper] || PAPER['80']
     let frame
     try {
       frame = document.createElement('iframe')
@@ -267,6 +266,8 @@ export function printDocument(fullHTML, { paper = getPaperWidth(), title = 'Prin
     .replace(/width:\s*80mm/g, `width: ${p.width}`)
     // These documents used to self-print from an inline script inside a popup.
     .replace(/<script>[\s\S]*?window\.print\(\)[\s\S]*?<\/script>/g, '')
+    // Name the job so it is identifiable in the Windows print queue.
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>${String(title).replace(/[<>]/g, '')}</title>`)
 
   return new Promise((resolve) => {
     let frame
