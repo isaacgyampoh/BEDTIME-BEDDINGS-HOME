@@ -1,4 +1,4 @@
-import { suite } from '/Users/isaacgyampoh/BEDTIME-BEDDINGS-HOME/tests/harness.mjs'
+import { suite } from './harness.mjs'
 const t = suite('Install-from-portal gating')
 
 // Mirrors canInstallDesktop(): offer the download only where it can be used.

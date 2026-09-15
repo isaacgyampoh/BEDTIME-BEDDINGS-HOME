@@ -11,7 +11,24 @@ import { dirname, join } from 'path'
 import { state } from './harness.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-for (const f of readdirSync(here).filter(f => f.endsWith('.test.mjs')).sort()) {
+const files = readdirSync(here).filter(f => f.endsWith('.test.mjs')).sort()
+
+// A machine-specific absolute path in an import passes locally and fails
+// everywhere else. Catch it here rather than three minutes into a Windows
+// release build.
+import { readFileSync } from 'fs'
+const portability = files.flatMap(f => {
+  const src = readFileSync(join(here, f), 'utf8')
+  return [...src.matchAll(/from\s+['"](\/(?:Users|home)\/[^'"]+)['"]/g)]
+    .map(m => `${f} imports an absolute path: ${m[1]}`)
+})
+if (portability.length) {
+  console.log('\n\x1b[31mNot portable:\x1b[0m')
+  portability.forEach(p => console.log('  ' + p))
+  process.exit(1)
+}
+
+for (const f of files) {
   // Must be a file:// URL. A Windows absolute path (C:\...) is not a valid ESM
   // specifier, so importing one throws ERR_UNSUPPORTED_ESM_URL_SCHEME — which
   // is why every suite passed on macOS and none ran on windows-latest.
