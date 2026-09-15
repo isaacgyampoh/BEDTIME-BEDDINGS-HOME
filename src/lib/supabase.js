@@ -57,7 +57,19 @@ export function getSupabase() {
 export async function startStaffSession(pin) {
   try {
     const res = await callFunction('staff-login', { pin })
-    if (!res?.success || !res?.session) return { ok: false, error: res?.error || null }
+    if (res?.success && res?.session) {
+      // fall through to setSession below
+    } else {
+      // Only a response that actually carries `success: false` is a verdict on
+      // the PIN. Anything else — a router that does not know this action yet
+      // because the function has not been deployed, a gateway error, an HTML
+      // error page — is an infrastructure failure, and the caller must fall
+      // back to verify_pin rather than show the cashier whatever came back.
+      // The router's own "unknown action" reply has no `success` key at all,
+      // which is exactly the case this distinguishes.
+      const rejected = typeof res?.success === 'boolean' && res.success === false
+      return { ok: false, error: rejected ? (res.error || 'Incorrect PIN') : null }
+    }
     const { error } = await supabaseInstance.auth.setSession({
       access_token: res.session.access_token,
       refresh_token: res.session.refresh_token,
