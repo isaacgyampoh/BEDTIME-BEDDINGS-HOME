@@ -85,3 +85,25 @@ export async function startStaffSession(pin) {
 export async function endStaffSession() {
   try { await supabaseInstance.auth.signOut() } catch { /* already gone */ }
 }
+
+/**
+ * Call a Postgres function, or return null if it is not there.
+ *
+ * The public order functions (migration 044) scope an anonymous page to the
+ * one order whose id it already holds, instead of letting it read the table.
+ * Until that migration is applied the functions do not exist, so every caller
+ * keeps its original query as a fallback and this returns null to select it.
+ * That is what makes it safe to deploy this code before the migration.
+ *
+ * A function that exists and answers `{ success: false, ... }` is a real
+ * answer, not an absence, and is returned as-is.
+ */
+export async function rpcOrNull(name, args) {
+  try {
+    const { data, error } = await getSupabase().rpc(name, args)
+    if (error) return null
+    return data ?? null
+  } catch {
+    return null
+  }
+}

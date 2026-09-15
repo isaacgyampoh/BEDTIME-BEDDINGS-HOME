@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getSupabase, FUNCTIONS_URL, SUPABASE_URL } from '../lib/supabase'
+import { getSupabase, rpcOrNull, FUNCTIONS_URL, SUPABASE_URL } from '../lib/supabase'
 import { SHOP } from '../lib/utils'
 import { LogoMark } from '../components/Logo'
 
@@ -26,9 +26,15 @@ export default function InvoicePay() {
   }, [orderId])
 
   const loadOrder = async () => {
-    const sb = getSupabase()
-    const { data, error: err } = await sb.from('whatsapp_orders').select('*').eq('id', orderId).single()
-    if (err || !data) { setError('Invoice not found'); setLoading(false); return }
+    // One order, by the id already in the link. Falls back to the direct
+    // query while migration 044 is not yet applied.
+    let data = await rpcOrNull('public_order_get', { p_id: orderId })
+    if (!data) {
+      const sb = getSupabase()
+      const { data: row } = await sb.from('whatsapp_orders').select('*').eq('id', orderId).single()
+      data = row
+    }
+    if (!data) { setError('Invoice not found'); setLoading(false); return }
     const items = typeof data.items === 'string' ? JSON.parse(data.items) : (data.items || [])
     setOrder({ ...data, items })
     setName(data.customer_name || '')
@@ -40,21 +46,31 @@ export default function InvoicePay() {
 
   const saveDelivery = async () => {
     if (!name.trim()) return
-    const sb = getSupabase()
-    await sb.from('whatsapp_orders').update({
-      customer_name: name.trim(),
-      customer_phone: phone.trim(),
-      address: [address.trim(), landmark.trim()].filter(Boolean).join(' | '),
-      notes: notes.trim()
-    }).eq('id', orderId)
+    const addr = [address.trim(), landmark.trim()].filter(Boolean).join(' | ')
+    const viaFn = await rpcOrNull('public_order_save_details', {
+      p_id: orderId, p_name: name.trim(), p_phone: phone.trim(),
+      p_address: addr, p_notes: notes.trim(),
+    })
+    if (!viaFn) {
+      const sb = getSupabase()
+      await sb.from('whatsapp_orders').update({
+        customer_name: name.trim(),
+        customer_phone: phone.trim(),
+        address: addr,
+        notes: notes.trim()
+      }).eq('id', orderId)
+    }
     setSaved(true)
-    setOrder(prev => ({ ...prev, customer_name: name.trim(), address: [address.trim(), landmark.trim()].filter(Boolean).join(' | ') }))
+    setOrder(prev => ({ ...prev, customer_name: name.trim(), address: addr }))
   }
 
   const handlePay = async () => {
     // Security: re-check order status before payment
-    const sb = getSupabase()
-    const { data: fresh } = await sb.from('whatsapp_orders').select('status').eq('id', orderId).single()
+    let fresh = await rpcOrNull('public_order_get', { p_id: orderId })
+    if (!fresh) {
+      const sb = getSupabase()
+      ;({ data: fresh } = await sb.from('whatsapp_orders').select('status').eq('id', orderId).single())
+    }
     if (fresh?.status === 'Cancelled') { setError('This order has been cancelled. Please contact the shop.'); return }
     if (fresh?.status === 'Paid' || fresh?.status === 'Completed') { setError('This order has already been paid.'); await loadOrder(); return }
 
@@ -79,7 +95,9 @@ export default function InvoicePay() {
       })
       const data = await res.json()
       if (data.success && data.authorizationUrl) {
-        await sb.from('whatsapp_orders').update({ paystack_ref: data.reference }).eq('id', order.id)
+        if (!await rpcOrNull('public_order_set_ref', { p_id: order.id, p_ref: data.reference })) {
+          await getSupabase().from('whatsapp_orders').update({ paystack_ref: data.reference }).eq('id', order.id)
+        }
         window.location.href = data.authorizationUrl
       } else {
         setPaying(false)
@@ -101,11 +119,20 @@ export default function InvoicePay() {
       // status is set by the signed Paystack webhook / the reconcile job, which
       // confirm the payment with the gateway. Trusting this redirect would let
       // anyone mark an order Paid by putting ?reference=anything in the URL.
-      sb.from('whatsapp_orders').update({ paystack_ref: ref }).eq('id', orderId).then(async () => {
+      // public_order_set_ref cannot write status at all, which is the same rule
+      // enforced a layer down.
+      const recordRef = async () => {
+        if (await rpcOrNull('public_order_set_ref', { p_id: orderId, p_ref: ref })) return
+        await sb.from('whatsapp_orders').update({ paystack_ref: ref }).eq('id', orderId)
+      }
+      recordRef().then(async () => {
         await loadOrder()
         // Confirmation message, only once the server has actually marked it paid.
         try {
-          const { data: o } = await sb.from('whatsapp_orders').select('customer_phone,customer_name,order_no,total,status,paid_at').eq('id', orderId).single()
+          let o = await rpcOrNull('public_order_get', { p_id: orderId })
+          if (!o) {
+            ;({ data: o } = await sb.from('whatsapp_orders').select('customer_phone,customer_name,order_no,total,status,paid_at').eq('id', orderId).single())
+          }
           const confirmed = o && (o.status === 'Paid' || o.status === 'Completed' || o.paid_at)
           if (confirmed && o?.customer_phone) {
             const name = o.customer_name ? ` ${o.customer_name}` : ''

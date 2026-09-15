@@ -27,12 +27,10 @@
 -- src/pages/DeliveryConfirm.jsx: between them they use products, bundles,
 -- promos, store_settings and whatsapp_orders, and nothing else.
 --
--- whatsapp_orders is deliberately NOT included. The invoice payment page and
--- the delivery confirmation page are opened by customers, who have no session,
--- and they read and update the order. Closing it needs those call sites moved
--- behind SECURITY DEFINER functions scoped to a single order id first —
--- otherwise paying an invoice breaks. That is the next piece of work, not
--- this one. Until then those 40 rows stay readable.
+-- whatsapp_orders is deliberately NOT included here — 044 closes it, once the
+-- pages customers open (invoice payment, delivery confirmation, checkout and
+-- tracking) have been moved behind functions scoped to a single order id.
+-- Apply 044 after this one, and after the deploy that uses those functions.
 --
 -- record_sale() and void_sale() are SECURITY DEFINER and owned by the table
 -- owner, so they keep writing sales and customers regardless of what anon and

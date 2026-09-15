@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { supabase } from './lib/supabase'
+import { supabase, rpcOrNull } from './lib/supabase'
 import { money, thumb, SHOP, PAYMENTS_ENABLED, EDGE_URL } from './lib/utils'
 
 const WA = SHOP.whatsapp
@@ -121,8 +121,13 @@ export default function App() {
       n++
       if (n > 200) { clearInterval(iv); return } // ~10 min
       try {
-        const { data } = await supabase.from('whatsapp_orders').select('status').eq('id', orderResult.orderId).limit(1)
-        const st = data?.[0]?.status
+        let st
+        const viaFn = await rpcOrNull('public_order_get', { p_id: orderResult.orderId })
+        if (viaFn) st = viaFn.status
+        else {
+          const { data } = await supabase.from('whatsapp_orders').select('status').eq('id', orderResult.orderId).limit(1)
+          st = data?.[0]?.status
+        }
         if (st === 'Paid' || st === 'Completed') { clearInterval(iv); setOrderResult(o => ({ ...o, status: st })) }
       } catch {}
     }, 3000)
@@ -378,9 +383,21 @@ export default function App() {
     // trg_assign_ussd_code trigger do it atomically; the old client-side
     // "max + 1" handed two simultaneous checkouts the same code, so one
     // customer's payment could land on the other customer's order.
-    const { data: inserted, error } = await supabase.from('whatsapp_orders').insert({ order_no: orderNo, date: new Date().toISOString(), customer_name: name, customer_phone: phone, items: JSON.stringify(items), subtotal: ct, total: ct, address: addr || null, notes: orderNotes, status: 'Pending', source: 'web', details_filled: true }).select('id,ussd_code').single()
+    const payload = { order_no: orderNo, customer_name: name, customer_phone: phone,
+      items: JSON.stringify(items), subtotal: ct, total: ct,
+      address: addr || null, notes: orderNotes }
+    let inserted = null
+    const created = await rpcOrNull('public_order_create', { p: payload })
+    if (created && created.success) {
+      inserted = { id: created.id, ussd_code: created.ussd_code }
+    } else if (created && created.success === false) {
+      setSubmitting(false); setToast(created.error || 'Error placing order'); setTimeout(() => setToast(''), 2000); return
+    } else {
+      const { data: row } = await supabase.from('whatsapp_orders').insert({ ...payload, date: new Date().toISOString(), items: payload.items, status: 'Pending', source: 'web', details_filled: true }).select('id,ussd_code').single()
+      inserted = row
+    }
 
-    if (error || !inserted?.ussd_code) { setSubmitting(false); setToast('Error placing order'); setTimeout(() => setToast(''), 2000); return }
+    if (!inserted?.ussd_code) { setSubmitting(false); setToast('Error placing order'); setTimeout(() => setToast(''), 2000); return }
     const uc = inserted.ussd_code
 
     // Online payment (MoMo prompt) only if enabled for this brand. Otherwise the
@@ -408,8 +425,14 @@ export default function App() {
 
   const trackOrder = async () => {
     if (!trackQuery.trim()) return; setTracking(true); const q = trackQuery.trim()
-    const { data } = await supabase.from('whatsapp_orders').select('order_no,status,total,customer_name,tracking_no,delivery_status,delivery_guy,delivered_at,date').or(`customer_phone.ilike.%${q}%,order_no.ilike.%${q}%,tracking_no.ilike.%${q}%`).order('date', { ascending: false }).limit(5)
-    setTrackResult(data || []); setTracking(false)
+    // Exact order number, tracking number or phone. The old query used
+    // ilike %q%, so a single character matched every order in the table.
+    let rows = await rpcOrNull('public_order_track', { p_query: q })
+    if (!rows) {
+      const { data } = await supabase.from('whatsapp_orders').select('order_no,status,total,customer_name,tracking_no,delivery_status,delivery_guy,delivered_at,date').or(`customer_phone.ilike.%${q}%,order_no.ilike.%${q}%`).order('date', { ascending: false }).limit(20)
+      rows = data
+    }
+    setTrackResult(rows || []); setTracking(false)
   }
 
   const activePromo = promos.find(p => p.end_date && new Date(p.end_date) > new Date())

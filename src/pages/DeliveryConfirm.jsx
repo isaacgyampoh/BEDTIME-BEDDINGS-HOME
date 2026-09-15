@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getSupabase } from '../lib/supabase'
+import { getSupabase, rpcOrNull } from '../lib/supabase'
 import {  } from '../lib/utils'
 import { LogoFlat } from '../components/Logo'
 
@@ -16,8 +16,11 @@ export default function DeliveryConfirm() {
   useEffect(() => {
     if (!orderId) return
     const load = async () => {
-      const sb = getSupabase()
-      const { data } = await sb.from('whatsapp_orders').select('*').eq('id', orderId).single()
+      let data = await rpcOrNull('public_order_get', { p_id: orderId })
+      if (!data) {
+        const sb = getSupabase()
+        ;({ data } = await sb.from('whatsapp_orders').select('*').eq('id', orderId).single())
+      }
       if (data) setOrder(data)
       setLoading(false)
     }
@@ -27,19 +30,28 @@ export default function DeliveryConfirm() {
   const confirmDelivery = async () => {
     if (!deliveryGuy.trim()) return
     setConfirming(true)
-    const sb = getSupabase()
     // This page is reachable by anyone holding the delivery link, so it must
     // not be able to close out an order that was never paid for. Record the
     // delivery either way; only advance `status` when payment already landed.
-    const paid = order?.status === 'Paid' || order?.status === 'Completed' || !!order?.paid_at
-    const { error } = await sb.from('whatsapp_orders').update({
-      delivery_status: 'Delivered',
-      delivery_guy: deliveryGuy.trim(),
-      delivered_at: new Date().toISOString(),
-      delivery_notes: notes.trim(),
-      ...(paid ? { status: 'Completed' } : {}),
-    }).eq('id', orderId)
-    if (error) { setConfirming(false); alert('Could not save. Please check your connection and try again.'); return }
+    // public_order_confirm_delivery applies that rule in the database, where
+    // the page opening it cannot skip past it.
+    const viaFn = await rpcOrNull('public_order_confirm_delivery', {
+      p_id: orderId, p_guy: deliveryGuy.trim(), p_notes: notes.trim(),
+    })
+    if (!viaFn) {
+      const sb = getSupabase()
+      const paid = order?.status === 'Paid' || order?.status === 'Completed' || !!order?.paid_at
+      const { error } = await sb.from('whatsapp_orders').update({
+        delivery_status: 'Delivered',
+        delivery_guy: deliveryGuy.trim(),
+        delivered_at: new Date().toISOString(),
+        delivery_notes: notes.trim(),
+        ...(paid ? { status: 'Completed' } : {}),
+      }).eq('id', orderId)
+      if (error) { setConfirming(false); alert('Could not save. Please check your connection and try again.'); return }
+    } else if (viaFn.success === false) {
+      setConfirming(false); alert(viaFn.error || 'Could not save.'); return
+    }
     setDone(true)
     setConfirming(false)
     // Auto-close tab after 3 seconds
