@@ -173,6 +173,101 @@ function writeSerial(portPath, baudRate, bytes) {
 }
 
 /**
+ * Ask the printer what is wrong with it.
+ *
+ * writeSerial only ever writes. When a thermal printer is out of paper, or its
+ * cover is not latched, it drops everything sent to it and says nothing — so a
+ * receipt "prints" successfully and no paper moves. That is exactly the state a
+ * till is left in after a roll runs out mid-sale.
+ *
+ * ESC/POS real-time status (DLE EOT n) is answered even while the printer is
+ * offline — that is the point of it, it jumps the print queue.
+ *
+ * The queries are sent ONE AT A TIME and each reply decoded against its own
+ * query. The same bit means different things depending on what was asked:
+ * bit 2 is "cover open" in the offline-cause reply but "drawer kick-out" in the
+ * printer-status reply. Firing all three and reading bits off whatever comes
+ * back reports a healthy printer as having its cover open.
+ *
+ * Plenty of cheap clones answer none of this. Silence is reported as "cannot
+ * tell", never as a fault, and never as a reason to stop printing.
+ */
+const STATUS_QUERIES = [
+  // DLE EOT 2 — why the printer is offline.
+  { n: 2, bits: [
+    [0x04, 'The cover is open, or not clicked fully shut.'],
+    [0x20, 'Printing stopped because it is out of paper.'],
+    [0x40, 'The printer reports an error — usually a jam or the cutter.'],
+  ] },
+  // DLE EOT 4 — the paper sensors. Both bits set means the roll has run out.
+  { n: 4, bits: [
+    [0x60, 'Out of paper.'],
+  ] },
+]
+
+function readPrinterStatus(portPath, baudRate) {
+  return new Promise((resolve) => {
+    if (!SerialPort) return resolve({ ok: false, error: 'Serial support is not available in this build' })
+    let port
+    try {
+      port = new SerialPort({ path: portPath, baudRate: baudRate || 9600, autoOpen: false })
+    } catch (e) { return resolve({ ok: false, error: e.message }) }
+
+    let settled = false
+    const done = (out) => {
+      if (settled) return
+      settled = true
+      try { port.close(() => {}) } catch { /* already gone */ }
+      resolve(out)
+    }
+    port.on('error', (e) => done({ ok: false, error: e.message }))
+
+    /** Send one query and wait for the single byte it answers with. */
+    const ask = (n) => new Promise((res) => {
+      let timer = null
+      const onData = (d) => {
+        const b = [...d].find(isStatusByte)
+        if (b === undefined) return
+        clearTimeout(timer); port.off('data', onData); res(b)
+      }
+      port.on('data', onData)
+      timer = setTimeout(() => { port.off('data', onData); res(null) }, 700)
+      port.write(Buffer.from([0x10, 0x04, n]), (e) => {
+        if (e) { clearTimeout(timer); port.off('data', onData); res(null) }
+      })
+    })
+
+    port.open(async (err) => {
+      if (err) return done({ ok: false, error: err.message })
+      const faults = []
+      let answered = 0
+      for (const q of STATUS_QUERIES) {
+        const b = await ask(q.n)
+        if (b === null) continue
+        answered++
+        for (const [mask, message] of q.bits) {
+          if ((b & mask) === mask && !faults.includes(message)) faults.push(message)
+        }
+      }
+      if (!answered) {
+        return done({ ok: true, supported: false, reason: 'The printer did not answer a status request. Many low-cost heads do not implement it.' })
+      }
+      done({ ok: true, supported: true, faults, ready: faults.length === 0 })
+    })
+  })
+}
+
+/**
+ * Every real-time status reply has bit 4 set with bit 0 and bit 7 clear.
+ * Anything else is the printer echoing, or line noise, and would decode into
+ * confident nonsense — telling a shop it is out of paper when the roll is full
+ * sends someone hunting for a fault that is not there.
+ */
+function isStatusByte(b) {
+  return (b & 0x10) === 0x10 && (b & 0x01) === 0 && (b & 0x80) === 0
+}
+
+/**
  * Print HTML with no dialog, to a named Windows printer.
  * Only useful when the printer IS installed in Windows; the serial path above
  * is what covers the built-in head that is not.
@@ -316,6 +411,13 @@ function registerIpc() {
     }
     if (!target) return { ok: false, error: 'No serial port found for the printer' }
     return writeSerial(target, baudRate || readSettings().printerBaud || 9600, bytes)
+  })
+
+  ipcMain.handle('pos:printerStatus', async (_e, { portPath, baudRate } = {}) => {
+    const cfg = readSettings()
+    const path = portPath || cfg.printerPort
+    if (!path) return { ok: false, error: 'No printer port is set' }
+    return readPrinterStatus(path, baudRate || cfg.printerBaud)
   })
 
   ipcMain.handle('pos:printSilent', (_e, { html, deviceName, widthMicrons }) =>

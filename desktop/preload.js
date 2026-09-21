@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('posDesktop', {
   /** bytes: number[] — ESC/POS. Arrays cross the bridge; Uint8Array does not. */
   printRaw:          (bytes, opts = {}) => ipcRenderer.invoke('pos:printRaw', { bytes: Array.from(bytes), ...opts }),
   printSilent:       (html, opts = {}) => ipcRenderer.invoke('pos:printSilent', { html, ...opts }),
+  printerStatus:     (opts = {}) => ipcRenderer.invoke('pos:printerStatus', opts),
 
   // Displays
   getDisplays:       () => ipcRenderer.invoke('pos:getDisplays'),

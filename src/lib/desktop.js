@@ -23,6 +23,21 @@ export async function desktopInfo() {
   try { return await d.info() } catch { return null }
 }
 
+/**
+ * Ask the receipt printer why it is not printing.
+ *
+ * A thermal head that is out of paper, or whose cover is not latched, throws
+ * away everything sent to it without complaining — so the app reports a
+ * successful print and nothing comes out. This asks it directly.
+ *
+ * Returns null on the web, and `{ supported: false }` for the many cheap heads
+ * that do not answer. Never a reason to skip printing — only something to say.
+ */
+export async function printerStatus(opts = {}) {
+  const d = api(); if (!d?.printerStatus) return null
+  try { return await d.printerStatus(opts) } catch { return null }
+}
+
 /** Windows print queues, if any are installed. */
 export async function listPrinters() {
   const d = api(); if (!d) return []

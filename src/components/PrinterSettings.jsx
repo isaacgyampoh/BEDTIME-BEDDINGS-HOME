@@ -6,7 +6,7 @@ import {
 } from '../lib/printer'
 import { pairSerial, pairUsb, unlink, restoreLink, linkLabel, serialSupported, usbSupported, directSupported, BAUD_RATES, getBaud, setBaud } from '../lib/printerLink'
 import {
-  isDesktop, desktopInfo, listSerialPorts, listPrinters,
+  isDesktop, desktopInfo, listSerialPorts, listPrinters, printerStatus,
   saveTerminalSettings, setKiosk, setAutoLaunch,
 } from '../lib/desktop'
 import toast from 'react-hot-toast'
@@ -32,6 +32,7 @@ export default function PrinterSettings({ open, onClose }) {
   const [auto, setAuto] = useState(getAutoPrint)
   const [baud, setBaudState] = useState(getBaud)
   const [testing, setTesting] = useState(false)
+  const [faults, setFaults] = useState([])
   const [linked, setLinked] = useState(false)
   const [label, setLabel] = useState('Not connected')
   const [pairing, setPairing] = useState(false)
@@ -79,8 +80,18 @@ export default function PrinterSettings({ open, onClose }) {
 
   const testPrint = async () => {
     setTesting(true)
+    setFaults([])
+    // Ask first. A head that is out of paper or not latched shut accepts the
+    // bytes, bins them, and reports nothing — which is why a receipt can
+    // "print" with no paper moving. Asking turns that silence into a reason.
+    const st = await printerStatus()
+    const found = (st && st.ok && st.supported && st.faults) ? st.faults : []
+    setFaults(found)
+
     const { ok, via } = await printTestPage({ paper })
     setTesting(false)
+
+    if (found.length) { toast.error(found[0]); return }
     if (!ok) toast.error('Could not reach the printer. Check it is on and has paper.')
     else if (via === 'browser') toast('Sent to the Windows printer dialog')
     else toast.success('Sent to the built-in printer')
@@ -96,6 +107,20 @@ export default function PrinterSettings({ open, onClose }) {
         </button>
       </>}>
       <div className="space-y-6">
+
+        {faults.length > 0 && (
+          <div className="border border-red-200 bg-red-50 rounded-lg p-4">
+            <div className="text-[13px] font-bold text-red-800 mb-1">The printer says:</div>
+            <ul className="text-[13px] text-red-700 space-y-0.5">
+              {faults.map(f => <li key={f}>{f}</li>)}
+            </ul>
+            <div className="text-[12px] text-red-700/80 mt-2">
+              If you have just changed the roll: thermal paper only prints on one
+              side, so the roll has to feed off the underside, and the cover has to
+              click shut on both sides.
+            </div>
+          </div>
+        )}
 
         {desktop && (
           <div>
