@@ -34,9 +34,8 @@ catch (e) { console.warn('electron-updater unavailable, updates disabled:', e.me
 
 // serialport is a native module. If it fails to load (missing prebuild on an
 // unusual machine) the app must still run — printing simply falls back.
-let SerialPort = null
-try { ({ SerialPort } = require('serialport')) }
-catch (e) { console.warn('serialport unavailable, raw printing disabled:', e.message) }
+const serial = require('./serial')
+const { listSerialPorts, writeSerial, readPrinterStatus } = serial
 
 const DEV_URL = process.env.POS_DEV_URL || ''
 const isDev = !!DEV_URL || !app.isPackaged
@@ -128,151 +127,22 @@ function openCustomerWindow(regId) {
 
 // ── printing ───────────────────────────────────────────────────────────────
 
-/** Serial ports that look like a thermal printer, best guess first. */
-async function listSerialPorts() {
-  if (!SerialPort) return []
-  const ports = await SerialPort.list()
-  const score = (p) => {
-    const s = `${p.manufacturer || ''} ${p.friendlyName || ''} ${p.pnpId || ''}`.toLowerCase()
-    if (/printer|pos-?58|pos-?80|xprinter|gprinter|epson|thermal/.test(s)) return 3
-    // The USB-serial bridges these OEM tills use internally.
-    if (/ch340|ch341|prolific|pl2303|ftdi|silicon labs|cp210/.test(s)) return 2
-    if (/usb/.test(s)) return 1
-    return 0
-  }
-  return ports
-    .map(p => ({ path: p.path, manufacturer: p.manufacturer || '', friendlyName: p.friendlyName || '', vendorId: p.vendorId || '', productId: p.productId || '', score: score(p) }))
-    .sort((a, b) => b.score - a.score)
-}
-
-/** Write raw ESC/POS bytes to a COM port. This is the path that needs no driver. */
-function writeSerial(portPath, baudRate, bytes) {
-  return new Promise((resolve) => {
-    if (!SerialPort) return resolve({ ok: false, error: 'Serial support is not available in this build' })
-    let port
-    try {
-      port = new SerialPort({ path: portPath, baudRate: baudRate || 9600, autoOpen: false })
-    } catch (e) { return resolve({ ok: false, error: e.message }) }
-
-    const fail = (msg) => { try { port.close(() => {}) } catch {} ; resolve({ ok: false, error: msg }) }
-    const timer = setTimeout(() => fail('Printer did not respond'), 10000)
-
-    port.open((err) => {
-      if (err) { clearTimeout(timer); return resolve({ ok: false, error: err.message }) }
-      port.write(Buffer.from(bytes), (wErr) => {
-        if (wErr) { clearTimeout(timer); return fail(wErr.message) }
-        // drain() waits for the bytes to actually leave the buffer; closing
-        // early truncates the receipt on slow heads.
-        port.drain((dErr) => {
-          clearTimeout(timer)
-          port.close(() => resolve(dErr ? { ok: false, error: dErr.message } : { ok: true }))
-        })
-      })
-    })
-  })
-}
 
 /**
- * Ask the printer what is wrong with it.
- *
- * writeSerial only ever writes. When a thermal printer is out of paper, or its
- * cover is not latched, it drops everything sent to it and says nothing — so a
- * receipt "prints" successfully and no paper moves. That is exactly the state a
- * till is left in after a roll runs out mid-sale.
- *
- * ESC/POS real-time status (DLE EOT n) is answered even while the printer is
- * offline — that is the point of it, it jumps the print queue.
- *
- * The queries are sent ONE AT A TIME and each reply decoded against its own
- * query. The same bit means different things depending on what was asked:
- * bit 2 is "cover open" in the offline-cause reply but "drawer kick-out" in the
- * printer-status reply. Firing all three and reading bits off whatever comes
- * back reports a healthy printer as having its cover open.
- *
- * Plenty of cheap clones answer none of this. Silence is reported as "cannot
- * tell", never as a fault, and never as a reason to stop printing.
+ * Software "printers" that Windows installs by default. Sending a receipt to
+ * one of these succeeds — into a OneNote page or a PDF nobody opens — so it
+ * reports a successful print with nothing on paper.
  */
-const STATUS_QUERIES = [
-  // DLE EOT 2 — why the printer is offline.
-  { n: 2, bits: [
-    [0x04, 'The cover is open, or not clicked fully shut.'],
-    [0x20, 'Printing stopped because it is out of paper.'],
-    [0x40, 'The printer reports an error — usually a jam or the cutter.'],
-  ] },
-  // DLE EOT 4 — the paper sensors. Both bits set means the roll has run out.
-  { n: 4, bits: [
-    [0x60, 'Out of paper.'],
-  ] },
-]
+const VIRTUAL_PRINTER = /onenote|pdf|xps|fax|document writer|send to/i
 
-function readPrinterStatus(portPath, baudRate) {
-  return new Promise((resolve) => {
-    if (!SerialPort) return resolve({ ok: false, error: 'Serial support is not available in this build' })
-    let port
-    try {
-      port = new SerialPort({ path: portPath, baudRate: baudRate || 9600, autoOpen: false })
-    } catch (e) { return resolve({ ok: false, error: e.message }) }
-
-    let settled = false
-    const done = (out) => {
-      if (settled) return
-      settled = true
-      try { port.close(() => {}) } catch { /* already gone */ }
-      resolve(out)
-    }
-    port.on('error', (e) => done({ ok: false, error: e.message }))
-
-    /** Send one query and wait for the single byte it answers with. */
-    const ask = (n) => new Promise((res) => {
-      let timer = null
-      const onData = (d) => {
-        const b = [...d].find(isStatusByte)
-        if (b === undefined) return
-        clearTimeout(timer); port.off('data', onData); res(b)
-      }
-      port.on('data', onData)
-      timer = setTimeout(() => { port.off('data', onData); res(null) }, 700)
-      port.write(Buffer.from([0x10, 0x04, n]), (e) => {
-        if (e) { clearTimeout(timer); port.off('data', onData); res(null) }
-      })
-    })
-
-    port.open(async (err) => {
-      if (err) return done({ ok: false, error: err.message })
-      const faults = []
-      let answered = 0
-      for (const q of STATUS_QUERIES) {
-        const b = await ask(q.n)
-        if (b === null) continue
-        answered++
-        for (const [mask, message] of q.bits) {
-          if ((b & mask) === mask && !faults.includes(message)) faults.push(message)
-        }
-      }
-      if (!answered) {
-        return done({ ok: true, supported: false, reason: 'The printer did not answer a status request. Many low-cost heads do not implement it.' })
-      }
-      done({ ok: true, supported: true, faults, ready: faults.length === 0 })
-    })
-  })
-}
-
-/**
- * Every real-time status reply has bit 4 set with bit 0 and bit 7 clear.
- * Anything else is the printer echoing, or line noise, and would decode into
- * confident nonsense — telling a shop it is out of paper when the roll is full
- * sends someone hunting for a fault that is not there.
- */
-function isStatusByte(b) {
-  return (b & 0x10) === 0x10 && (b & 0x01) === 0 && (b & 0x80) === 0
-}
-
-/**
- * Print HTML with no dialog, to a named Windows printer.
- * Only useful when the printer IS installed in Windows; the serial path above
- * is what covers the built-in head that is not.
- */
 function printSilentHTML(html, { deviceName, widthMicrons = 80000 } = {}) {
+  // Never print to an unnamed queue. Electron sends `deviceName: undefined` to
+  // the Windows DEFAULT printer, which on these tills is OneNote or Print to
+  // PDF: the call succeeds, the app reported "printed", and no paper moved.
+  if (!deviceName) return Promise.resolve({ ok: false, error: null })
+  if (VIRTUAL_PRINTER.test(deviceName)) {
+    return Promise.resolve({ ok: false, error: `"${deviceName}" is not a real printer.` })
+  }
   return new Promise((resolve) => {
     const w = new BrowserWindow({
       show: false,
@@ -379,39 +249,41 @@ function registerIpc() {
   ipcMain.handle('pos:info', () => ({
     desktop: true, version: app.getVersion(), packaged: app.isPackaged,
     platform: process.platform, arch: process.arch,
-    serial: !!SerialPort, settings: readSettings(),
+    serial: serial.available, settings: readSettings(),
   }))
 
   ipcMain.handle('pos:listPrinters', async () => {
-    try { return await mainWindow.webContents.getPrintersAsync() } catch { return [] }
+    // Real queues only. Listing OneNote and Print to PDF as "Windows printers"
+    // invited someone to pick one.
+    try {
+      const all = await mainWindow.webContents.getPrintersAsync()
+      return all.filter(p => !VIRTUAL_PRINTER.test(`${p.name} ${p.displayName || ''}`))
+    } catch { return [] }
   })
 
   ipcMain.handle('pos:listSerialPorts', () => listSerialPorts())
 
   ipcMain.handle('pos:printRaw', async (_e, { bytes, portPath, baudRate }) => {
-    let target = portPath || readSettings().printerPort
+    const cfg = readSettings()
+    let target = portPath || cfg.printerPort
+    let baud = baudRate || cfg.printerBaud
     if (!target) {
-      // Auto-pick only a port that actually looks like a printer or a USB
-      // bridge. A score of 0 means we recognised nothing about it, and blindly
-      // writing receipt bytes into an unrelated COM device (a modem, a scale,
-      // a debug console) is worse than asking the operator to choose.
-      const ports = await listSerialPorts()
-      const best = ports.find(p => p.score >= 1)
-      if (!best) {
-        return {
-          ok: false,
-          error: ports.length
-            ? 'Could not identify the printer. Pick the port in Receipt Printer settings.'
-            : 'No serial port found for the printer',
-          ports,
-        }
-      }
-      target = best.path
-      writeSettings({ printerPort: target })
+      // Nothing chosen yet: find it by asking, rather than guessing from the
+      // USB description (which rejected the plain COM port these tills use).
+      const found = await serial.findPrinter({ readSettings, writeSettings })
+      if (!found.ok) return { ok: false, error: found.error, needsSetup: true }
+      target = found.port; baud = found.baud
     }
-    if (!target) return { ok: false, error: 'No serial port found for the printer' }
-    return writeSerial(target, baudRate || readSettings().printerBaud || 9600, bytes)
+    const r = await writeSerial(target, baud || 9600, bytes)
+    if (!r.ok) {
+      return { ok: false, port: target, baud: baud || 9600,
+        error: `Could not print on ${target}: ${r.error}. Check the printer is on, or open Receipt Printer to choose a different port.` }
+    }
+    return { ok: true, port: target, baud: baud || 9600 }
   })
+
+  ipcMain.handle('pos:findPrinter', () => serial.findPrinter({ readSettings, writeSettings }))
+
 
   ipcMain.handle('pos:printerStatus', async (_e, { portPath, baudRate } = {}) => {
     const cfg = readSettings()

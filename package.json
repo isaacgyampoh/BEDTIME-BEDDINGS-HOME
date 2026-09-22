@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "_comment:build:desktop": "The desktop app loads the bundle from disk over file://, where an absolute /assets/... path resolves to the drive root and nothing loads — a white window. --base=./ emits relative paths. Passed on the CLI rather than through an env var because the release runner is Windows, where VITE_BASE=x npm run build is not a thing cmd.exe understands.",
+    "_comment:build:desktop": "The desktop app loads the bundle from disk over file://, where an absolute /assets/... path resolves to the drive root and nothing loads \u2014 a white window. --base=./ emits relative paths. Passed on the CLI rather than through an env var because the release runner is Windows, where VITE_BASE=x npm run build is not a thing cmd.exe understands.",
     "build:desktop": "vite build --base=./",
     "preview": "vite preview",
     "lint": "eslint src",
@@ -14,7 +14,8 @@
     "desktop:dev": "cd desktop && npm run dev",
     "desktop:win": "npm run build:desktop && cd desktop && npm run build:win",
     "test": "node tests/run.mjs",
-    "release:desktop": "node scripts/release-desktop.mjs"
+    "release:desktop": "node scripts/release-desktop.mjs",
+    "test:serial": "node tests/e2e/run-serial.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

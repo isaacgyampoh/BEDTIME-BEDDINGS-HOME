@@ -54,23 +54,39 @@ export async function listSerialPorts() {
  * Send ESC/POS bytes to the till's printer.
  * Returns false on the web so the caller falls back to its existing path.
  */
+/**
+ * Send ESC/POS bytes to the till's printer.
+ *
+ * Returns { ok, error } rather than a bare boolean. The reason a print failed
+ * used to go to console.warn and nowhere else, so the cashier saw "nothing
+ * happened" while the app knew exactly why.
+ */
 export async function printRaw(bytes, opts = {}) {
-  const d = api(); if (!d) return false
+  const d = api(); if (!d) return { ok: false, error: 'Not running in the desktop app' }
   try {
     const r = await d.printRaw(bytes, opts)
     if (!r?.ok) console.warn('desktop printRaw:', r?.error)
-    return !!r?.ok
-  } catch (e) { console.warn('desktop printRaw threw:', e); return false }
+    return { ok: !!r?.ok, error: r?.error || null, port: r?.port, baud: r?.baud, needsSetup: !!r?.needsSetup }
+  } catch (e) {
+    console.warn('desktop printRaw threw:', e)
+    return { ok: false, error: 'The desktop printer bridge did not respond. Restart the app.' }
+  }
 }
 
 /** Print HTML with no dialog, to a named Windows printer. */
 export async function printSilent(html, opts = {}) {
-  const d = api(); if (!d) return false
+  const d = api(); if (!d) return { ok: false, error: null }
   try {
     const r = await d.printSilent(html, opts)
     if (!r?.ok) console.warn('desktop printSilent:', r?.error)
-    return !!r?.ok
-  } catch { return false }
+    return { ok: !!r?.ok, error: r?.error || null }
+  } catch { return { ok: false, error: null } }
+}
+
+/** Search every COM port at every speed for a printer that answers. */
+export async function findPrinter() {
+  const d = api(); if (!d?.findPrinter) return null
+  try { return await d.findPrinter() } catch { return { ok: false, error: 'The search could not run. Restart the app.' } }
 }
 
 export async function getDisplays() {

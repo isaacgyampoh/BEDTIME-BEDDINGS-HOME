@@ -321,39 +321,54 @@ export function printDocument(fullHTML, { paper = getPaperWidth(), title = 'Prin
  * Returns { ok, via } so the caller can tell the operator what actually happened.
  */
 export async function printReceipt(sale, shop, { paper = getPaperWidth() } = {}) {
-  // 1. Desktop app: bytes straight to the COM port. No driver, no dialog, and
-  //    the port is auto-detected, so nothing is paired by hand.
+  return printVia(
+    () => receiptBytes(sale, shop, paper),
+    () => buildDocument(receiptHTML(sale, shop), { paper }),
+    () => printHTML(receiptHTML(sale, shop), { paper, title: `Receipt ${sale.receiptNo || ''}` }),
+    paper,
+  )
+}
+
+/**
+ * The one routing decision for every printout. Same receipt data in, one of
+ * three transports out:
+ *
+ *   desktop app  → ESC/POS over the COM port, else a named real Windows queue.
+ *                  Never the browser fallbacks: Web Serial is not wired in the
+ *                  desktop shell, and window.print() there opens a dialog
+ *                  offering OneNote and PDF — a print that is not a print.
+ *   browser      → the Web Serial / WebUSB link the operator paired, else the
+ *                  OS print dialog.
+ *
+ * Always resolves { ok, via, error }. `error` is written for the person at the
+ * till; the technical detail goes to the console.
+ */
+async function printVia(bytesFn, docFn, htmlFn, paper) {
   if (isDesktop()) {
-    if (await desktopPrintRaw(receiptBytes(sale, shop, paper))) return { ok: true, via: 'desktop-serial' }
-    // A Windows print queue may still exist even when the built-in head has none.
-    if (await desktopPrintSilent(buildDocument(receiptHTML(sale, shop), { paper }), { widthMicrons: paperMM(paper) * 1000 })) {
-      return { ok: true, via: 'desktop-silent' }
+    const raw = await desktopPrintRaw(bytesFn())
+    if (raw.ok) return { ok: true, via: 'desktop-serial', error: null }
+    const q = await desktopPrintSilent(docFn(), { widthMicrons: paperMM(paper) * 1000 })
+    if (q.ok) return { ok: true, via: 'desktop-printer', error: null }
+    return {
+      ok: false, via: 'desktop', needsSetup: !!raw.needsSetup,
+      error: raw.error || 'Printer unavailable. Check the printer connection and try again.',
     }
   }
 
-  // 2. Browser: a Web Serial / WebUSB link paired by the operator.
   if (isLinked() || await restoreLink()) {
-    const ok = await sendBytes(receiptBytes(sale, shop, paper))
-    if (ok) return { ok: true, via: 'direct' }
+    const ok = await sendBytes(bytesFn())
+    if (ok) return { ok: true, via: 'direct', error: null }
   }
-
-  // 3. Last resort: the OS print path, which needs an installed printer.
-  const ok = await printHTML(receiptHTML(sale, shop), { paper, title: `Receipt ${sale.receiptNo || ''}` })
-  return { ok, via: 'browser' }
+  const ok = await htmlFn()
+  return { ok, via: 'browser', error: ok ? null : 'Could not open the print dialog.' }
 }
 
 /** Alignment/darkness check, over whichever transport is available. */
 export async function printTestPage({ paper = getPaperWidth() } = {}) {
-  if (isDesktop()) {
-    if (await desktopPrintRaw(testBytes(paper))) return { ok: true, via: 'desktop-serial' }
-    if (await desktopPrintSilent(buildDocument(testPageHTML(paper), { paper }), { widthMicrons: paperMM(paper) * 1000 })) {
-      return { ok: true, via: 'desktop-silent' }
-    }
-  }
-  if (isLinked() || await restoreLink()) {
-    const ok = await sendBytes(testBytes(paper))
-    if (ok) return { ok: true, via: 'direct' }
-  }
-  const ok = await printHTML(testPageHTML(paper), { paper, title: 'Printer test' })
-  return { ok, via: 'browser' }
+  return printVia(
+    () => testBytes(paper),
+    () => buildDocument(testPageHTML(paper), { paper }),
+    () => printHTML(testPageHTML(paper), { paper, title: 'Printer test' }),
+    paper,
+  )
 }

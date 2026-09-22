@@ -6,7 +6,7 @@ import {
 } from '../lib/printer'
 import { pairSerial, pairUsb, unlink, restoreLink, linkLabel, serialSupported, usbSupported, directSupported, BAUD_RATES, getBaud, setBaud } from '../lib/printerLink'
 import {
-  isDesktop, desktopInfo, listSerialPorts, listPrinters, printerStatus,
+  isDesktop, desktopInfo, listSerialPorts, listPrinters, printerStatus, findPrinter,
   saveTerminalSettings, setKiosk, setAutoLaunch,
 } from '../lib/desktop'
 import toast from 'react-hot-toast'
@@ -40,6 +40,13 @@ export default function PrinterSettings({ open, onClose }) {
   const [ports, setPorts] = useState([])
   const [queues, setQueues] = useState([])
   const [term, setTerm] = useState(null)
+  const [searching, setSearching] = useState(false)
+  const [searchNote, setSearchNote] = useState('')
+  const cfg = term?.settings || {}
+  const saveCfg = async (patch) => {
+    const next = await saveTerminalSettings(patch)
+    setTerm(t => ({ ...t, settings: { ...(t?.settings || {}), ...patch, ...(next || {}) } }))
+  }
 
   // Reconnect silently to a printer paired earlier on this terminal.
   useEffect(() => {
@@ -78,6 +85,21 @@ export default function PrinterSettings({ open, onClose }) {
     await unlink(); setLinked(false); setLabel(linkLabel()); toast('Printer disconnected')
   }
 
+  // Ask every COM port at every speed; keep the one a printer answers on.
+  const search = async () => {
+    setSearching(true); setSearchNote('')
+    const r = await findPrinter()
+    setSearching(false)
+    if (r?.ok) {
+      setTerm(t => ({ ...t, settings: { ...(t?.settings || {}), printerPort: r.port, printerBaud: r.baud } }))
+      setSearchNote(`Found the printer on ${r.port} at ${r.baud}. Printing a test page…`)
+      await testPrint()
+    } else {
+      setSearchNote(r?.error || 'The search could not run.')
+      if (r?.ports) setPorts(r.ports)
+    }
+  }
+
   const testPrint = async () => {
     setTesting(true)
     setFaults([])
@@ -88,11 +110,11 @@ export default function PrinterSettings({ open, onClose }) {
     const found = (st && st.ok && st.supported && st.faults) ? st.faults : []
     setFaults(found)
 
-    const { ok, via } = await printTestPage({ paper })
+    const { ok, via, error } = await printTestPage({ paper })
     setTesting(false)
 
     if (found.length) { toast.error(found[0]); return }
-    if (!ok) toast.error('Could not reach the printer. Check it is on and has paper.')
+    if (!ok) { setFaults([error || 'Printer unavailable. Check the printer connection and try again.']); return }
     else if (via === 'browser') toast('Sent to the Windows printer dialog')
     else toast.success('Sent to the built-in printer')
   }
@@ -138,19 +160,51 @@ export default function PrinterSettings({ open, onClose }) {
             </div>
 
             <div className="rounded-2xl border border-gray-200 bg-white p-3.5 mb-2.5">
-              <div className="text-[12px] font-bold text-gray-700 mb-1.5">Detected printer ports</div>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div>
+                  <div className="text-[12px] font-bold text-gray-700">Printing to</div>
+                  <div className="text-[15px] font-bold text-gray-900">
+                    {cfg.printerPort ? `${cfg.printerPort} at ${cfg.printerBaud || 9600}` : 'Not chosen yet'}
+                  </div>
+                </div>
+                <button onClick={search} disabled={searching || testing}
+                  className="h-11 px-4 rounded-xl bg-[#16181d] text-white text-[13px] font-bold disabled:opacity-50">
+                  {searching ? 'Searching…' : 'Find printer'}
+                </button>
+              </div>
+              {searchNote && <div className="text-[12px] text-gray-600 mb-2">{searchNote}</div>}
+
+              <div className="text-[12px] font-bold text-gray-700 mt-3 mb-1.5">Or choose the port</div>
               {ports.length === 0
-                ? <div className="text-[12px] text-gray-400">No serial ports found. Check the printer cable inside the machine.</div>
-                : ports.map((p, i) => (
-                    <button key={p.path} onClick={async () => { await saveTerminalSettings({ printerPort: p.path }); toast.success('Using ' + p.path) }}
-                      className="w-full flex items-center justify-between gap-2 py-2 border-b border-gray-50 last:border-0 text-left">
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-semibold text-gray-800">{p.path}</div>
-                        <div className="text-[11px] text-gray-400 truncate">{p.friendlyName || p.manufacturer || 'Serial device'}</div>
-                      </div>
-                      {i === 0 && <span className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex-shrink-0">BEST MATCH</span>}
-                    </button>
-                  ))}
+                ? <div className="text-[12px] text-gray-500">No COM ports found. Check the printer cable inside the machine.</div>
+                : ports.map((p) => {
+                    const chosen = cfg.printerPort === p.path
+                    return (
+                      <button key={p.path} onClick={async () => { await saveCfg({ printerPort: p.path }); toast.success('Using ' + p.path) }}
+                        className={`w-full flex items-center justify-between gap-2 py-2.5 px-2 border-b border-gray-100 last:border-0 text-left rounded ${chosen ? 'bg-gray-100' : ''}`}>
+                        <div className="min-w-0">
+                          <div className="text-[13px] font-semibold text-gray-800">{p.path}</div>
+                          <div className="text-[11px] text-gray-500 truncate">{p.friendlyName || p.manufacturer || 'Serial device'}</div>
+                        </div>
+                        {chosen && <span className="text-[11px] font-bold text-gray-900 flex-shrink-0">In use</span>}
+                      </button>
+                    )
+                  })}
+
+              <div className="text-[12px] font-bold text-gray-700 mt-3 mb-1.5">Speed</div>
+              <div className="flex gap-2 flex-wrap">
+                {BAUD_RATES.map(b => (
+                  <button key={b} onClick={async () => { await saveCfg({ printerBaud: b }); toast.success(`Speed set to ${b}`) }}
+                    className={`h-11 px-3.5 rounded-xl border-2 text-[13px] font-semibold ${
+                      Number(cfg.printerBaud || 9600) === b ? 'border-[#16181d] bg-[#16181d] text-white' : 'border-gray-200 bg-white text-gray-600'}`}>
+                    {b}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                If it printed from Chrome, use the same speed Chrome was set to. Wrong
+                speed prints nothing, or garbled characters.
+              </p>
               {queues.length > 0 && (
                 <div className="mt-2.5 pt-2.5 border-t border-gray-100">
                   <div className="text-[12px] font-bold text-gray-700 mb-1">Windows printers</div>

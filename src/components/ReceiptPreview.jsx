@@ -18,6 +18,9 @@ import toast from 'react-hot-toast'
 export default function ReceiptPreview({ sale, onClose }) {
   const printedRef = useRef(false)
   const [printing, setPrinting] = useState(false)
+  // Shown in the sheet, not a toast: a toast disappears before anyone at a
+  // busy counter reads it, and this is the thing they need to act on.
+  const [printError, setPrintError] = useState('')
   const paper = getPaperWidth()
 
   const doc = useMemo(() => {
@@ -33,11 +36,12 @@ export default function ReceiptPreview({ sale, onClose }) {
     setPrinting(true)
     // Goes straight to the built-in head over ESC/POS when the terminal has
     // been paired; otherwise falls back to the OS print path.
-    const { ok } = await printReceipt(
+    const { ok, error, via } = await printReceipt(
       { ...sale, dateText: fmtDateTime(sale.date) }, SHOP, { paper }
     )
     setPrinting(false)
-    if (!ok) toast.error('Could not reach the printer. Open Receipt Printer in the menu to connect it.')
+    setPrintError(ok ? '' : (error || 'Printer unavailable. Check the printer connection and try again.'))
+    if (ok && via === 'browser') toast('Sent to the print dialog')
   }
 
   // Auto-print. Was hardcoded to cash sales; now follows the terminal setting,
@@ -87,10 +91,17 @@ export default function ReceiptPreview({ sale, onClose }) {
           />
         </div>
 
+        {printError && (
+          <div role="alert" className="mx-4 mt-3 border border-red-200 bg-red-50 rounded-lg px-3 py-2.5 text-[13px] text-red-800">
+            <div className="font-bold">Not printed</div>
+            <div className="mt-0.5">{printError}</div>
+          </div>
+        )}
+
         <div className="flex gap-2 p-4 border-t border-gray-100 flex-shrink-0 safe-bottom">
           <button onClick={doPrint} disabled={printing}
             className="flex-1 h-12 bg-[#16181d] hover:bg-[#2a2d34] text-white rounded-xl text-sm font-bold active:scale-[.98] transition disabled:opacity-50">
-            {printing ? 'Printing…' : 'Print Receipt'}
+            {printing ? 'Printing…' : printError ? 'Try again' : 'Print Receipt'}
           </button>
           <button onClick={onClose}
             className="h-12 px-5 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-semibold text-gray-600 transition active:scale-[.98]">

@@ -3,7 +3,7 @@
   "productName": "BEDTIME POS",
   "version": "1.0.6",
   "private": true,
-  "description": "BEDTIME BEDDINGS & HOME — point of sale for Windows POS terminals",
+  "description": "BEDTIME BEDDINGS & HOME \u2014 point of sale for Windows POS terminals",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -31,6 +31,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "serial.js",
       "package.json"
     ],
     "extraResources": [
