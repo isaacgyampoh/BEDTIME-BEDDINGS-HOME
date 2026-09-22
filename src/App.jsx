@@ -13,7 +13,6 @@ import ReceiptPreview from './components/ReceiptPreview'
 import PromptDialog from './components/PromptDialog'
 import UpdateBanner from './components/UpdateBanner'
 import FirstRunSetup from './components/FirstRunSetup'
-import InstallDesktop, { useInstallPrompt } from './components/InstallDesktop'
 import toast from 'react-hot-toast'
 
 // Lazy load all pages — only loads when needed
@@ -58,7 +57,6 @@ export default function App() {
   usePosMode()
 
   // Offers the desktop app once, on a Windows browser only.
-  const [installPrompt, dismissInstall] = useInstallPrompt()
 
   // Broadcast live cart to the customer-facing display (#/customer-display)
   useCustomerDisplayBroadcast()
@@ -268,7 +266,6 @@ export default function App() {
       <PromptDialog />
       <UpdateBanner />
       <FirstRunSetup />
-      <InstallDesktop open={installPrompt} onClose={dismissInstall} />
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} onReceipt={setReceipt} />
       {receipt && <ReceiptPreview sale={receipt} onClose={() => setReceipt(null)} />}
 

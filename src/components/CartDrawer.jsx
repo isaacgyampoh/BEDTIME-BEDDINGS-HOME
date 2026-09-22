@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { readStored, sanitizeHeld } from '../lib/cartSafety'
 import { useStore } from '../hooks/useStore'
 import { getSupabase, callFunction } from '../lib/supabase'
 import { money, num, PAYMENTS_ENABLED } from '../lib/utils'
@@ -20,7 +21,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
   const [processing, setProcessing] = useState(false)
   const [splitMode, setSplitMode] = useState(false)
   const [splitCash, setSplitCash] = useState('')
-  const [heldCarts, setHeldCarts] = useState(() => { try { return JSON.parse(localStorage.getItem('heldCarts') || '[]') } catch { return [] } })
+  const [heldCarts, setHeldCarts] = useState(() => readStored('heldCarts', sanitizeHeld, []))
   const [showHeld, setShowHeld] = useState(false)
   const [momoStep, setMomoStep] = useState('idle')
   const [waitMode, setWaitMode] = useState('ussd') // 'ussd' | 'prompt'
@@ -65,8 +66,15 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
   }, [momoStep, waitMode])
   useEffect(() => { localStorage.setItem('heldCarts', JSON.stringify(heldCarts)) }, [heldCarts])
 
+  // Synchronous, unlike `processing` state: a second tap that lands before
+  // React re-renders the disabled button still sees this and stops. One sale
+  // per payment, however the screen is tapped.
+  const saleInFlight = useRef(false)
+
   const recordSale = async (paymentMethod, extraData = {}) => {
     const sb = getSupabase(); if (!sb) return null
+    if (saleInFlight.current) return null
+    saleInFlight.current = true
     // Critical section: an app restart between here and the receipt would lose
     // a sale, so the updater is told to hold off.
     beginTx()
@@ -95,7 +103,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
         return null
       }
     } catch (e) { toast.error('Error: ' + e.message); return null }
-    finally { endTx() }
+    finally { endTx(); saleInFlight.current = false }
   }
 
   const finishSale = (saleData) => {
@@ -108,6 +116,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
 
   // Cash or manual Momo — just record directly
   const completeDirectSale = async (method) => {
+    if (saleInFlight.current) return    // a second tap; the first is still recording
     setProcessing(true)
     const extra = splitMode ? { splitCash: num(splitCash), splitMomo: splitRemainder } : {}
     const saleData = await recordSale(splitMode ? 'Split' : method, extra)

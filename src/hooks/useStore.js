@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { getSupabase, endStaffSession } from '../lib/supabase'
 import { num } from '../lib/utils'
+import { sanitizeCart } from '../lib/cartSafety'
 
 const mapProduct = p => ({ id: p.id, name: p.name, category: p.category || '', costPrice: num(p.cost_price), price: num(p.price), wholesalePrice: num(p.wholesale_price), wholesaleMinQty: num(p.wholesale_min_qty) || 0, quantity: num(p.quantity), image: p.image || '', groupTag: (p.group_tag || '').trim().toLowerCase(), description: p.description || '' })
 
@@ -10,7 +11,7 @@ const mapProduct = p => ({ id: p.id, name: p.name, category: p.category || '', c
 function applyWholesale(cart, products) {
   const prodById = {}
   for (const p of products) prodById[p.id] = p
-  return cart.map(c => {
+  return cart.filter(Boolean).map(c => {
     if (c.isBundle) return { ...c, lineTotal: c.qty * c.price }
     const prod = prodById[c.productId]
     const retail = c.originalPrice || (prod ? prod.price : c.price)
@@ -80,7 +81,7 @@ export const useStore = create((set, get) => ({
     let restored = []
     try {
       const saved = JSON.parse(localStorage.getItem('carts-by-cashier') || '{}')
-      restored = Array.isArray(saved[user.id]) ? saved[user.id] : []
+      restored = sanitizeCart(saved && saved[user.id])
     } catch {}
     set({ user, isAdmin, cart: restored })
   },
@@ -129,7 +130,7 @@ export const useStore = create((set, get) => ({
 
   addToCart: (item) => {
     let cart = [...get().cart]
-    const idx = cart.findIndex(c => c.isBundle ? c.bundleId === item.bundleId : c.productId === item.productId)
+    const idx = cart.findIndex(c => c && (c.isBundle ? c.bundleId === item.bundleId : c.productId === item.productId))
     if (idx >= 0) {
       const existing = cart[idx]
       if (!item.isBundle) { const prod = get().products.find(p => p.id === item.productId); if (prod && existing.qty >= prod.quantity) return false }
@@ -247,3 +248,9 @@ export const useStore = create((set, get) => ({
     })
   },
 }))
+
+// Development only: lets the end-to-end tests drive the live store. Importing
+// the module from a test instead gives a second, empty copy whenever Vite has
+// hot-reloaded it — which once made a working POS look like it loaded nothing.
+// Stripped from production builds, where import.meta.env.DEV is false.
+if (import.meta.env.DEV && typeof window !== 'undefined') window.__POS_STORE__ = useStore

@@ -88,11 +88,27 @@ export function broadcastDisplay(payload) {
 
 // Track the customer window so we don't open duplicates.
 let customerWin = null
+// Set when automatic opening must stop for this session: the browser put the
+// window on the cashier's own screen, or the cashier closed it themselves. A
+// fullscreen customer display on top of the POS — reopened every 15 seconds
+// by the keep-alive — would leave the till unusable with no way out.
+let autoOff = false
+let closedByUs = false
 
 /** True if the customer screen window is currently open. */
 export function isCustomerScreenOpen() {
-  return !!(customerWin && !customerWin.closed)
+  // A window we opened that is now closed, and not by us, was closed by the
+  // cashier. Respect that for the rest of the session rather than putting it
+  // straight back.
+  if (customerWin && customerWin.closed && !customerWin.__desktop && !closedByUs) {
+    autoOff = true
+    customerWin = null
+  }
+  return !!(customerWin && !customerWin.closed) || autoOff
 }
+
+/** Re-enable automatic opening (e.g. after the operator opens it by hand). */
+export function resetCustomerScreenAuto() { autoOff = false }
 
 // Optional manual override: if a specific machine's driver reports screens
 // oddly, the installer can pin which screen index is the customer display.
@@ -158,6 +174,25 @@ async function openOnCustomerScreen({ requireSecondScreen, fallbackPopup }) {
       const w = window.open(url, winName, feat)
       if (w) {
         customerWin = w
+        closedByUs = false
+        // Browsers may ignore left/top (no window-management permission, a
+        // policy, or a driver that reports screens oddly) and open it where
+        // the POS is. Check where it actually went, and back off if wrong.
+        setTimeout(() => {
+          try {
+            if (w.closed) return
+            const x = w.screenX ?? w.screenLeft, y = w.screenY ?? w.screenTop
+            const onCustomer = x >= L - 8 && x < L + W && y >= T - 8 && y < T + H
+            if (!onCustomer) {
+              closedByUs = true
+              w.close()
+              customerWin = null
+              autoOff = true
+              console.warn('customer display landed on the cashier screen; closed and auto-open disabled for this session')
+              window.dispatchEvent(new CustomEvent('customer-display-misplaced'))
+            }
+          } catch { /* cross-origin or already gone */ }
+        }, 1500)
         // Re-assert placement + try true fullscreen once loaded. The customer
         // window was opened during the login gesture, so this fullscreen request
         // is still allowed by the browser for a short window.
@@ -196,6 +231,7 @@ async function openOnCustomerScreen({ requireSecondScreen, fallbackPopup }) {
  * customer window). Safe to call repeatedly.
  */
 export async function openCustomerScreenAuto() {
+  if (autoOff) return null
   if (customerWin && !customerWin.closed) return customerWin
   // Touch-only devices (phones/tablets) never auto-open.
   const isTouchOnly = (navigator.maxTouchPoints || 0) > 0 && !window.matchMedia('(pointer: fine)').matches
@@ -209,5 +245,8 @@ export async function openCustomerScreenAuto() {
  * used/tested on a single-screen laptop.
  */
 export async function openCustomerScreenManual() {
+  // Opening it by hand is a deliberate choice; let it come back automatically
+  // afterwards as well.
+  autoOff = false
   return openOnCustomerScreen({ requireSecondScreen: false, fallbackPopup: true })
 }

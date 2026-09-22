@@ -3,8 +3,6 @@ import Modal from './Modal'
 import { isDesktop } from '../lib/desktop'
 import { callFunction } from '../lib/supabase'
 
-const DISMISS_KEY = 'pos-install-prompt-dismissed'
-
 /** Windows, and not already inside the desktop app. */
 export function canInstallDesktop() {
   if (isDesktop()) return false
@@ -46,7 +44,6 @@ export default function InstallDesktop({ open, onClose }) {
         <a
           href={rel?.url || 'https://github.com/isaacgyampoh/BEDTIME-BEDDINGS-HOME/releases/latest'}
           target="_blank" rel="noopener noreferrer"
-          onClick={() => { try { localStorage.setItem(DISMISS_KEY, '1') } catch {} }}
           className={`flex-1 h-12 rounded-xl text-sm font-bold flex items-center justify-center transition active:scale-[.98] ${
             rel ? 'bg-[#16181d] hover:bg-[#2a2d34] text-white' : 'bg-gray-200 text-gray-500 pointer-events-none'}`}>
           {rel ? `Download (${mb(rel.size)} MB)` : failed ? 'Unavailable' : 'Checking…'}
@@ -113,15 +110,9 @@ export default function InstallDesktop({ open, onClose }) {
   )
 }
 
-/** One-time nudge, shown only on a Windows browser. */
-export function useInstallPrompt() {
-  const [show, setShow] = useState(false)
-  useEffect(() => {
-    if (!canInstallDesktop()) return
-    try { if (localStorage.getItem(DISMISS_KEY) === '1') return } catch { return }
-    const t = setTimeout(() => setShow(true), 4000)   // let the POS load first
-    return () => clearTimeout(t)
-  }, [])
-  const dismiss = () => { try { localStorage.setItem(DISMISS_KEY, '1') } catch {} ; setShow(false) }
-  return [show, dismiss]
-}
+// There used to be a useInstallPrompt() here that opened this sheet by itself,
+// four seconds after the POS loaded in a Windows browser. It put a full-screen
+// backdrop over the product grid on a live till, and the first tap a cashier
+// made on a product closed the sheet instead of adding the item — reproduced
+// with real touch input. The install entry stays in the sidebar, where it is
+// found when wanted and never covers a sale.
