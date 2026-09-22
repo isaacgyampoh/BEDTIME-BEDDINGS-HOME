@@ -90,6 +90,13 @@ export default function App() {
     document.body.classList.toggle('dark', darkMode)
   }, [darkMode])
 
+  // Reload by itself when the connection comes back, if the first load failed.
+  useEffect(() => {
+    const retry = () => { if (useStore.getState().loadError) loadAll() }
+    window.addEventListener('online', retry)
+    return () => window.removeEventListener('online', retry)
+  }, []) // eslint-disable-line
+
   useEffect(() => {
     loadAll()
     const channel = setupRealtime()

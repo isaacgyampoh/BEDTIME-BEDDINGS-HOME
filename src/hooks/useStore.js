@@ -30,7 +30,10 @@ const mapInvoice = i => ({ id: i.id, invoiceId: i.invoice_id, date: i.date, supp
 const mapStockTake = s => ({ id: s.id, date: s.date, items: typeof s.items === 'string' ? JSON.parse(s.items) : (s.items || []), notes: s.notes, conductedBy: s.conducted_by })
 const mapStockAdj = a => ({ id: a.id, date: a.date, productId: a.product_id, productName: a.product_name, qty: num(a.qty), reason: a.reason, notes: a.notes, adjustedBy: a.adjusted_by })
 
-// Fast query with select only needed columns where possible
+// Fast query with select only needed columns where possible. Failures come
+// back as [] so one secondary table cannot stop the till loading — which is
+// right for most tables and wrong for products (see loadAll).
+const failedTables = new Set()
 const q = async (sb, table, opts = {}) => {
   try {
     let query = sb.from(table).select(opts.select || '*')
@@ -38,16 +41,16 @@ const q = async (sb, table, opts = {}) => {
     if (opts.limit) query = query.limit(opts.limit)
     if (opts.gt) query = query.gt(opts.gt[0], opts.gt[1])
     const { data, error } = await query
-    if (error) { console.warn(`[store] ${table} query failed:`, error.message); return [] }
+    if (error) { console.warn(`[store] ${table} query failed:`, error.message); failedTables.add(table); return [] }
     return data || []
-  } catch (e) { console.warn(`[store] ${table} query threw:`, e); return [] }
+  } catch (e) { console.warn(`[store] ${table} query threw:`, e); failedTables.add(table); return [] }
 }
 
 export const useStore = create((set, get) => ({
   products: [], bundles: [], sales: [], staff: [], expenses: [],
   customers: [], waOrders: [], refunds: [], promos: [], invoices: [], stockTakes: [], stockAdjustments: [],
   loading: true, loadingText: 'Connecting...',
-  user: null, isAdmin: false,
+  user: null, isAdmin: false, loadError: '',
   page: 'pos', cart: [], mode: 'retail', selectedCat: 'all', waFilter: 'Pending', perfPeriod: 'today',
   // Counts the operations that must not be interrupted by an app restart:
   // taking a payment, recording a sale, printing, adjusting stock. Components
@@ -161,7 +164,8 @@ export const useStore = create((set, get) => ({
   // PHASE 1: Load only essential data (products, staff, sales, bundles)
   loadAll: async () => {
     const sb = getSupabase(); if (!sb) { set({ loading: false }); return }
-    set({ loading: true, loadingText: 'Loading...' })
+    set({ loading: true, loadingText: 'Loading...', loadError: '' })
+    failedTables.delete('products')
     try {
       // PHASE 1: Only what POS needs immediately
       const [prodData, staffData, bunData, promoData] = await Promise.all([
@@ -170,6 +174,19 @@ export const useStore = create((set, get) => ({
         q(sb, 'bundles', { select: 'id,name,products,bundle_price,active' }),
         q(sb, 'promos', { select: 'id,name,start_date,end_date,items,active', limit: 50 }),
       ])
+
+      // Products are the one list the till cannot work without. An empty list
+      // because the query failed used to render as "No products found" — which
+      // reads as "the shop has no stock", not "this till is offline".
+      if (prodData.length === 0 && failedTables.has('products')) {
+        set({
+          loading: false,
+          loadError: typeof navigator !== 'undefined' && navigator.onLine === false
+            ? 'This till is offline. Check the internet connection.'
+            : 'Unable to connect to the server. Please check your connection.',
+        })
+        return
+      }
 
       set({
         products: prodData.map(mapProduct),
@@ -183,7 +200,7 @@ export const useStore = create((set, get) => ({
       get()._loadSecondary()
     } catch (e) {
       console.error('Load error:', e)
-      set({ loading: false })
+      set({ loading: false, loadError: 'Unable to connect to the server. Please check your connection.' })
     }
   },
 

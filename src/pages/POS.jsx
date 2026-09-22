@@ -31,7 +31,7 @@ const ProductCard = memo(({ item, price, hasPromo, onAdd }) => {
 })
 
 export default function POS() {
-  const { products, bundles, promos, mode, setMode, selectedCat, setCat, addToCart } = useStore()
+  const { products, bundles, promos, mode, setMode, selectedCat, setCat, addToCart, loadError, loadAll } = useStore()
   const [query, setQuery] = useState('')
   const touchPOS = usePosMode()
   const [kbOpen, setKbOpen] = useState(false)
@@ -142,7 +142,13 @@ export default function POS() {
 
       {/* Grid */}
       <div className={`grid gap-2.5 ${touchPOS ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7'}`}>
-        {filtered.length === 0 && <div className="col-span-full py-20 text-center text-stone-300 text-sm">No products found</div>}
+        {filtered.length === 0 && (loadError && products.length === 0
+          ? <div role="alert" className="col-span-full py-16 text-center">
+              <div className="text-[15px] font-bold text-gray-900 mb-1">{loadError}</div>
+              <div className="text-[13px] text-gray-600 mb-4">Products could not be loaded, so nothing can be sold yet.</div>
+              <button onClick={() => loadAll()} className="h-12 px-6 bg-[#16181d] text-white rounded text-sm font-bold">Try again</button>
+            </div>
+          : <div className="col-span-full py-20 text-center text-stone-500 text-sm">No products found</div>)}
         {filtered.map((item) => {
           if (mode === 'bundle') return (
             <button key={item.id} onClick={() => doAdd(item)} className="bg-white rounded-2xl p-4 text-left active:scale-[.97] transition-transform">

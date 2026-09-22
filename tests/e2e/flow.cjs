@@ -37,7 +37,11 @@ async function intercept(dbg, net) {
     // A scenario may script any request, reads included.
     if (process.env.E2E_TRACE) process.stderr.write(`NET ${m} ${path}?${query.slice(0, 60)} post=${(request.postData || '').length} has=${request.hasPostData}\n`)
     const scripted = net.script ? net.script({ method: m, path, query, body, url }) : undefined
-    if (scripted !== undefined) { if (m !== 'GET') net.writes.push({ method: m, path, query, body, at: Date.now() }); return reply(scripted) }
+    if (scripted !== undefined) {
+      if (m !== 'GET') net.writes.push({ method: m, path, query, body, at: Date.now() })
+      if (scripted && scripted.__status) return reply(scripted.body || {}, scripted.__status)
+      return reply(scripted)
+    }
 
     if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS' || /\/realtime\//.test(url)) {
       return dbg.sendCommand('Fetch.continueRequest', { requestId }).catch(() => {})
@@ -258,4 +262,16 @@ async function reprint({ h, ok, label, printCheck }) {
   await closeReceipt(h)
 }
 
-module.exports = { intercept, helpers, login, scenarios: { cash, momo, split, reprint }, sleep }
+async function offline({ h, net, ok, label }) {
+  // The server cannot be reached when the till loads its products.
+  net.script = ({ method, path }) => (method === 'GET' && path.endsWith('/products')) ? { __status: 503, body: { message: 'Service Unavailable' } } : undefined
+  await h.js(`window.__POS_STORE__.getState().setPage('pos'); window.__POS_STORE__.setState({ products: [] }); window.__POS_STORE__.getState().loadAll()`)
+  const shown = await h.waitFor(`!!document.querySelector('[role=alert]') && document.body.innerText.includes('Unable to connect to the server')`, 8000)
+  ok(`[${label}] a failed load says so, instead of "No products found"`, shown)
+  ok(`[${label}] and does not claim the shop has no products`, !(await h.js(`document.body.innerText.includes('No products found')`)))
+  net.script = null
+  const t = await h.tap('button', 'Try again'); ok(`[${label}] tap Try again`, t.ok, t.why)
+  ok(`[${label}] products load once the server is back`, await h.waitFor(`window.__POS_STORE__.getState().products.length > 0 && !document.querySelector('[role=alert]')`, 10000))
+}
+
+module.exports = { intercept, helpers, login, scenarios: { cash, momo, split, reprint, offline }, sleep }
