@@ -91,8 +91,14 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
         // creates a whatsapp_orders row as a durable payment anchor and then
         // records the sale separately, so without this the order looks
         // unrecorded forever and shows up in every reconciliation.
-        if (promptOrderId) {
-          try { await sb.from('whatsapp_orders').update({ sale_receipt_no: data.receiptNo }).eq('id', promptOrderId) } catch {}
+        // Passed in explicitly by the MoMo poll. Reading `promptOrderId` state
+        // here does not work: the poll calls the recordSale from the render in
+        // which the prompt was sent, before that state was set, so it was
+        // always null and the link was never written.
+        const linkOrderId = extraData.orderId || promptOrderId
+        if (linkOrderId) {
+          const { error: linkErr } = await sb.from('whatsapp_orders').update({ sale_receipt_no: data.receiptNo }).eq('id', linkOrderId)
+          if (linkErr) console.error('could not link sale', data.receiptNo, 'to order', linkOrderId, linkErr.message)
         }
         deductStock(cart)
         return { receiptNo: data.receiptNo, date: new Date().toISOString(), customer: phone.trim(), cashier: user?.name || '', payment: paymentMethod, type: mode === 'wholesale' ? 'Wholesale' : 'Retail', items: cart, total: data.total, discount: data.discount, splitCash: extraData.splitCash, splitMomo: extraData.splitMomo }
@@ -251,7 +257,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
           const st = data?.[0]?.status
           if (st === 'Paid' || st === 'Completed') {
             clearInterval(pollRef.current)
-            const saleData = await recordSale(isSplit ? 'Split' : 'Momo', isSplit ? { splitCash: num(splitCash), splitMomo: amount } : {})
+            const saleData = await recordSale(isSplit ? 'Split' : 'Momo', isSplit ? { splitCash: num(splitCash), splitMomo: amount, orderId: inserted.id } : { orderId: inserted.id })
             try { callFunction('thankyou-sms', { phone: phone.trim() }) } catch {}
             if (saleData) { toast.success('Paid! ' + saleData.receiptNo); finishSale(saleData) }
           }
