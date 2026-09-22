@@ -83,6 +83,22 @@ export async function printSilent(html, opts = {}) {
   } catch { return { ok: false, error: null } }
 }
 
+/**
+ * Print a whole HTML document (label, stock sheet) on the till's head, as an
+ * image. Returns { ok, error }, or null outside the desktop app.
+ */
+export async function printHtml(html, opts = {}) {
+  const d = api(); if (!d?.printHtml) return null
+  try {
+    const r = await d.printHtml(html, opts)
+    if (!r?.ok) console.warn('desktop printHtml:', r?.error)
+    return { ok: !!r?.ok, error: r?.error || null }
+  } catch (e) {
+    console.warn('desktop printHtml threw:', e)
+    return { ok: false, error: 'The desktop printer bridge did not respond. Restart the app.' }
+  }
+}
+
 /** Search every COM port at every speed for a printer that answers. */
 export async function findPrinter() {
   const d = api(); if (!d?.findPrinter) return null

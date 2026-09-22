@@ -15,7 +15,9 @@
     "desktop:win": "npm run build:desktop && cd desktop && npm run build:win",
     "test": "node tests/run.mjs",
     "release:desktop": "node scripts/release-desktop.mjs",
-    "test:serial": "node tests/e2e/run-serial.mjs"
+    "test:serial": "node tests/e2e/run-serial.mjs",
+    "test:raster": "node tests/e2e/run-raster.mjs",
+    "test:e2e": "npm run test:serial && npm run test:raster"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

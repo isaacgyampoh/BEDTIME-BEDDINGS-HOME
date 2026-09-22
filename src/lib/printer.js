@@ -22,7 +22,7 @@
 
 import { receiptBytes, testBytes } from './escpos'
 import { sendBytes, isLinked, restoreLink } from './printerLink'
-import { isDesktop, printRaw as desktopPrintRaw, printSilent as desktopPrintSilent } from './desktop'
+import { isDesktop, printRaw as desktopPrintRaw, printSilent as desktopPrintSilent, printHtml as desktopPrintHtml } from './desktop'
 
 const PAPER_KEY = 'pos-paper-width'   // '58' | '80'
 const AUTO_KEY = 'pos-auto-print'     // 'all' | 'cash' | 'off'
@@ -256,18 +256,45 @@ export function testPageHTML(paper) {
  * document's own stylesheet is left alone apart from retargeting the paper
  * size to whatever this terminal is set to.
  */
-export function printDocument(fullHTML, { paper = getPaperWidth(), title = 'Print' } = {}) {
+/**
+ * Print a full HTML document — delivery label, stock count sheet.
+ *
+ * Desktop app: laid out and sent to the head as a raster image, because the
+ * head is not a Windows printer and window.print() there offers only OneNote
+ * and PDF. Browser: the OS print dialog, as before.
+ *
+ * Resolves true/false for existing callers; `lastPrintError()` says why.
+ */
+let _lastPrintError = null
+export const lastPrintError = () => _lastPrintError
+
+export async function printDocument(fullHTML, opts = {}) {
+  _lastPrintError = null
+  if (isDesktop()) {
+    const paper = opts.paper || getPaperWidth()
+    const r = await desktopPrintHtml(retarget(fullHTML, { ...opts, paper }), { paper })
+    if (r?.ok) return true
+    _lastPrintError = r?.error || 'Printer unavailable. Check the printer connection and try again.'
+    return false
+  }
+  const ok = await printDocumentInBrowser(fullHTML, opts)
+  if (!ok) _lastPrintError = 'Could not open the print dialog.'
+  return ok
+}
+
+/** Fit a document written for 80mm to the roll actually loaded. */
+function retarget(fullHTML, { paper = getPaperWidth(), title = 'Print' } = {}) {
   const p = PAPER[paper] || PAPER['80']
-  const html = fullHTML
-    // These layouts were written for an 80mm roll; retarget them so a 58mm
-    // terminal does not silently clip the right-hand column.
+  return fullHTML
     .replace(/@page\s*\{[^}]*\}/g, `@page { size: ${p.roll} auto; margin: 0; }`)
     .replace(/width:\s*72mm/g, `width: ${p.width}`)
     .replace(/width:\s*80mm/g, `width: ${p.width}`)
-    // These documents used to self-print from an inline script inside a popup.
     .replace(/<script>[\s\S]*?window\.print\(\)[\s\S]*?<\/script>/g, '')
-    // Name the job so it is identifiable in the Windows print queue.
     .replace(/<title>[\s\S]*?<\/title>/i, `<title>${String(title).replace(/[<>]/g, '')}</title>`)
+}
+
+function printDocumentInBrowser(fullHTML, { paper = getPaperWidth(), title = 'Print' } = {}) {
+  const html = retarget(fullHTML, { paper, title })
 
   return new Promise((resolve) => {
     let frame

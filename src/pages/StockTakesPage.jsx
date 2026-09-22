@@ -5,7 +5,7 @@ import { fmtDateTime, money } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 import { askConfirm } from '../components/PromptDialog'
-import { printDocument } from '../lib/printer'
+import { printDocument, lastPrintError } from '../lib/printer'
 
 export default function StockTakesPage() {
   const { stockTakes, stockAdjustments, products, user, refreshStockTakes, refreshStockAdjustments, refreshProducts, setLoading } = useStore()
@@ -84,7 +84,7 @@ export default function StockTakesPage() {
     // Via a hidden iframe, not a popup: a POS runs in kiosk/fullscreen where
     // window.open is blocked, which is why this used to demand popups.
     const ok = await printDocument(html, { title: 'Stock count sheet' })
-    if (!ok) toast.error('Could not reach the printer. Check it is on and has paper.')
+    if (!ok) toast.error(lastPrintError() || 'Could not reach the printer. Check it is on and has paper.', { duration: 8000 })
   }
 
   const startStockTake = () => {

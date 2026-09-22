@@ -5,7 +5,7 @@ import { money, fmtDateTime, PAYMENTS_ENABLED, SHOP } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 import { askText, askConfirm } from '../components/PromptDialog'
-import { printDocument } from '../lib/printer'
+import { printDocument, lastPrintError } from '../lib/printer'
 import { deliveryLabelHTML, qrDataUri } from '../lib/deliveryLabel'
 
 export default function WhatsAppOrders({ onPrintReceipt }) {
@@ -220,7 +220,7 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
 
     const html = deliveryLabelHTML(o, { qr, deliverUrl, shop: SHOP })
     const ok = await printDocument(html, { title: `Label ${o.trackingNo || o.orderNo}` })
-    if (!ok) toast.error('Could not reach the printer. Check it is on and has paper.')
+    if (!ok) toast.error(lastPrintError() || 'Could not reach the printer. Check it is on and has paper.', { duration: 8000 })
     else if (!qr) toast('Label printed — QR unavailable offline, the link is printed instead')
   }
 

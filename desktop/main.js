@@ -36,6 +36,7 @@ catch (e) { console.warn('electron-updater unavailable, updates disabled:', e.me
 // unusual machine) the app must still run — printing simply falls back.
 const serial = require('./serial')
 const { listSerialPorts, writeSerial, readPrinterStatus } = serial
+const raster = require('./raster')
 
 const DEV_URL = process.env.POS_DEV_URL || ''
 const isDev = !!DEV_URL || !app.isPackaged
@@ -279,6 +280,25 @@ function registerIpc() {
       return { ok: false, port: target, baud: baud || 9600,
         error: `Could not print on ${target}: ${r.error}. Check the printer is on, or open Receipt Printer to choose a different port.` }
     }
+    return { ok: true, port: target, baud: baud || 9600 }
+  })
+
+  // Any HTML document (delivery label, stock sheet) on the thermal head, laid
+  // out offscreen and sent as a raster image. See raster.js for why these
+  // cannot go as ESC/POS text.
+  ipcMain.handle('pos:printHtml', async (_e, { html, paper }) => {
+    const cfg = readSettings()
+    let target = cfg.printerPort, baud = cfg.printerBaud
+    if (!target) {
+      const found = await serial.findPrinter({ readSettings, writeSettings })
+      if (!found.ok) return { ok: false, error: found.error, needsSetup: true }
+      target = found.port; baud = found.baud
+    }
+    let out
+    try { out = await raster.htmlToEscPos(html, paper === '58' ? '58' : '80') }
+    catch (e) { return { ok: false, error: 'Could not lay out the page for printing: ' + e.message } }
+    const r = await writeSerial(target, baud || 9600, out.bytes)
+    if (!r.ok) return { ok: false, error: `Could not print on ${target}: ${r.error}. Check the printer is on, or open Receipt Printer to choose a different port.` }
     return { ok: true, port: target, baud: baud || 9600 }
   })
 

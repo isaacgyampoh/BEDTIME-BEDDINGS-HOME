@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('posDesktop', {
   printSilent:       (html, opts = {}) => ipcRenderer.invoke('pos:printSilent', { html, ...opts }),
   printerStatus:     (opts = {}) => ipcRenderer.invoke('pos:printerStatus', opts),
   findPrinter:       () => ipcRenderer.invoke('pos:findPrinter'),
+  printHtml:         (html, opts = {}) => ipcRenderer.invoke('pos:printHtml', { html, ...opts }),
 
   // Displays
   getDisplays:       () => ipcRenderer.invoke('pos:getDisplays'),
