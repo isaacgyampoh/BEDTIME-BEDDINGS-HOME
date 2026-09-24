@@ -240,7 +240,13 @@ export default function App() {
   if (window.location.hash.includes('/details/')) return <Suspense fallback={<Loader />}><DeliveryDetails /></Suspense>
   if (window.location.hash.includes('/catalog')) return <Suspense fallback={<Loader />}><Catalog /></Suspense>
 
-  if (loading) return <><Loader /><Toaster /></>
+  // Full screen only for the very first load, before anyone is signed in.
+  // Once a cashier is in, the loader is an OVERLAY (see <Loader /> below):
+  // replacing the tree unmounts the page underneath, so every "Save" inside a
+  // modal threw away the open form — the same on all ten pages that have one.
+  // Adding a staff member looked like the button did nothing: the form simply
+  // vanished, taking the name and PIN with it.
+  if (loading && !user) return <><Loader /><Toaster /></>
   if (!user) return <><Login /><Toaster /></>
 
   const pages = {
@@ -269,6 +275,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" toastOptions={{ duration: 2000, style: { borderRadius: '14px', padding: '12px 20px', fontWeight: 600, fontSize: '13px', background: darkMode ? '#222' : '#fff', color: darkMode ? '#eee' : '#1a1a1a' } }} />
+      <Loader />
       <Navigation onOpenCart={() => setCartOpen(true)} />
       <PromptDialog />
       <UpdateBanner />

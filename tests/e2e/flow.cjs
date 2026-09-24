@@ -90,7 +90,8 @@ function helpers(w, dbg) {
   }
   const S = (expr) => js(`(() => { const s = window.__POS_STORE__.getState(); return ${expr} })()`)
   const waitFor = async (expr, ms = 10000) => { for (let t = 0; t < ms; t += 200) { if (await js(expr)) return true; await sleep(200) } return false }
-  return { js, click, locate, tap, type, S, waitFor }
+  const shot = async () => (await w.webContents.capturePage()).toPNG()
+  return { js, click, locate, tap, type, S, waitFor, shot }
 }
 
 async function login(h, ok, label, role = 'Cashier') {
@@ -262,6 +263,49 @@ async function reprint({ h, ok, label, printCheck }) {
   await closeReceipt(h)
 }
 
+async function staff({ h, net, ok, label }) {
+  // Adding a staff member: what the form sends, and what it does with the
+  // server's answer. The database side of this bug (staff.pin NOT NULL) is
+  // covered by tests/schema.test.mjs — here the server is simulated, so this
+  // checks the half that lives in the browser.
+  await h.js(`window.__POS_STORE__.getState().login({ id: 'e2e-admin', name: 'E2E Admin', role: 'Admin' }, true); window.__POS_STORE__.getState().setPage('staff')`)
+  // Lazy-loaded chunk: wait for the page's own controls, not the sidebar word.
+  ok(`[${label}] the Staff page opens`, await h.waitFor(`[...document.querySelectorAll('button')].some(b => b.innerText.trim() === 'Add')`, 12000))
+
+  let answer = { success: false, error: 'Admin PIN is incorrect' }
+  net.script = ({ method, path }) => (method === 'POST' && path.endsWith('/rpc/admin_save_staff')) ? answer : undefined
+
+  let t = await h.tap('button', 'Add'); ok(`[${label}] open the Add form`, t.ok, t.why)
+  await sleep(300)
+  ok(`[${label}] type the name`, await h.type('input[class*="h-13"]', 'Akosua Test', 0))
+  ok(`[${label}] type the new PIN`, await h.type('input[placeholder="e.g. 1024"]', '4321'))
+  ok(`[${label}] type the admin PIN`, await h.type('input[placeholder="••••"]', '1111'))
+
+  const since = net.writes.length
+  t = await h.tap('button', 'Save'); ok(`[${label}] tap Save`, t.ok, t.why)
+  await sleep(900)
+  const call = net.writes.slice(since).find(x => x.path.endsWith('/rpc/admin_save_staff'))
+  ok(`[${label}] it asks the server to save, with the admin PIN`, !!call && call.body.p_admin_pin === '1111', String(JSON.stringify(call && call.body)).slice(0, 160))
+  ok(`[${label}] it sends name, role, PIN and no id (a new member)`,
+    !!call && call.body.p_name === 'Akosua Test' && call.body.p_role === 'Cashier' && call.body.p_pin === '4321' && (call.body.p_id === null || call.body.p_id === undefined) && call.body.p_active === true,
+    String(JSON.stringify(call && call.body)).slice(0, 200))
+  ok(`[${label}] a refused save shows the server's reason`, await h.waitFor(`document.body.innerText.includes('Admin PIN is incorrect')`, 4000))
+  const after = await h.js(`JSON.stringify({ title: [...document.querySelectorAll('h3')].map(e => e.innerText), buttons: [...document.querySelectorAll('button')].filter(b => b.getClientRects().length).map(b => b.innerText.trim()).slice(0, 12), toast: document.body.innerText.includes('Admin PIN is incorrect') })`)
+  ok(`[${label}] and keeps the form open so it can be corrected`, await h.js(`document.body.innerText.includes('Add Staff')`), after)
+
+  ok(`[${label}] and keeps everything that was typed`, await h.js(`(() => {
+    const v = [...document.querySelectorAll('input')].map(i => i.value)
+    return v.includes('Akosua Test') && v.includes('4321') && v.includes('1111')
+  })()`))
+
+  // Now let it succeed.
+  answer = { success: true, id: 'new-staff-id' }
+  const since2 = net.writes.length
+  t = await h.tap('button', 'Save'); ok(`[${label}] tap Save again`, t.ok, t.why)
+  ok(`[${label}] the form closes when the server accepts it`, await h.waitFor(`!document.body.innerText.includes('Confirm with your admin PIN')`, 6000))
+    net.script = null
+}
+
 async function offline({ h, net, ok, label }) {
   // The server cannot be reached when the till loads its products.
   net.script = ({ method, path }) => (method === 'GET' && path.endsWith('/products')) ? { __status: 503, body: { message: 'Service Unavailable' } } : undefined
@@ -274,4 +318,4 @@ async function offline({ h, net, ok, label }) {
   ok(`[${label}] products load once the server is back`, await h.waitFor(`window.__POS_STORE__.getState().products.length > 0 && !document.querySelector('[role=alert]')`, 10000))
 }
 
-module.exports = { intercept, helpers, login, scenarios: { cash, momo, split, reprint, offline }, sleep }
+module.exports = { intercept, helpers, login, scenarios: { cash, momo, split, reprint, offline, staff }, sleep }

@@ -88,7 +88,7 @@ app.whenReady().then(async () => {
   }
 
   await login(h, ok, MODE)
-  const only = (process.env.SCENARIOS || 'cash,momo,split,offline,reprint').split(',')
+  const only = (process.env.SCENARIOS || 'cash,momo,split,offline,staff,reprint').split(',')
   for (const name of only) {
     const label = `${MODE}/${name}`
     try { await scenarios[name]({ h, net, ok, label, printCheck: printCheck(label) }) }
