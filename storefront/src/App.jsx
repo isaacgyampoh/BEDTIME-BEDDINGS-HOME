@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, rpcOrNull } from './lib/supabase'
+import { buildPromoMap, discountPct, promoHeading as headingFor, promoEndsAt as endsAtFor, promoFirst, orderPromoFirst } from './lib/promo'
 import { money, thumb, SHOP, PAYMENTS_ENABLED, EDGE_URL } from './lib/utils'
 
 const WA = SHOP.whatsapp
@@ -29,6 +30,9 @@ function Timer({ endDate }) {
   return <div className="flex gap-1">{[['d',t.d],['h',t.h],['m',t.m],['s',t.s]].map(([l,v]) => <div key={l} className="bg-white text-[var(--color-promo)] text-[11px] font-bold px-1.5 py-0.5 rounded font-mono min-w-[22px] text-center">{p(v||0)}<span className="text-[8px] text-gray-400 ml-0.5">{l}</span></div>)}</div>
 }
 
+/** How many promo products the homepage shows before "See all". */
+const HOME_PROMO_MAX = 10
+
 function Card({ p, promo, onOpen, onAdd }) {
   const [ok, setOk] = useState(false)
   const add = e => { e.stopPropagation(); onAdd(); setOk(true); setTimeout(() => setOk(false), 1200) }
@@ -36,7 +40,11 @@ function Card({ p, promo, onOpen, onAdd }) {
     <div className="cursor-pointer group card-lift" onClick={onOpen}>
       <div className="aspect-[3/4] bg-zinc-100 rounded-2xl overflow-hidden mb-2.5 relative">
         {p.image ? <img src={thumb(p.image, 500)} alt={p.name} onError={e => { if (!e.target.dataset.fb) { e.target.dataset.fb = 1; e.target.src = p.image } }} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out" loading="lazy" /> : <div className="w-full h-full bg-zinc-100" />}
-        {promo && <span className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-[var(--color-promo)] text-white text-[8px] font-bold rounded-lg tracking-widest uppercase">Sale</span>}
+        {promo && (() => { const off = discountPct(p.price, promo.price); return (
+          <span className="absolute top-2.5 left-2.5 px-2.5 py-1 bg-[var(--color-promo)] text-white text-[9px] font-bold rounded-lg tracking-widest uppercase">
+            {off > 0 ? `-${off}%` : 'Sale'}
+          </span>
+        ) })()}
         <button onClick={add} className={`absolute bottom-2.5 right-2.5 w-9 h-9 rounded-full flex items-center justify-center transition-all duration-300 ${ok ? 'bg-black text-white scale-110' : 'bg-white shadow-md text-zinc-600 md:translate-y-2 md:opacity-0 md:group-hover:opacity-100 md:group-hover:translate-y-0'}`}>
           {ok ? I.check : I.plus}
         </button>
@@ -184,32 +192,14 @@ export default function App() {
       setLoading(false)
     })
     supabase.from('promos').select('*').eq('active', true).then(({ data, error }) => {
-      if (error) { console.error('Promo load error:', error); return }
-      console.log('Raw promos:', JSON.stringify(data))
-      if (!data?.length) { console.log('No active promos found'); return }
-      const now = new Date(), map = {}, active = []
-      for (const p of data) {
-        // Skip future promos
-        if (p.start_date && new Date(p.start_date) > now) { console.log('Skipping future promo:', p.name); continue }
-        // Skip expired promos (but allow promos with no end date)
-        if (p.end_date && new Date(p.end_date) < now) { console.log('Skipping expired promo:', p.name); continue }
-        
-        let items
-        try {
-          items = typeof p.items === 'string' ? JSON.parse(p.items) : p.items
-        } catch (e) { console.log('Failed to parse items for:', p.name); continue }
-        if (!Array.isArray(items)) { console.log('Items not array for:', p.name, typeof items); continue }
-        
-        active.push(p)
-        for (const it of items) {
-          const pid = it.productId || it.product_id || it.id
-          const pp = Number(it.promoPrice || it.promo_price || it.price || 0)
-          if (pid && pp > 0 && (!map[pid] || pp < map[pid].price)) {
-            map[pid] = { price: pp, name: p.name }
-          }
-        }
-      }
-      console.log('Active promos:', active.length, 'Mapped products:', Object.keys(map).length)
+      if (error) { console.error('Promo load error:', error.message); return }
+      if (!data?.length) return
+      // Same rule as the till and the admin promo screen: plain date strings,
+      // and the end date COUNTS. The site used `new Date(end_date) < now`, so a
+      // promo stopped showing at midnight ON its last day while the shop was
+      // still selling it at the counter. Ghana keeps UTC+0 all year, so the
+      // ISO date is already the local trading day.
+      const { map, active } = buildPromoMap(data)
       setPromoMap(map); setPromos(active)
     })
     supabase.from('bundles').select('id,name,bundle_price,products,active').eq('active', true).then(({ data }) => {
@@ -242,7 +232,17 @@ export default function App() {
     }
     return Object.entries(seen).map(([name, img]) => ({ name, img })).slice(0, 12)
   }, [products])
-  const filtered = useMemo(() => { const q = search.toLowerCase(); return products.filter(p => (!q || p.name.toLowerCase().includes(q)) && (cat === 'all' || p.category === cat)) }, [products, search, cat])
+  // Same products as before — the category filter and the search decide that.
+  // Only the order changes: anything in a live promo comes first, biggest
+  // saving first, and the rest keep the newest-first order they had.
+  // Same products as before — the category filter and the search decide that.
+  // Only the order changes: live promos lead, biggest saving first.
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    return orderPromoFirst(
+      products.filter(p => (!q || p.name.toLowerCase().includes(q)) && (cat === 'all' || p.category === cat)),
+      promoMap)
+  }, [products, search, cat, promoMap])
 
   const addToCart = p => {
     setCart(prev => {
@@ -315,7 +315,12 @@ export default function App() {
 
 
   // Promo products
-  const promoProducts = useMemo(() => products.filter(p => promoMap[p.id]), [products, promoMap])
+  // Only products that are actually in a live promo, biggest saving first.
+  const promoProducts = useMemo(() => promoFirst(products, promoMap), [products, promoMap])
+  // Heading and countdown come from the promo the shop set up, so renaming the
+  // campaign in the admin screen renames it here — no code change needed.
+  const promoHeading = useMemo(() => headingFor(promos), [promos])
+  const promoEndsAt = useMemo(() => endsAtFor(promos), [promos])
   // "Trending" — shuffle products deterministically by day
 
   // Hero slideshow — pick products with images for banner
@@ -435,7 +440,9 @@ export default function App() {
     setTrackResult(rows || []); setTracking(false)
   }
 
-  const activePromo = promos.find(p => p.end_date && new Date(p.end_date) > new Date())
+  // `promos` already holds only the live ones (started, not finished), so the
+  // strip must not re-apply the old end-date test that cut the last day off.
+  const activePromo = promos[0] || null
 
   if (loading) return <div className="min-h-screen bg-white flex items-center justify-center"><div className="w-7 h-7 border-[2.5px] border-zinc-200 border-t-black rounded-full animate-spin" /></div>
 
@@ -458,7 +465,7 @@ export default function App() {
     <div className="min-h-screen bg-white pb-16 md:pb-0 flex flex-col" style={{ fontFamily: 'var(--font-body)' }}>
 
       {/* PROMO BANNER */}
-      {activePromo && <div className="bg-[var(--color-promo)] relative overflow-hidden"><div className="max-w-7xl mx-auto px-4 h-10 flex items-center justify-center gap-3 text-xs text-white relative z-10"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /><span className="font-bold uppercase tracking-wide truncate">{activePromo.name}</span><span className="hidden sm:inline text-white/70">ends in</span><Timer endDate={activePromo.end_date} /><button onClick={() => go('shop', '/shop')} className="ml-1 h-6 px-3 bg-white text-[var(--color-promo)] rounded-full text-[10px] font-bold hover:bg-white/90 transition">Shop Now</button></div></div>}
+      {activePromo && <div className="bg-[var(--color-promo)] relative overflow-hidden"><div className="max-w-7xl mx-auto px-4 h-10 flex items-center justify-center gap-3 text-xs text-white relative z-10"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /><span className="font-bold uppercase tracking-wide truncate">{activePromo.name}</span><span className="hidden sm:inline text-white/70">ends in</span><Timer endDate={promoEndsAt || activePromo.end_date} /><button onClick={() => go('shop', '/shop')} className="ml-1 h-6 px-3 bg-white text-[var(--color-promo)] rounded-full text-[10px] font-bold hover:bg-white/90 transition">Shop Now</button></div></div>}
 
       {/* TOAST */}
       {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-2 rounded-full text-sm font-medium z-[100] shadow-lg" style={{ animation: 'fadeIn 0.2s ease' }}>{toast}</div>}
@@ -481,6 +488,46 @@ export default function App() {
       <main className="flex-1 w-full">
       {/* ═══ HOME ═══ */}
       {page === 'home' && <>
+        {/* ── The promotion, before anything else ──────────────────────────
+            Whatever the shop set up in Promos is what appears here: its name
+            becomes the heading, its end date drives the countdown, and only the
+            products actually in it are listed. Nothing is hardcoded, so the next
+            campaign needs no code change. Hidden entirely when nothing is live. */}
+        {promoProducts.length > 0 && (
+          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-5 sm:pt-6">
+            <div className="rounded-2xl border border-zinc-200 overflow-hidden">
+              <div className="bg-[#1a1d29] text-white px-5 sm:px-7 py-5 flex flex-wrap items-center gap-x-6 gap-y-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold tracking-[0.3em] uppercase text-zinc-400 mb-1">Limited offer</div>
+                  <h2 className="text-2xl sm:text-3xl font-black leading-tight" style={{ fontFamily: 'var(--font-display)' }}>{promoHeading}</h2>
+                  <p className="text-[12px] text-zinc-400 mt-1">
+                    {promoProducts.length} item{promoProducts.length === 1 ? '' : 's'} at a reduced price
+                  </p>
+                </div>
+                {promoEndsAt && (
+                  <div className="ml-auto flex items-center gap-2.5">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">Ends in</span>
+                    <Timer endDate={promoEndsAt} />
+                  </div>
+                )}
+              </div>
+              <div className="bg-white p-4 sm:p-5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-3 gap-y-5">
+                  {promoProducts.slice(0, HOME_PROMO_MAX).map(p => (
+                    <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />
+                  ))}
+                </div>
+                {promoProducts.length > HOME_PROMO_MAX && (
+                  <button onClick={() => go('shop', '/shop')}
+                    className="mt-5 w-full h-11 border border-zinc-300 rounded-lg text-[13px] font-bold hover:bg-zinc-50 transition">
+                    See all {promoProducts.length} offers
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Hero — rotating product images */}
         <section className="relative overflow-hidden bg-zinc-100" style={{ height: 'min(72vh, 560px)' }}>
           {heroProducts.map((p, i) => (
@@ -511,22 +558,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* Big bold offer card — shows when there's an active promo */}
-        {activePromo && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
-            <div className="relative overflow-hidden rounded-3xl bg-[#1a1d29] text-white px-6 py-8 sm:px-10 sm:py-10 text-center">
-              <div className="relative z-10">
-                <div className="text-[10px] font-bold tracking-[0.3em] uppercase text-zinc-500 mb-2">Limited offer</div>
-                <div className="text-4xl sm:text-6xl font-black leading-none mb-2" style={{ fontFamily: 'var(--font-display)' }}>{activePromo.name}</div>
-                {activePromo.end_date && <div className="flex justify-center mb-5"><Timer endDate={activePromo.end_date} /></div>}
-                <button onClick={() => go('shop','/shop')} className="h-11 px-8 bg-[var(--color-brand)] text-white rounded-lg text-sm font-bold hover:bg-[var(--color-brand-light)] transition inline-flex items-center gap-2">Shop the sale {I.arrow}</button>
-              </div>
-              <div className="absolute -left-10 -bottom-12 w-48 h-48 rounded-full bg-[var(--color-brand)]/20" />
-              <div className="absolute -right-8 -top-10 w-36 h-36 rounded-full bg-[var(--color-brand)]/15" />
-            </div>
-          </section>
-        )}
-
         {/* Category tiles — visual, tappable */}
         {catTiles.length > 0 && (
           <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
@@ -545,39 +576,15 @@ export default function App() {
           </section>
         )}
 
-        {/* Promo products — horizontal scroll */}
-        {promoProducts.length > 0 && (
-          <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
-            <div className="flex items-center gap-2 mb-3">
-              
-              <h2 className="text-lg sm:text-xl font-bold tracking-tight">Promo Deals</h2>
-              <button onClick={() => go('shop','/shop')} className="ml-auto text-[11px] text-gray-400 font-medium">See All {I.arrow}</button>
-            </div>
-            <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-2">
-              {promoProducts.map(p => (
-                <div key={p.id} onClick={() => open(p)} className="min-w-[140px] max-w-[140px] flex-shrink-0 cursor-pointer group">
-                  <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden relative mb-1.5">
-                    {p.image && <img src={thumb(p.image, 300)} className="w-full h-full object-cover" />}
-                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-[var(--color-promo)] text-white text-[8px] font-bold rounded">PROMO</span>
-                  </div>
-                  <div className="text-[11px] font-medium line-clamp-2 leading-snug">{p.name}</div>
-                  <div className="flex items-baseline gap-1 mt-0.5"><span className="text-[12px] font-bold">{money(promoMap[p.id].price)}</span><span className="text-[10px] text-gray-300 line-through">{money(p.price)}</span></div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Promo & Bundle Showcase */}
-        {(promoProducts.length > 0 || bundles.length > 0) && (
+        {/* Bundles. Promo products are not repeated here — they have the section above. */}
+        {bundles.length > 0 && (
           <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-12">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg sm:text-xl font-bold tracking-tight">Deals For You</h2>
+              <h2 className="text-lg sm:text-xl font-bold tracking-tight">Bundle deals</h2>
               <button onClick={() => go('shop','/shop')} className="text-[11px] text-gray-400 font-medium flex items-center gap-0.5">See All {I.arrow}</button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              {/* Bundles first */}
-              {bundles.slice(0, 2).map(b => {
+              {bundles.map(b => {
                 const bundleProducts = b.products.map(bp => products.find(p => p.id === (bp.productId || bp.product_id))).filter(Boolean)
                 const normalTotal = bundleProducts.reduce((sum, p) => sum + Number(p.price), 0)
                 const savings = normalTotal - Number(b.bundle_price)
@@ -599,22 +606,6 @@ export default function App() {
                   </div>
                 )
               })}
-              {/* Then promo products */}
-              {promoProducts.slice(0, bundles.length >= 2 ? 2 : 4).map(p => (
-                <div key={p.id} onClick={() => open(p)} className="cursor-pointer group">
-                  <div className="aspect-[4/3] bg-gray-100 rounded-xl overflow-hidden relative">
-                    {p.image && <img src={thumb(p.image, 400)} className="w-full h-full object-cover group-hover:scale-[1.03] transition duration-500" />}
-                    <span className="absolute top-2 left-2 px-2 py-0.5 bg-[var(--color-promo)] text-white text-[8px] font-bold rounded-md">PROMO</span>
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-[11px] font-medium line-clamp-2 leading-snug">{p.name}</div>
-                    <div className="flex items-baseline gap-1.5 mt-0.5">
-                      <span className="text-[13px] font-bold">{money(promoMap[p.id].price)}</span>
-                      <span className="text-[10px] text-gray-300 line-through">{money(p.price)}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
             </div>
           </section>
         )}

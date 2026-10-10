@@ -13,7 +13,13 @@ const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 // an unregistered sender is a common silent rejection.
 const SENDER_ID = Deno.env.get('MNOTIFY_SENDER_ID') || 'BEDTIMEHOME'
 
-const ADMIN_PHONES = ['0599084552']
+// Who the scheduled reports go to (morning, afternoon, evening, weekly).
+// Settable without a code change: `supabase secrets set ADMIN_SMS_PHONES=...`
+// takes effect on the next run, comma-separated for more than one number.
+// formatPhone() turns 0XXXXXXXXX into 233XXXXXXXXX for mNotify, so write them
+// the way they are dialled locally.
+const ADMIN_PHONES = (Deno.env.get('ADMIN_SMS_PHONES') || '0548124978')
+  .split(',').map(p => p.trim()).filter(Boolean)
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
 
