@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, rpcOrNull } from './lib/supabase'
+import VoiceShopper, { voiceSupported } from './components/VoiceShopper'
 import { buildPromoMap, discountPct, promoHeading as headingFor, promoEndsAt as endsAtFor, promoFirst, orderPromoFirst } from './lib/promo'
 import { money, thumb, SHOP, PAYMENTS_ENABLED, EDGE_URL } from './lib/utils'
 
@@ -72,6 +73,7 @@ export default function App() {
   const [bundles, setBundles] = useState([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState('home')
+  const [voiceOpen, setVoiceOpen] = useState(false)
   const [sel, setSel] = useState(null)
   const [cart, setCart] = useState(() => { try { return JSON.parse(localStorage.getItem('etr_cart') || '[]') } catch { return [] } })
   const [search, setSearch] = useState('')
@@ -465,6 +467,30 @@ export default function App() {
     <div className="min-h-screen bg-white pb-16 md:pb-0 flex flex-col" style={{ fontFamily: 'var(--font-body)' }}>
 
       {/* PROMO BANNER */}
+      {/* Shop by voice — for anyone who finds typing or searching hard. It sits
+          clear of the bottom navigation and never covers the cart or checkout. */}
+      <button onClick={() => setVoiceOpen(true)}
+        aria-label="Shop by voice"
+        className="fixed right-4 bottom-20 md:bottom-6 z-[200] h-14 pl-4 pr-5 rounded-full bg-zinc-900 text-white flex items-center gap-2.5 border border-zinc-900 hover:bg-zinc-800 transition">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><path d="M12 19v3" />
+        </svg>
+        <span className="text-[13px] font-bold">{voiceSupported() ? 'Shop by voice' : 'Ask the shop'}</span>
+      </button>
+
+      <VoiceShopper
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        products={products}
+        promoMap={promoMap}
+        cart={cart}
+        onAdd={(product, qty) => { for (let i = 0; i < Math.max(1, qty); i++) addToCart(product) }}
+        onRemove={removeFromCart}
+        onClearCart={clearCart}
+        onOpen={(product) => open(product)}
+        onNavigate={(dest) => { setVoiceOpen(false); if (dest === 'checkout') go('checkout', '/checkout'); else go(dest, '/' + dest) }}
+      />
+
       {activePromo && <div className="bg-[var(--color-promo)] relative overflow-hidden"><div className="max-w-7xl mx-auto px-4 h-10 flex items-center justify-center gap-3 text-xs text-white relative z-10"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /><span className="font-bold uppercase tracking-wide truncate">{activePromo.name}</span><span className="hidden sm:inline text-white/70">ends in</span><Timer endDate={promoEndsAt || activePromo.end_date} /><button onClick={() => go('shop', '/shop')} className="ml-1 h-6 px-3 bg-white text-[var(--color-promo)] rounded-full text-[10px] font-bold hover:bg-white/90 transition">Shop Now</button></div></div>}
 
       {/* TOAST */}
