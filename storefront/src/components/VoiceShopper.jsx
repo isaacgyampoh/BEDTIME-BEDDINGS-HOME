@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { respond } from '../lib/voiceShop'
+import { startRealtime, realtimeSupported } from '../lib/realtime'
+import { runTool } from '../lib/voiceTools'
+
+const TOKEN_URL = `${import.meta.env.VITE_SUPABASE_URL || 'https://wqkgfvmvuljzexhevlnp.supabase.co'}/functions/v1/super-service?action=realtime-token`
 
 /**
  * Voice shopping for people who find typing and searching hard.
@@ -40,11 +44,19 @@ export default function VoiceShopper({
   const [results, setResults] = useState([])
   const [typed, setTyped] = useState('')
   const [muted, setMuted] = useState(false)
+  // 'none' until the shopper taps the microphone. 'live' is a real
+  // speech-to-speech conversation; 'local' is the press-to-talk fallback for
+  // when voice conversation is not switched on for the shop.
+  const [mode, setMode] = useState('none')
+  const [note, setNote] = useState('')
+  const session = useRef(null)
   const lastResults = useRef([])
   const recognition = useRef(null)
   const lastReply = useRef('')
   const panelRef = useRef(null)
   const scrollRef = useRef(null)
+  const live = useRef({ products: [], promoMap: {}, cart: [] })
+  live.current = { products, promoMap, cart }
 
   const speak = useCallback((text) => {
     lastReply.current = text
@@ -77,11 +89,69 @@ export default function VoiceShopper({
     speak(r.say)
   }, [products, promoMap, cart, onAdd, onRemove, onClearCart, onNavigate, speak])
 
+  /** The model's tool calls run against the real catalogue and the real cart. */
+  const runToolBridge = useCallback(async (name, args) => {
+    const { products: ps, promoMap: pm, cart: ct } = live.current
+    const { result, results: shown } = runTool(name, args, {
+      products: ps, promoMap: pm, cart: ct, onAdd, onRemove, onNavigate,
+    })
+    if (shown) setResults(shown)
+    return result
+  }, [onAdd, onRemove, onNavigate])
+
+  const endSession = useCallback(() => {
+    try { session.current?.stop() } catch { /* already closed */ }
+    session.current = null
+  }, [])
+
+  /** Open a real speech-to-speech conversation; fall back if it cannot. */
+  const startConversation = useCallback(async () => {
+    setNote('')
+    if (!realtimeSupported()) { setMode('local'); setNote('This browser cannot use the microphone. Type below instead.'); setStatus('unsupported'); return false }
+    setStatus('connecting')
+    try {
+      const handle = await startRealtime({
+        tokenUrl: TOKEN_URL,
+        runTool: runToolBridge,
+        onEvent: {
+          status: (st) => setStatus(st),
+          transcript: (who, text) => setTurns(t => [...t, { who, text }]),
+          error: (m) => { setNote(m); setStatus('idle') },
+        },
+      })
+      session.current = handle
+      setMode('live')
+      return true
+    } catch (e) {
+      const why = e?.reason
+      if (why === 'denied') { setStatus('denied'); setMode('none'); return false }
+      // Not switched on, or the service refused: press-to-talk still works.
+      setMode('local')
+      const simpler = SR ? 'so I am using the simpler voice mode.' : 'and this browser cannot listen either — please type below.'
+      setNote(why === 'not-configured'
+        ? `Voice conversation is not switched on for this shop yet, ${simpler}`
+        : `Could not reach the voice service, ${simpler}`)
+      return false
+    }
+  }, [runToolBridge])
+
   const stopListening = useCallback(() => {
     try { recognition.current?.stop() } catch { /* already stopped */ }
     recognition.current = null
     setStatus(s => (s === 'listening' ? 'idle' : s))
   }, [])
+
+  const onMic = useCallback(async () => {
+    // A live conversation: the button ends it.
+    if (session.current) { endSession(); setMode('none'); setStatus('idle'); return }
+    // First tap: try a real conversation. The tap is also the gesture iOS
+    // requires before it will play the assistant's voice.
+    if (mode === 'none') {
+      const started = await startConversation()
+      if (started) return
+    }
+    listen()
+  }, [mode, startConversation, endSession]) // eslint-disable-line
 
   const listen = useCallback(() => {
     if (!SR) { setStatus('unsupported'); return }
@@ -101,7 +171,12 @@ export default function VoiceShopper({
     }
     rec.onerror = (e) => {
       recognition.current = null
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') setStatus('denied')
+      // 'not-allowed' is the shopper refusing the microphone; 'service-not-allowed'
+      // is the browser having no speech recognition service to offer. Telling
+      // someone their microphone is blocked when it is not sends them into
+      // settings for no reason.
+      if (e.error === 'not-allowed') setStatus('denied')
+      else if (e.error === 'service-not-allowed') { setStatus('unsupported'); setNote('This browser cannot listen. Type below instead — it does the same thing.') }
       else if (e.error === 'no-speech') { setStatus('idle'); speak('I did not hear anything. Tap the microphone and speak.') }
       else setStatus('idle')
     }
@@ -114,11 +189,13 @@ export default function VoiceShopper({
   // a live microphone must never outlive the thing the shopper opened.
   useEffect(() => {
     if (open) return
+    endSession()
+    setMode('none')
     stopListening()
     try { speechSynthesis?.cancel() } catch { /* nothing playing */ }
     setStatus('idle')
   }, [open, stopListening])
-  useEffect(() => () => { stopListening(); try { speechSynthesis?.cancel() } catch { /* gone */ } }, [stopListening])
+  useEffect(() => () => { endSession(); stopListening(); try { speechSynthesis?.cancel() } catch { /* gone */ } }, [stopListening, endSession])
 
   useEffect(() => {
     if (!open) return
@@ -141,9 +218,15 @@ export default function VoiceShopper({
   if (!open) return null
 
   const label = {
-    idle: 'Tap to speak', listening: 'Listening…', thinking: 'One moment…',
-    speaking: 'Speaking…', denied: 'Microphone blocked', unsupported: 'Type instead',
-  }[status]
+    idle: mode === 'live' ? 'Tap to end' : 'Tap to speak',
+    connecting: 'Connecting…',
+    listening: mode === 'live' ? 'Listening — just talk' : 'Listening…',
+    hearing: 'Listening — just talk',
+    thinking: 'One moment…',
+    speaking: 'Speaking…',
+    denied: 'Microphone blocked',
+    unsupported: 'Type instead',
+  }[status] || 'Tap to speak'
 
   return (
     <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center" role="presentation">
@@ -156,9 +239,9 @@ export default function VoiceShopper({
             <h2 className="text-[15px] font-bold text-zinc-900">Shop by voice</h2>
             <p className="text-[12px] text-zinc-500" aria-live="polite">{label}</p>
           </div>
-          <button onClick={() => setMuted(m => !m)}
+          <button onClick={() => setMuted(m => { const next = !m; session.current?.mute(next); return next })}
             className="ml-auto h-10 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700"
-            aria-pressed={muted}>{muted ? 'Replies muted' : 'Mute replies'}</button>
+            aria-pressed={muted}>{muted ? (mode === 'live' ? 'Mic off' : 'Replies muted') : (mode === 'live' ? 'Mute mic' : 'Mute replies')}</button>
           <button onClick={onClose} aria-label="Close voice shopping"
             className="h-10 w-10 rounded-lg border border-zinc-300 flex items-center justify-center text-zinc-700">
             <Icon d={CloseIcon} />
@@ -226,6 +309,9 @@ export default function VoiceShopper({
             </div>
           )}
 
+          {note && (
+            <div role="status" className="mt-4 border border-zinc-300 bg-zinc-50 rounded-lg p-3 text-[12px] text-zinc-700">{note}</div>
+          )}
           {status === 'denied' && (
             <div role="alert" className="mt-4 border border-amber-300 bg-amber-50 rounded-lg p-3 text-[12px] text-amber-900">
               <strong className="block">The microphone is blocked.</strong>
@@ -248,13 +334,13 @@ export default function VoiceShopper({
             </div>
           )}
           <div className="flex items-center gap-3">
-            <button onClick={listen}
-              aria-label={status === 'listening' ? 'Stop listening' : 'Start speaking'}
+            <button onClick={onMic}
+              aria-label={session.current ? 'End the conversation' : status === 'listening' ? 'Stop listening' : 'Start speaking'}
               className={`h-14 w-14 flex-shrink-0 rounded-full flex items-center justify-center border-2 transition ${
                 status === 'listening' ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-900 border-zinc-900'}`}>
               <Icon d={status === 'listening' ? StopIcon : MicIcon} size={24} />
             </button>
-            <form className="flex-1 flex gap-2" onSubmit={(e) => { e.preventDefault(); const v = typed; setTyped(''); handle(v) }}>
+            <form className="flex-1 flex gap-2" onSubmit={(e) => { e.preventDefault(); const v = typed.trim(); if (!v) return; setTyped(''); if (session.current) { setTurns(t => [...t, { who: 'you', text: v }]); session.current.sendText(v) } else handle(v) }}>
               <label className="sr-only" htmlFor="voice-typed">Type what you are looking for</label>
               <input id="voice-typed" value={typed} onChange={e => setTyped(e.target.value)}
                 placeholder="or type here…"
@@ -263,7 +349,7 @@ export default function VoiceShopper({
             </form>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => { try { speechSynthesis?.cancel() } catch { /* nothing playing */ } ; setStatus('idle') }}
+            <button onClick={() => { session.current?.interrupt(); try { speechSynthesis?.cancel() } catch { /* nothing playing */ } ; setStatus(session.current ? 'listening' : 'idle') }}
               className="h-10 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">Stop talking</button>
             <button onClick={() => lastReply.current && speak(lastReply.current)}
               className="h-10 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">Repeat</button>

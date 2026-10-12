@@ -3,6 +3,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevlnp.supabase.co'
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+// Server-only. Never sent to a browser: realtime-token mints a short-lived
+// client secret from it instead.
+const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || ''
 // mNotify SMS
 const MNOTIFY_API_KEY = Deno.env.get('MNOTIFY_KEY') || ''
 const MNOTIFY_SENDER_ID = 'BEDTIMEHOME'
@@ -1202,6 +1205,64 @@ serve(async (req) => {
         } catch (_) { /* leave it publishing; the next poll retries */ }
       }
       return new Response(JSON.stringify({ success: true, checked: pending?.length || 0, confirmed, failed }), { headers: CORS })
+    }
+
+    // -----------------------------------------------------------------------
+    // realtime-token — mint a short-lived key for a speech-to-speech session.
+    //
+    // The shop's OpenAI key must never reach a browser, so the browser asks for
+    // this instead: a client secret that expires in a minute and can only open
+    // a Realtime session. Verified against the current API (Oct 2026):
+    // POST /v1/realtime/client_secrets, the browser then POSTs its SDP offer to
+    // /v1/realtime/calls with the secret.
+    //
+    // Cost control lives here, not in the browser: no key, no sessions. The
+    // model and voice are set here too, so they can be changed without
+    // shipping a new site.
+    // -----------------------------------------------------------------------
+    if (action === 'realtime-token') {
+      if (!OPENAI_API_KEY) {
+        return new Response(JSON.stringify({
+          success: false, reason: 'not-configured',
+          error: 'Voice conversation is not switched on for this shop yet.',
+        }), { status: 503, headers: CORS })
+      }
+
+      // Only the shop's own sites may open a session on the shop's account.
+      const origin = req.headers.get('origin') || ''
+      const allowed = (Deno.env.get('REALTIME_ALLOWED_ORIGINS') ||
+        'https://www.bedtimehome.com,https://bedtimehome.com,https://admin.bedtimehome.com,http://localhost:5174')
+        .split(',').map(o => o.trim()).filter(Boolean)
+      if (origin && !allowed.includes(origin)) {
+        console.warn('realtime-token refused for origin', origin)
+        return new Response(JSON.stringify({ success: false, error: 'Not allowed from this site' }), { status: 403, headers: CORS })
+      }
+
+      const model = Deno.env.get('REALTIME_MODEL') || 'gpt-realtime-2.1'
+      const voice = Deno.env.get('REALTIME_VOICE') || 'marin'
+      try {
+        const r = await fetch('https://api.openai.com/v1/realtime/client_secrets', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            expires_after: { anchor: 'created_at', seconds: 120 },
+            session: { type: 'realtime', model, audio: { output: { voice } } },
+          }),
+        })
+        const data = await r.json()
+        if (!r.ok || !data?.value) {
+          console.error('realtime-token mint failed:', r.status, JSON.stringify(data).slice(0, 300))
+          return new Response(JSON.stringify({ success: false, error: 'Could not start a voice session right now.' }), { status: 502, headers: CORS })
+        }
+        // Only the short-lived secret crosses to the browser — never the key.
+        return new Response(JSON.stringify({ success: true, value: data.value, model, expires_at: data.expires_at ?? null }), { headers: CORS })
+      } catch (e) {
+        console.error('realtime-token threw:', e)
+        return new Response(JSON.stringify({ success: false, error: 'Could not reach the voice service.' }), { status: 502, headers: CORS })
+      }
     }
 
     // -----------------------------------------------------------------------
