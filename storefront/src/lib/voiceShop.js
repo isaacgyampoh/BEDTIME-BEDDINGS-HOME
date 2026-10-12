@@ -13,7 +13,10 @@
  * action. That is what makes it testable.
  */
 
-const STOP = new Set(['a','an','the','i','me','my','we','you','your','is','are','was','do','does','did','to','for','of','in','on','at','and','or','please','can','could','would','want','need','like','have','has','show','find','get','give','buy','looking','look','any','some','got','there','that','this','it','them','they','with','pls','abeg'])
+// Words that are how people talk, not what they are shopping for. The list is
+// a help, not the safety net — matchProducts no longer demands that every word
+// hits, so an unlisted filler word can no longer empty the results.
+const STOP = new Set(['a','an','the','i','me','my','we','us','you','your','is','are','was','be','do','does','did','to','for','of','in','on','at','and','or','please','can','could','would','will','want','need','like','have','has','had','show','see','find','get','give','buy','bring','looking','look','let','all','available','there','here','any','some','got','that','this','these','those','it','them','they','with','pls','abeg','kindly','now','today','just','also','well','ok','okay','hi','hello','hey','what','which','how','about','your','whats','much','many','other','another','one','ones','please','still','maybe','new'])
 
 const WORD_NUM = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, a: 1, an: 1, couple: 2, pair: 2, dozen: 12 }
 const ORDINAL = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, last: -1 }
@@ -81,17 +84,63 @@ export function matchProducts(utterance, products, { limit = 8 } = {}) {
   const want = content(utterance)
   if (!want.length) return []
   const phrase = want.join(' ')
+
+  // Counts how many of the shopper's words a piece of text covers. Two words
+  // said apart may be one word in the catalogue — "bed sheets" is written
+  // "Bedsheet" — so a joined pair counts as covering both. Without this, a
+  // bedsheet scored the same as an inflatable air bed, which also contains
+  // "bed", and the air bed came first.
+  const countHits = (text) => {
+    const hay = tokens(text || '')
+    const set = new Set(hay)
+    // Prefixes only count when the shorter side is a real word. Without the
+    // length floor "mat" matched "mattress", and a Bath Mat Set outranked the
+    // mattress toppers someone actually asked for.
+    const matches = (w) => set.has(w) || hay.some(h =>
+      (h.startsWith(w) && w.length >= 4) || (w.startsWith(h) && h.length >= 4))
+    let n = 0
+    for (let i = 0; i < want.length; i++) {
+      const joined = i + 1 < want.length ? singular(want[i] + want[i + 1]) : null
+      if (joined && matches(joined)) { n += 2; i++; continue }
+      if (matches(want[i])) n += 1
+    }
+    return n
+  }
+
   const scored = []
   for (const p of products || []) {
-    const hay = tokens(`${p.name || ''} ${p.category || ''}`)
-    const haySet = new Set(hay)
-    const hit = want.filter(w => haySet.has(w) || hay.some(h => h.startsWith(w) || w.startsWith(h)))
-    if (hit.length !== want.length) continue
-    const whole = tokens(`${p.name} ${p.category}`).join(' ').includes(phrase) ? 1 : 0
-    scored.push({ p, whole, hits: hit.length, len: String(p.name || '').length })
+    const nameHits = countHits(p.name)
+    const catHits = countHits(p.category)
+    const descHits = countHits(p.description)
+    const hits = Math.max(nameHits, catHits, descHits)
+    if (!hits) continue
+    scored.push({
+      p, nameHits, total: nameHits + catHits + descHits,
+      whole: `${p.name} ${p.category}`.toLowerCase().includes(phrase) ? 1 : 0,
+      len: String(p.name || '').length,
+    })
   }
-  scored.sort((a, b) => (b.whole - a.whole) || (b.hits - a.hits) || (a.len - b.len))
-  return scored.slice(0, limit).map(x => x.p)
+  if (!scored.length) return []
+
+  // Two rules, in order.
+  //
+  // 1. What is in the NAME beats what is only in the category. Asked for bed
+  //    sheets, a shopper means products called bedsheets, not everything filed
+  //    under "Bed Sheets" — which is how an air bed led those results.
+  // 2. All of what they said beats some of it. "Let me see all the mattress
+  //    toppers available" used to find nothing at all, because every word had
+  //    to hit and no product contains "let" or "available", so a category the
+  //    shop genuinely stocks was reported as not carried. Partial matches are
+  //    now a fallback instead of an empty answer.
+  const bestName = Math.max(...scored.map(x => x.nameHits))
+  const tier = bestName > 0 ? scored.filter(x => x.nameHits === bestName) : scored
+  const bestTotal = Math.max(...tier.map(x => x.total))
+
+  return tier
+    .filter(x => x.total === bestTotal)
+    .sort((a, b) => (b.whole - a.whole) || (a.len - b.len))
+    .slice(0, limit)
+    .map(x => x.p)
 }
 
 /** Which item of the last results was meant: "the second one", "the last one". */

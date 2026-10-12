@@ -49,6 +49,10 @@ export default function VoiceShopper({
   // when voice conversation is not switched on for the shop.
   const [mode, setMode] = useState('none')
   const [note, setNote] = useState('')
+  // A voice session that could not start is an error the shopper can retry,
+  // not something to paper over by quietly switching to a lesser mode.
+  const [failure, setFailure] = useState(null)
+  const [showTyping, setShowTyping] = useState(false)
   const session = useRef(null)
   const lastResults = useRef([])
   const recognition = useRef(null)
@@ -127,13 +131,14 @@ export default function VoiceShopper({
       return true
     } catch (e) {
       const why = e?.reason
+      setStatus('idle')
       if (why === 'denied') { setStatus('denied'); setMode('none'); return false }
-      // Not switched on, or the service refused: press-to-talk still works.
-      setMode('local')
-      const simpler = SR ? 'so I am using the simpler voice mode.' : 'and this browser cannot listen either — please type below.'
-      setNote(why === 'not-configured'
-        ? `Voice conversation is not switched on for this shop yet, ${simpler}`
-        : `Could not reach the voice service, ${simpler}`)
+      setFailure({
+        title: why === 'not-configured' ? 'Voice conversation is not switched on yet' : 'Could not start the voice conversation',
+        detail: why === 'not-configured'
+          ? 'The shop has not finished setting up voice. Everything else works normally.'
+          : 'The voice service did not answer. This is usually temporary.',
+      })
       return false
     }
   }, [runToolBridge])
@@ -151,7 +156,10 @@ export default function VoiceShopper({
     // requires before it will play the assistant's voice.
     if (mode === 'none') {
       const started = await startConversation()
-      if (started) return
+      // A failed start stops here: the shopper sees why and can retry, rather
+      // than being moved to a lesser mode without being told.
+      if (!started) return
+      return
     }
     listen()
   }, [mode, startConversation, endSession]) // eslint-disable-line
@@ -260,6 +268,21 @@ export default function VoiceShopper({
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">
+          {failure && (
+            <div role="alert" className="mb-4 border border-zinc-300 rounded-xl p-4">
+              <div className="text-[14px] font-bold text-zinc-900">{failure.title}</div>
+              <p className="text-[12px] text-zinc-600 mt-1 leading-relaxed">{failure.detail}</p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button onClick={async () => { setFailure(null); await startConversation() }}
+                  className="h-10 px-4 rounded-lg bg-zinc-900 text-white text-[12px] font-bold">Try again</button>
+                <button onClick={() => { setFailure(null); setMode('local'); setShowTyping(!SR); setNote(SR ? 'Press the microphone and speak one request at a time.' : 'Type what you are looking for.') }}
+                  className="h-10 px-4 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">
+                  {SR ? 'Shop with the simpler voice mode' : 'Shop by typing instead'}
+                </button>
+              </div>
+            </div>
+          )}
+
           {turns.length === 0 && (
             <div className="text-[13px] text-zinc-600 leading-relaxed">
               <p className="font-semibold text-zinc-900 mb-1">Say what you are looking for.</p>
@@ -338,20 +361,19 @@ export default function VoiceShopper({
         </div>
 
         <div className="border-t border-zinc-200 p-4 flex-shrink-0 space-y-3">
-          {/* Things worth saying, for anyone who does not know where to start. */}
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
-            {(cart.length
-              ? ["What's in my cart?", 'Checkout', "What's on offer?", 'Show me duvets']
-              : ["What's on offer?", 'Show me duvets', 'What do you sell?', 'Bedsheets under 300']
-            ).map(q => (
-              <button key={q} onClick={() => sendLine(q)}
-                className="flex-shrink-0 h-9 px-3 rounded-full border border-zinc-300 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50">
-                {q}
-              </button>
-            ))}
-          </div>
+          {/* Only before the conversation starts — a handful of openers, not a
+              permanent wall of buttons. */}
+          {turns.length === 0 && !failure && (
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
+              {["What's on offer?", 'Show me bedsheets', 'What do you sell?'].map(q => (
+                <button key={q} onClick={() => sendLine(q)}
+                  className="flex-shrink-0 h-9 px-3 rounded-full border border-zinc-300 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50">
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* What checkout still needs — filled by voice as the shopper says it. */}
           {cart.length > 0 && (
             <div className="flex items-center gap-2 text-[11px]">
               {[['Name', checkout.name], ['Phone', checkout.phone], ['Delivery', checkout.address]].map(([k, v]) => (
@@ -360,38 +382,48 @@ export default function VoiceShopper({
                   {k}{v ? ' ✓' : ''}
                 </span>
               ))}
+              <span className="ml-auto font-bold text-zinc-900 text-[12px]">{money(cartTotal)}</span>
             </div>
           )}
 
-          {cart.length > 0 && (
-            <div className="flex items-center justify-between text-[12px]">
-              <span className="text-zinc-600">{cartCount} item{cartCount === 1 ? '' : 's'} in cart</span>
-              <span className="font-bold text-zinc-900">{money(cartTotal)}</span>
-            </div>
-          )}
-          <div className="flex items-center gap-3">
+          {/* The microphone is the interface. Everything else is secondary. */}
+          <div className="flex flex-col items-center gap-2 pt-1">
             <button onClick={onMic}
               aria-label={session.current ? 'End the conversation' : status === 'listening' ? 'Stop listening' : 'Start speaking'}
-              className={`h-14 w-14 flex-shrink-0 rounded-full flex items-center justify-center border-2 transition ${
-                status === 'listening' ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-900 border-zinc-900'}`}>
-              <Icon d={status === 'listening' ? StopIcon : MicIcon} size={24} />
+              className={`h-16 w-16 rounded-full flex items-center justify-center border-2 transition ${
+                status === 'listening' || status === 'hearing'
+                  ? 'bg-zinc-900 text-white border-zinc-900'
+                  : 'bg-white text-zinc-900 border-zinc-900 hover:bg-zinc-50'}`}>
+              <Icon d={status === 'listening' || status === 'hearing' ? StopIcon : MicIcon} size={26} />
             </button>
-            <form className="flex-1 flex gap-2" onSubmit={(e) => { e.preventDefault(); const v = typed; setTyped(''); sendLine(v) }}>
+            <span className="text-[12px] text-zinc-600">{label}</span>
+          </div>
+
+          <div className="flex flex-wrap justify-center gap-2">
+            {(status === 'speaking' || session.current) && (
+              <button onClick={() => { session.current?.interrupt(); try { speechSynthesis?.cancel() } catch { /* nothing playing */ } ; setStatus(session.current ? 'listening' : 'idle') }}
+                className="h-9 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">Stop talking</button>
+            )}
+            {turns.length > 0 && (
+              <button onClick={() => { setTurns([]); setResults([]); lastResults.current = []; setHeard('') }}
+                className="h-9 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">Start over</button>
+            )}
+            <button onClick={() => setShowTyping(v => !v)} aria-expanded={showTyping}
+              className="h-9 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">
+              {showTyping ? 'Hide typing' : 'Type instead'}
+            </button>
+          </div>
+
+          {/* Kept for anyone who cannot or would rather not speak. */}
+          {showTyping && (
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const v = typed; setTyped(''); sendLine(v) }}>
               <label className="sr-only" htmlFor="voice-typed">Type what you are looking for</label>
-              <input id="voice-typed" value={typed} onChange={e => setTyped(e.target.value)}
-                placeholder="or type here…"
+              <input id="voice-typed" value={typed} onChange={e => setTyped(e.target.value)} autoFocus
+                placeholder="What are you looking for?"
                 className="flex-1 h-12 px-3 border border-zinc-300 rounded-lg text-[14px]" />
               <button type="submit" className="h-12 px-4 rounded-lg bg-zinc-900 text-white text-[13px] font-bold">Send</button>
             </form>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => { session.current?.interrupt(); try { speechSynthesis?.cancel() } catch { /* nothing playing */ } ; setStatus(session.current ? 'listening' : 'idle') }}
-              className="h-10 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">Stop talking</button>
-            <button onClick={() => lastReply.current && speak(lastReply.current)}
-              className="h-10 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">Repeat</button>
-            <button onClick={() => { setTurns([]); setResults([]); lastResults.current = []; setHeard('') }}
-              className="h-10 px-3 rounded-lg border border-zinc-300 text-[12px] font-semibold text-zinc-700">Start over</button>
-          </div>
+          )}
         </div>
       </div>
     </div>

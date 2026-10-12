@@ -189,7 +189,7 @@ export default function App() {
   useEffect(() => { window.scrollTo(0, 0) }, [page])
 
   useEffect(() => {
-    supabase.from('products').select('id,name,category,price,wholesale_price,wholesale_min_qty,quantity,image,created_at').order('created_at', { ascending: false }).then(({ data }) => {
+    supabase.from('products').select('id,name,category,description,price,wholesale_price,wholesale_min_qty,quantity,image,created_at').order('created_at', { ascending: false }).then(({ data }) => {
       setProducts((data || []).filter(p => p.quantity > 0))
       setLoading(false)
     })
