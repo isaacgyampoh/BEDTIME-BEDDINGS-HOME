@@ -484,7 +484,14 @@ export default function App() {
         products={products}
         promoMap={promoMap}
         cart={cart}
+        checkout={{ name: custName, phone: custPhone, address: custAddress }}
         onAdd={(product, qty) => { for (let i = 0; i < Math.max(1, qty); i++) addToCart(product) }}
+        onSetCheckout={(field, value) => {
+          if (field === 'name') setCustName(value)
+          else if (field === 'phone') setCustPhone(value)
+          else if (field === 'address') setCustAddress(value)
+        }}
+        onSetQty={(id, qty) => { const line = cart.find(c => c.id === id); if (line) updQty(id, qty - line.qty) }}
         onRemove={removeFromCart}
         onClearCart={clearCart}
         onOpen={(product) => open(product)}

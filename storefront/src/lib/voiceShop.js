@@ -23,6 +23,43 @@ const singular = (w) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? 
 const tokens = (s) => clean(s).split(' ').filter(Boolean).map(singular)
 const content = (s) => tokens(s).filter(w => !STOP.has(w) && w.length > 1)
 
+const DIGIT_WORD = { zero: '0', oh: '0', o: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', double: 'x2', triple: 'x3' }
+
+/**
+ * A phone number as a person says it out loud.
+ *
+ * Speech recognition hands back "zero two four four double zero" far more often
+ * than "0244400000", so a digits-only reading would reject most spoken numbers.
+ * Returns the local 0XXXXXXXXX form, or null if what was said is not a Ghanaian
+ * mobile number — guessing at a delivery phone number is worse than asking again.
+ */
+export function parsePhone(text) {
+  const words = clean(text).split(' ')
+  let out = ''
+  let repeat = 0
+  for (const w of words) {
+    if (/^\d+$/.test(w)) { out += repeat ? w.repeat(repeat) : w; repeat = 0; continue }
+    const d = DIGIT_WORD[w]
+    if (!d) { repeat = 0; continue }
+    if (d.startsWith('x')) { repeat = Number(d.slice(1)); continue }
+    out += repeat ? d.repeat(repeat) : d
+    repeat = 0
+  }
+  let n = out.replace(/\D/g, '')
+  if (n.startsWith('233')) n = '0' + n.slice(3)
+  if (n.length === 9 && /^[25]/.test(n)) n = '0' + n
+  // Ghanaian mobile numbers are 02X and 05X. 03X is a landline, which cannot
+  // take a mobile-money prompt or the delivery SMS, so it is not a number we
+  // can accept for an order.
+  return /^0[25]\d{8}$/.test(n) ? n : null
+}
+
+/** "under 300", "less than 500", "cheaper than 250". */
+export function parseMaxPrice(text) {
+  const m = clean(text).match(/\b(under|below|less than|cheaper than|up to|maximum|max)\b[^\d]{0,12}(\d+)/)
+  return m ? Number(m[2]) : null
+}
+
 /** A quantity said in words or digits: "add two", "add 3". */
 export function parseQty(text) {
   const t = clean(text)
@@ -81,16 +118,28 @@ const inStock = (p) => Number(p?.quantity || 0) > 0
 const money = (n) => `GHS ${Number(n || 0).toFixed(2)}`
 const listNames = (ps) => ps.map(p => p.name).join(', ')
 
+/** What checkout still needs, said the way a shop assistant would say it. */
+function missingLine(c = {}) {
+  const missing = []
+  if (!String(c.name || '').trim()) missing.push('your name')
+  if (!String(c.phone || '').trim()) missing.push('your phone number')
+  if (!String(c.address || '').trim()) missing.push('where to deliver')
+  if (!missing.length) return 'I have everything. Say "checkout" when you are ready.'
+  const list = missing.length > 1 ? `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}` : missing[0]
+  return `I still need ${list}.`
+}
+
 /**
  * The one entry point: what was said plus what is on screen, in — a reply to
  * speak, products to show, and at most one action for the caller to apply.
  *
- * ctx: { products, promoMap, cart, lastResults }
+ * ctx: { products, promoMap, cart, lastResults, checkout }
  * action: { kind: 'add'|'remove'|'setQty'|'navigate'|'clearCart', ... }
  */
 export function respond(utterance, ctx = {}) {
-  const { products = [], promoMap = {}, cart = [], lastResults = [] } = ctx
+  const { products = [], promoMap = {}, cart = [], lastResults = [], checkout = {} } = ctx
   const t = clean(utterance)
+  const raw = String(utterance || '').trim()
   const none = { say: '', results: null, action: null, lastResults }
   if (!t) return { ...none, say: 'I did not catch that. Please say it again.' }
 
@@ -114,9 +163,60 @@ export function respond(utterance, ctx = {}) {
     return { ...none, say: cart.length ? 'Cart cleared.' : 'Your cart is already empty.', action: cart.length ? { kind: 'clearCart' } : null }
   }
 
+  // Giving details for delivery — checked before anything else, so "my name
+  // is Ama" is never mistaken for a product search.
+  const nameSaid = raw.match(/\b(?:my name is|i am|i'm|this is)\b\s+(.{2,40})$/i)
+  if (nameSaid) {
+    const name = nameSaid[1].replace(/[.,!?]+$/, '').toLowerCase().replace(/\b(please|thanks|thank you)\b/g, '').trim()
+      .split(' ').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+    return { ...none, say: `Thank you ${name}. ${missingLine({ ...checkout, name })}`, action: { kind: 'setCheckout', field: 'name', value: name } }
+  }
+  if (/\b(number|phone|mobile|contact|momo)\b/.test(t) && /\d|zero|one|two|three|four|five|six|seven|eight|nine/.test(t)) {
+    const phone = parsePhone(t)
+    if (!phone) return { ...none, say: 'I did not get that number. Please say it again, digit by digit.' }
+    return { ...none, say: `Got it, ${phone}. ${missingLine({ ...checkout, phone })}`, action: { kind: 'setCheckout', field: 'phone', value: phone } }
+  }
+  // Matched on the words as spoken, not the normalised copy: an address goes
+  // on the delivery label, and "kasoa near the market" reads like a mistake.
+  const placeSaid = raw.match(/\b(?:deliver(?:y)? to|send (?:it )?to|i live (?:at|in)|my address is|address is|location is)\b\s+(.{2,80})$/i)
+  if (placeSaid) {
+    const where = placeSaid[1].replace(/[.,!?]+$/, '').trim()
+    return { ...none, say: `Delivery to ${where}. ${missingLine({ ...checkout, address: where })}`, action: { kind: 'setCheckout', field: 'address', value: where } }
+  }
+  if (/\bwhat (do you need|else do you need|is missing)\b/.test(t) || /\bmy details\b/.test(t)) {
+    return { ...none, say: missingLine(checkout) }
+  }
+
   if (/\b(checkout|check out|pay|place (the |my )?order|buy now)\b/.test(t)) {
     if (!cart.length) return { ...none, say: 'Your cart is empty, so there is nothing to check out yet.' }
     return { ...none, say: `Taking you to checkout. ${cartCount} item${cartCount === 1 ? '' : 's'}, ${money(cartTotal)}. Check the details on screen, then press the button to place your order.`, action: { kind: 'navigate', page: 'checkout' } }
+  }
+
+  if (/\b(offer|promo|promotion|deal|discount|sale|black friday)\b/.test(t)) {
+    const onOffer = products.filter(p => promoMap[p.id] && inStock(p))
+      .sort((a, b) => (Number(b.price) - priceOf(b, promoMap)) - (Number(a.price) - priceOf(a, promoMap)))
+    if (!onOffer.length) return { ...none, say: 'There is no promotion running at the moment.' }
+    const top = onOffer[0]
+    return {
+      ...none, results: onOffer.slice(0, 8), lastResults: onOffer.slice(0, 8),
+      say: `${onOffer.length} item${onOffer.length === 1 ? ' is' : 's are'} on offer. ${top.name} is down to ${money(priceOf(top, promoMap))} from ${money(top.price)}.`,
+    }
+  }
+
+  if (/\b(what do you sell|what have you got|categories|what kind)\b/.test(t)) {
+    const cats = [...new Set(products.filter(inStock).map(p => (p.category || '').trim()).filter(Boolean))]
+    if (!cats.length) return { ...none, say: 'The shop list is still loading. Try again in a moment.' }
+    return { ...none, say: `We have ${cats.slice(0, 6).join(', ')}${cats.length > 6 ? ' and more' : ''}. Which would you like to see?` }
+  }
+
+  const changeQty = t.match(/\b(?:make it|change (?:it )?to|let it be)\b\s+(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\b/)
+  if (changeQty && cart.length) {
+    const qty = parseQty(changeQty[1])
+    const line = lastResults.length === 1 ? cart.find(c => c.id === lastResults[0].id) : (cart.length === 1 ? cart[0] : null)
+    if (!line) return { ...none, say: `Which item should be ${qty}? You have ${listNames(cart)}.` }
+    const stock = Number(products.find(p => p.id === line.id)?.quantity ?? qty)
+    const capped = Math.min(qty, stock || qty)
+    return { ...none, say: `${line.name} set to ${capped}.${capped < qty ? ` Only ${capped} in stock.` : ''}`, action: { kind: 'setQty', id: line.id, qty: capped } }
   }
 
   // "how many duvets do you have" — listings and stock are different numbers.
@@ -176,8 +276,20 @@ export function respond(utterance, ctx = {}) {
   }
 
   // Anything else is treated as a search over the real catalogue.
-  const found = matchProducts(t, products, { limit: 8 })
-  const available = found.filter(inStock)
+  const maxPrice = parseMaxPrice(t)
+  const found = matchProducts(t.replace(/\b(under|below|less than|cheaper than|up to|maximum|max)\b[^\d]{0,12}\d+/, ' '), products, { limit: 24 })
+  let available = found.filter(inStock)
+  if (maxPrice) {
+    const within = available.filter(p => priceOf(p, promoMap) <= maxPrice)
+    if (!within.length) {
+      const cheapest = [...available].sort((a, b) => priceOf(a, promoMap) - priceOf(b, promoMap))[0]
+      return cheapest
+        ? { ...none, results: [cheapest], lastResults: [cheapest], say: `Nothing under ${money(maxPrice)}. The cheapest is ${cheapest.name} at ${money(priceOf(cheapest, promoMap))}.` }
+        : { ...none, say: `I could not find that under ${money(maxPrice)}.` }
+    }
+    available = within
+  }
+  available = available.slice(0, 8)
   if (!available.length) {
     return { ...none, say: found.length ? 'I found that, but it is out of stock right now.' : 'I could not find that in the shop. Try another word, like "duvet" or "towel".' }
   }

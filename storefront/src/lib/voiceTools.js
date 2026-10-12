@@ -11,7 +11,9 @@
  * Side effects (adding to the cart, navigating) are applied through the
  * handlers the app passes in, which are the same functions its own buttons use.
  */
-import { matchProducts } from './voiceShop.js'
+import { matchProducts, parsePhone } from './voiceShop.js'
+
+const missingFields = (c = {}) => ['name', 'phone', 'address'].filter(f => !String(c[f] || '').trim())
 
 const money = (n) => Number(n || 0).toFixed(2)
 const priceOf = (p, promoMap = {}) => Number(promoMap[p.id]?.price ?? p.price) || 0
@@ -65,6 +67,23 @@ export const toolSchemas = [
   {
     type: 'function', name: 'get_cart',
     description: 'What is in the cart now, and the total.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    type: 'function', name: 'set_delivery_details',
+    description: "Save the shopper's name, phone number or delivery place for checkout. Send only the fields they actually gave. A Ghanaian mobile number looks like 0244000000.",
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        phone: { type: 'string', description: 'Local form, e.g. 0244000000' },
+        address: { type: 'string', description: 'Where to deliver, e.g. "Kasoa, near the market"' },
+      },
+    },
+  },
+  {
+    type: 'function', name: 'get_checkout_state',
+    description: 'What has been filled in for checkout and what is still missing.',
     parameters: { type: 'object', properties: {} },
   },
   {
@@ -134,6 +153,26 @@ export function runTool(name, args = {}, ctx = {}) {
         total: money(total), currency: 'GHS',
       },
     }
+  }
+
+  if (name === 'set_delivery_details') {
+    const { onSetCheckout, checkout = {} } = ctx
+    const saved = {}, rejected = {}
+    if (args.name && String(args.name).trim().length > 1) saved.name = String(args.name).trim().slice(0, 60)
+    if (args.address && String(args.address).trim().length > 2) saved.address = String(args.address).trim().slice(0, 160)
+    if (args.phone) {
+      const phone = parsePhone(String(args.phone))
+      if (phone) saved.phone = phone
+      else rejected.phone = 'That is not a Ghanaian mobile number. Ask them to say it again, digit by digit.'
+    }
+    for (const [field, value] of Object.entries(saved)) onSetCheckout?.(field, value)
+    const after = { ...checkout, ...saved }
+    return { result: { ok: Object.keys(saved).length > 0, saved, ...rejected, still_missing: missingFields(after) } }
+  }
+
+  if (name === 'get_checkout_state') {
+    const c = ctx.checkout || {}
+    return { result: { name: c.name || null, phone: c.phone || null, address: c.address || null, still_missing: missingFields(c) } }
   }
 
   if (name === 'go_to_checkout') {

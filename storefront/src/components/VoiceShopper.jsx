@@ -35,8 +35,8 @@ const StopIcon = <rect x="6" y="6" width="12" height="12" rx="1" />
 const CloseIcon = <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>
 
 export default function VoiceShopper({
-  open, onClose, products = [], promoMap = {}, cart = [],
-  onAdd, onRemove, onClearCart, onOpen, onNavigate,
+  open, onClose, products = [], promoMap = {}, cart = [], checkout = {},
+  onAdd, onRemove, onClearCart, onOpen, onNavigate, onSetCheckout, onSetQty,
 }) {
   const [status, setStatus] = useState('idle')      // idle | listening | thinking | speaking | denied | unsupported
   const [heard, setHeard] = useState('')
@@ -56,7 +56,7 @@ export default function VoiceShopper({
   const panelRef = useRef(null)
   const scrollRef = useRef(null)
   const live = useRef({ products: [], promoMap: {}, cart: [] })
-  live.current = { products, promoMap, cart }
+  live.current = { products, promoMap, cart, checkout }
 
   const speak = useCallback((text) => {
     lastReply.current = text
@@ -76,7 +76,7 @@ export default function VoiceShopper({
     if (!utterance?.trim()) return
     setTurns(t => [...t, { who: 'you', text: utterance }])
     setStatus('thinking')
-    const r = respond(utterance, { products, promoMap, cart, lastResults: lastResults.current })
+    const r = respond(utterance, { products, promoMap, cart, checkout, lastResults: lastResults.current })
     if (r.results) { setResults(r.results); lastResults.current = r.lastResults || r.results }
     if (r.action) {
       const a = r.action
@@ -84,20 +84,23 @@ export default function VoiceShopper({
       else if (a.kind === 'remove') onRemove?.(a.id)
       else if (a.kind === 'clearCart') onClearCart?.()
       else if (a.kind === 'navigate') onNavigate?.(a.page)
+      else if (a.kind === 'setCheckout') onSetCheckout?.(a.field, a.value)
+      else if (a.kind === 'setQty') onSetQty?.(a.id, a.qty)
     }
     setTurns(t => [...t, { who: 'shop', text: r.say }])
     speak(r.say)
-  }, [products, promoMap, cart, onAdd, onRemove, onClearCart, onNavigate, speak])
+  }, [products, promoMap, cart, checkout, onAdd, onRemove, onClearCart, onNavigate, onSetCheckout, onSetQty, speak])
 
   /** The model's tool calls run against the real catalogue and the real cart. */
   const runToolBridge = useCallback(async (name, args) => {
-    const { products: ps, promoMap: pm, cart: ct } = live.current
+    const { products: ps, promoMap: pm, cart: ct, checkout: ck } = live.current
     const { result, results: shown } = runTool(name, args, {
-      products: ps, promoMap: pm, cart: ct, onAdd, onRemove, onNavigate,
+      products: ps, promoMap: pm, cart: ct, checkout: ck,
+      onAdd, onRemove, onNavigate, onSetCheckout,
     })
     if (shown) setResults(shown)
     return result
-  }, [onAdd, onRemove, onNavigate])
+  }, [onAdd, onRemove, onNavigate, onSetCheckout])
 
   const endSession = useCallback(() => {
     try { session.current?.stop() } catch { /* already closed */ }
@@ -211,6 +214,14 @@ export default function VoiceShopper({
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [turns, results])
+
+  /** Send a line the same way whether a live conversation is open or not. */
+  const sendLine = useCallback((text) => {
+    const v = String(text || '').trim()
+    if (!v) return
+    if (session.current) { setTurns(t => [...t, { who: 'you', text: v }]); session.current.sendText(v) }
+    else handle(v)
+  }, [handle])
 
   const cartCount = useMemo(() => cart.reduce((a, c) => a + Number(c.qty || 0), 0), [cart])
   const cartTotal = useMemo(() => cart.reduce((a, c) => a + Number(c.price || 0) * Number(c.qty || 0), 0), [cart])
@@ -327,6 +338,31 @@ export default function VoiceShopper({
         </div>
 
         <div className="border-t border-zinc-200 p-4 flex-shrink-0 space-y-3">
+          {/* Things worth saying, for anyone who does not know where to start. */}
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
+            {(cart.length
+              ? ["What's in my cart?", 'Checkout', "What's on offer?", 'Show me duvets']
+              : ["What's on offer?", 'Show me duvets', 'What do you sell?', 'Bedsheets under 300']
+            ).map(q => (
+              <button key={q} onClick={() => sendLine(q)}
+                className="flex-shrink-0 h-9 px-3 rounded-full border border-zinc-300 text-[12px] font-semibold text-zinc-700 hover:bg-zinc-50">
+                {q}
+              </button>
+            ))}
+          </div>
+
+          {/* What checkout still needs — filled by voice as the shopper says it. */}
+          {cart.length > 0 && (
+            <div className="flex items-center gap-2 text-[11px]">
+              {[['Name', checkout.name], ['Phone', checkout.phone], ['Delivery', checkout.address]].map(([k, v]) => (
+                <span key={k} title={v || `${k} not given yet`}
+                  className={`px-2.5 py-1 rounded-full border ${v ? 'border-zinc-900 bg-zinc-900 text-white' : 'border-zinc-300 text-zinc-500'}`}>
+                  {k}{v ? ' ✓' : ''}
+                </span>
+              ))}
+            </div>
+          )}
+
           {cart.length > 0 && (
             <div className="flex items-center justify-between text-[12px]">
               <span className="text-zinc-600">{cartCount} item{cartCount === 1 ? '' : 's'} in cart</span>
@@ -340,7 +376,7 @@ export default function VoiceShopper({
                 status === 'listening' ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-900 border-zinc-900'}`}>
               <Icon d={status === 'listening' ? StopIcon : MicIcon} size={24} />
             </button>
-            <form className="flex-1 flex gap-2" onSubmit={(e) => { e.preventDefault(); const v = typed.trim(); if (!v) return; setTyped(''); if (session.current) { setTurns(t => [...t, { who: 'you', text: v }]); session.current.sendText(v) } else handle(v) }}>
+            <form className="flex-1 flex gap-2" onSubmit={(e) => { e.preventDefault(); const v = typed; setTyped(''); sendLine(v) }}>
               <label className="sr-only" htmlFor="voice-typed">Type what you are looking for</label>
               <input id="voice-typed" value={typed} onChange={e => setTyped(e.target.value)}
                 placeholder="or type here…"

@@ -88,3 +88,49 @@ t.eq('words for numbers', parseQty('add two please'), 2)
 t.eq('no number means one', parseQty('add it'), 1)
 t.ok('silence is handled', /did not catch/i.test(respond('', base).say))
 t.ok('help explains what to say', /show me/i.test(respond('help', base).say))
+
+// ── giving details for delivery ────────────────────────────────────────────
+import { parsePhone, parseMaxPrice } from '../storefront/src/lib/voiceShop.js'
+const t2 = suite('Voice shopping: finishing an order')
+
+// Speech recognition returns "zero two four..." far more often than digits, so
+// a digits-only reading would reject most spoken numbers.
+t2.eq('a spoken number becomes a real one', parsePhone('my number is zero two four four zero zero one one two two'), '0244001122')
+t2.eq('digits work too', parsePhone('0244001122'), '0244001122')
+t2.eq('the international form is accepted', parsePhone('233244001122'), '0244001122')
+t2.eq('a short number is refused, not guessed', parsePhone('my number is one two three'), null)
+t2.eq('a landline-looking number is refused', parsePhone('0304001122'), null)
+
+const name = respond('my name is ama mensah', base)
+t2.eq('a name is captured', name.action, { kind: 'setCheckout', field: 'name', value: 'Ama Mensah' })
+t2.ok('and the shopper is told what is still needed', /still need/.test(name.say), name.say)
+t2.eq('a phone is captured', respond('my phone is zero two four four zero zero one one two two', base).action.value, '0244001122')
+t2.ok('an unclear number asks again rather than saving rubbish',
+  respond('my number is one two', base).action === null && /say it again/i.test(respond('my number is one two', base).say))
+t2.eq('a delivery place keeps its capitals — it goes on a delivery label',
+  respond('deliver to Kasoa near the market', base).action.value, 'Kasoa near the market')
+t2.eq('"I live in" works too', respond('I live in East Legon, Accra', base).action.value, 'East Legon, Accra')
+t2.ok('with everything filled it says so',
+  /have everything/i.test(respond('what do you need', { ...base, checkout: { name: 'A', phone: '0244001122', address: 'Kasoa' } }).say))
+t2.ok('"my name is" is not treated as a product search', respond('my name is ama', base).results === null)
+
+// ── browsing like a person ─────────────────────────────────────────────────
+t2.eq('"under 300" is understood', parseMaxPrice('show me duvets under 300'), 300)
+t2.ok('and applied', respond('show me beddings under 300', base).results.every(p => p.price <= 300))
+t2.ok('nothing under the limit offers the cheapest instead',
+  /cheapest is/i.test(respond('show me beddings under 10', base).say), respond('show me beddings under 10', base).say)
+t2.ok('"what is on offer" lists only promotional items',
+  respond('what is on offer', base).results.every(p => !!promoMap[p.id]))
+t2.ok('and quotes the saving', /down to .* from /.test(respond('any black friday deals', base).say))
+t2.ok('no promotion says so plainly',
+  /no promotion/i.test(respond('what is on offer', { ...base, promoMap: {} }).say))
+t2.ok('"what do you sell" names real categories',
+  /Beddings/.test(respond('what do you sell', base).say))
+
+// ── changing your mind ─────────────────────────────────────────────────────
+const cartOne = [{ id: 'b1', name: 'Cotton Bedsheet 4pcs', price: 240, qty: 1 }]
+t2.eq('"make it three" changes the quantity',
+  respond('make it three', { ...base, cart: cartOne }).action, { kind: 'setQty', id: 'b1', qty: 3 })
+t2.ok('capped by stock', respond('make it 99', { ...base, cart: cartOne }).action.qty === 6)
+t2.ok('with two items it asks which',
+  /which item/i.test(respond('make it two', { ...base, cart: [...cartOne, { id: 'd1', name: 'Duvet', price: 450, qty: 1 }] }).say))
