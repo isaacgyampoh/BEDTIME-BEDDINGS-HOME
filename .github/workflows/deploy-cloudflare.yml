@@ -71,7 +71,28 @@ jobs:
           grep -q '/index.html' storefront/dist/_redirects
           echo "present"
 
+      # Without the two secrets wrangler cannot authenticate, and the whole run
+      # goes red on every push even though the build and the tests were fine.
+      # Check once, up front, and say plainly what is missing.
+      - name: Are the Cloudflare credentials configured?
+        id: creds
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$ACCOUNT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            missing=""
+            [ -z "$TOKEN" ] && missing="CLOUDFLARE_API_TOKEN"
+            [ -z "$ACCOUNT" ] && missing="$missing CLOUDFLARE_ACCOUNT_ID"
+            echo "::warning title=Not published::Built and verified, but nothing was deployed: repository secret(s) missing ->$missing. Add them under Settings > Secrets and variables > Actions, then re-run this workflow."
+          fi
+
       - name: Publish the POS
+        if: steps.creds.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -79,9 +100,22 @@ jobs:
           command: pages deploy dist --project-name=bedtime-admin --branch=main
 
       - name: Publish the shop front
+        if: steps.creds.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: storefront
           command: pages deploy dist --project-name=bedtime-shop --branch=main
+
+      # The deploy is only real once Pages has actually served the new build.
+      - name: Both sites answer
+        if: steps.creds.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -e
+          for url in https://bedtimehome.com/ https://admin.bedtimehome.com/; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --retry 4 --retry-delay 5 --max-time 30 "$url")
+            [ "$code" = "200" ] || { echo "::error::$url answered $code"; exit 1; }
+            echo "$url -> 200"
+          done
