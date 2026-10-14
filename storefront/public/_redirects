@@ -1,0 +1,4 @@
+# Both apps route in the browser (hash and path), so any unknown path must be
+# answered with index.html rather than a 404 — the same thing vercel.json's
+# catch-all rewrite did. Real files are served first, so /assets/* is untouched.
+/*    /index.html   200

@@ -1,0 +1,19 @@
+# Fingerprinted by Vite — the filename changes when the contents do.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The shell must be re-fetched or a deploy never reaches a till that is open
+# all day.
+/index.html
+  Cache-Control: no-cache
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# The service worker decides when everything else updates. Cached, it would
+# pin the old one in place.
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.json
+  Cache-Control: no-cache

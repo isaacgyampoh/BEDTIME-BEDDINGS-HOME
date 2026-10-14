@@ -1,0 +1,7 @@
+# Cloudflare Pages — the staff POS at admin.bedtimehome.com.
+# Build command and root directory are set by the deploy workflow
+# (.github/workflows/deploy-cloudflare.yml), not here; this file names the
+# project and says where the built site lands.
+name = "bedtime-admin"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-10-14"

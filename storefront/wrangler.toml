@@ -1,0 +1,4 @@
+# Cloudflare Pages — the customer shop at www.bedtimehome.com.
+name = "bedtime-shop"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-10-14"
