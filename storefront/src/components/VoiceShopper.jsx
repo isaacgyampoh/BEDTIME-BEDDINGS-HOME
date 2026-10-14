@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { respond } from '../lib/voiceShop'
 import { startRealtime, realtimeSupported } from '../lib/realtime'
 import { runTool } from '../lib/voiceTools'
+import { SpeechRecognitionAPI } from '../lib/speech'
 
 const TOKEN_URL = `${import.meta.env.VITE_SUPABASE_URL || 'https://wqkgfvmvuljzexhevlnp.supabase.co'}/functions/v1/super-service?action=realtime-token`
 
@@ -21,8 +22,7 @@ const TOKEN_URL = `${import.meta.env.VITE_SUPABASE_URL || 'https://wqkgfvmvuljze
  * way in, never the only one.
  */
 
-const SR = typeof window !== 'undefined' ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null
-export const voiceSupported = () => !!SR
+const SR = SpeechRecognitionAPI
 
 const money = (n) => `GHS ${Number(n || 0).toFixed(2)}`
 

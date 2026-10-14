@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, rpcOrNull } from './lib/supabase'
-import VoiceShopper, { voiceSupported } from './components/VoiceShopper'
+import VoiceShopper from './components/VoiceShopper'
+import { voiceSupported } from './lib/speech'
 import { priceCart } from './lib/pricing'
 import { buildPromoMap, discountPct, promoHeading as headingFor, promoEndsAt as endsAtFor, promoFirst, orderPromoFirst } from './lib/promo'
 import { money, thumb, SHOP, PAYMENTS_ENABLED, EDGE_URL } from './lib/utils'
