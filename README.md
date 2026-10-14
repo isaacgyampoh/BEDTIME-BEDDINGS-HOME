@@ -1,13 +1,13 @@
 # BEDTIME BEDDINGS & HOME — POS
 
 Staff point-of-sale for BEDTIME BEDDINGS & HOME.
-React + Supabase (PostgreSQL) + Vercel, with mobile-money payments and SMS reports.
+React + Supabase (PostgreSQL) + Cloudflare Pages, with mobile-money payments and SMS reports.
 
 ## Tech Stack
 - **Frontend**: React 18 + Vite 7 + Tailwind CSS + Zustand
 - **Database**: Supabase (PostgreSQL, Row Level Security)
 - **Backend**: Supabase Edge Functions (Deno) + PL/pgSQL RPCs
-- **Hosting**: Vercel
+- **Hosting**: Cloudflare Pages (`bedtime-admin` for the POS, `bedtime-shop` for the shop front)
 - **Payments**: NaloPay (MoMo prompt + USSD), Paystack, Moolre
 - **SMS**: mNotify / Arkesel via Edge Functions + pg_cron
 
@@ -71,8 +71,10 @@ Point the Paystack webhook at `https://<ref>.supabase.co/functions/v1/paystack-w
 ```bash
 npm install
 npm run build
-vercel
 ```
+Publishing is done by `.github/workflows/deploy-cloudflare.yml` on every push to
+`main`, once `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` exist as
+repository secrets. To publish by hand instead: `./scripts/go-live.sh cloudflare`.
 
 ### 6. First login
 Open the deployed URL and enter a staff PIN. PINs are managed in **Staff &
