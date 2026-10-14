@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase, rpcOrNull } from './lib/supabase'
 import VoiceShopper, { voiceSupported } from './components/VoiceShopper'
+import { priceCart } from './lib/pricing'
 import { buildPromoMap, discountPct, promoHeading as headingFor, promoEndsAt as endsAtFor, promoFirst, orderPromoFirst } from './lib/promo'
 import { money, thumb, SHOP, PAYMENTS_ENABLED, EDGE_URL } from './lib/utils'
 
@@ -279,29 +280,10 @@ export default function App() {
   const gp = p => promoMap[p.id] ? promoMap[p.id].price : Number(p.price)
 
   // Recalculate wholesale across category — if total qty in same category >= wholesale min, all get wholesale price
-  const recalcWholesale = (cartItems, allProducts, promos) => {
-    // Group cart items by category
-    const catTotals = {}
-    cartItems.forEach(c => {
-      if (!c.category) return
-      catTotals[c.category] = (catTotals[c.category] || 0) + c.qty
-    })
+  // One definition of what a line costs, shared with the order total the
+  // database recomputes (migration 047). See lib/pricing.js.
+  const recalcWholesale = (cartItems, _allProducts, promos) => priceCart(cartItems, promos)
 
-    return cartItems.map(c => {
-      const hasPromo = promos[c.id]
-      if (hasPromo) return { ...c, price: hasPromo.price, isWholesale: false } // Promo takes priority
-
-      const wp = Number(c.wp || 0)
-      const wm = Number(c.wm || 0)
-      if (wp <= 0 || wm <= 0) return { ...c, price: c.retailPrice, isWholesale: false }
-
-      // Check if total qty in this category reaches wholesale minimum
-      const categoryTotal = catTotals[c.category] || 0
-      const useWholesale = categoryTotal >= wm
-
-      return { ...c, price: useWholesale ? wp : c.retailPrice, isWholesale: useWholesale }
-    })
-  }
 
   // Share product
   const shareProduct = (p) => {
