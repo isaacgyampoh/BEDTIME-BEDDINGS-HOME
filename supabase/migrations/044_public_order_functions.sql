@@ -15,14 +15,32 @@
 -- 40 orders — names, phone numbers, home addresses.
 --
 -- Each of those pages only ever needs ONE order, and it already knows which:
--- the id is a v4 UUID in the link, which is unguessable, exactly like a
--- password-reset link. So the access moves from "anon may read the table" to
+-- the id is in the link. So the access moves from "anon may read the table" to
 -- "anon may ask about the order whose id it already holds".
+--
+-- Worth being exact about how strong that is. `id` is TEXT, not a uuid —
+-- 001 defaults it to short_id(), the first 8 hex characters of a v4 uuid, so
+-- about 4.3 billion values. That is not a password-grade secret: it is one
+-- order per correct guess, over HTTPS, against Supabase's rate limits, instead
+-- of the whole table in a single request. The remaining exposure is one
+-- guessed order, not 40 of them, and closing it further means changing the id
+-- of every order and every link already sent to a customer.
 --
 -- Every function below is SECURITY DEFINER with a pinned search_path, returns
 -- only the columns the page renders, and refuses to touch `status` except
 -- where a payment has already been confirmed by the signed webhook.
 -- ---------------------------------------------------------------------------
+
+-- 0. Two columns this function writes exist in production but are created by no
+--    migration in this repository: `source` and `details_filled` were added
+--    straight to the database. Ten places in the application read or write
+--    them, so production has them; a database rebuilt from this history does
+--    not, and public_order_create fails with
+--      column "source" of relation "whatsapp_orders" does not exist
+--    Found by replaying 001-041 locally and calling the function. IF NOT
+--    EXISTS makes this a no-op against production and a repair anywhere else.
+ALTER TABLE whatsapp_orders ADD COLUMN IF NOT EXISTS source         TEXT;
+ALTER TABLE whatsapp_orders ADD COLUMN IF NOT EXISTS details_filled BOOLEAN DEFAULT false;
 
 -- 1. Place an order. Returns only what checkout needs. Previously an INSERT
 --    ... .select('id,ussd_code'), which required SELECT on the whole table.
@@ -65,7 +83,7 @@ $$;
 
 -- 2. Read one order by its id. The pay page and the delivery page both render
 --    this; the shop's success screen polls it for `status`.
-CREATE OR REPLACE FUNCTION public_order_get(p_id UUID)
+CREATE OR REPLACE FUNCTION public_order_get(p_id TEXT)
 RETURNS JSONB
 LANGUAGE sql
 STABLE
@@ -84,7 +102,7 @@ $$;
 --    Refused once the order is settled, so a stale link cannot rewrite the
 --    address of an order already out for delivery.
 CREATE OR REPLACE FUNCTION public_order_save_details(
-  p_id UUID, p_name TEXT, p_phone TEXT, p_address TEXT, p_notes TEXT)
+  p_id TEXT, p_name TEXT, p_phone TEXT, p_address TEXT, p_notes TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -114,7 +132,7 @@ $$;
 -- 4. Record which gateway reference came back. Deliberately cannot set
 --    `status` — that belongs to the signed webhook and the reconcile job, or
 --    anyone could mark an order Paid with ?reference=anything in the URL.
-CREATE OR REPLACE FUNCTION public_order_set_ref(p_id UUID, p_ref TEXT)
+CREATE OR REPLACE FUNCTION public_order_set_ref(p_id TEXT, p_ref TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -136,7 +154,7 @@ $$;
 --    money already landed" rule used to live in the browser, where the page
 --    that enforced it was the page anyone could open. It is enforced here now.
 CREATE OR REPLACE FUNCTION public_order_confirm_delivery(
-  p_id UUID, p_guy TEXT, p_notes TEXT)
+  p_id TEXT, p_guy TEXT, p_notes TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -206,17 +224,17 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION public_order_create(JSONB) FROM public;
-REVOKE ALL ON FUNCTION public_order_get(UUID) FROM public;
-REVOKE ALL ON FUNCTION public_order_save_details(UUID, TEXT, TEXT, TEXT, TEXT) FROM public;
-REVOKE ALL ON FUNCTION public_order_set_ref(UUID, TEXT) FROM public;
-REVOKE ALL ON FUNCTION public_order_confirm_delivery(UUID, TEXT, TEXT) FROM public;
+REVOKE ALL ON FUNCTION public_order_get(TEXT) FROM public;
+REVOKE ALL ON FUNCTION public_order_save_details(TEXT, TEXT, TEXT, TEXT, TEXT) FROM public;
+REVOKE ALL ON FUNCTION public_order_set_ref(TEXT, TEXT) FROM public;
+REVOKE ALL ON FUNCTION public_order_confirm_delivery(TEXT, TEXT, TEXT) FROM public;
 REVOKE ALL ON FUNCTION public_order_track(TEXT) FROM public;
 
 GRANT EXECUTE ON FUNCTION public_order_create(JSONB) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public_order_get(UUID) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public_order_save_details(UUID, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public_order_set_ref(UUID, TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public_order_confirm_delivery(UUID, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public_order_get(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public_order_save_details(TEXT, TEXT, TEXT, TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public_order_set_ref(TEXT, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public_order_confirm_delivery(TEXT, TEXT, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public_order_track(TEXT) TO anon, authenticated;
 
 -- Now the table itself closes. Staff keep full access through their session;

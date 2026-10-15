@@ -75,3 +75,65 @@ DROP POLICY IF EXISTS social_posts_upd ON social_posts;
 CREATE POLICY social_posts_sel ON social_posts FOR SELECT TO authenticated USING (true);
 CREATE POLICY social_posts_ins ON social_posts FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY social_posts_upd ON social_posts FOR UPDATE TO authenticated USING (true);
+
+-- ---------------------------------------------------------------------------
+-- The policies 016 created in a loop, which the drops above miss entirely.
+--
+-- 016 (line 280) ran
+--     FOREACH t IN ARRAY ARRAY['products','expenses','bundles','promos','invoices']
+--        CREATE POLICY <t>_sel ON <t> FOR SELECT TO anon, authenticated USING (true)
+--        CREATE POLICY <t>_ins ...  CREATE POLICY <t>_upd ...
+-- so each of those five tables carries a SECOND set of policies under short
+-- names. Permissive policies combine with OR, so dropping only
+-- `expenses_select` and creating `expenses_select TO authenticated` leaves
+-- `expenses_sel TO anon` standing and the expense ledger just as readable as
+-- before. Verified by replaying 001-041 into a local database: products and
+-- expenses each end up with six policies, not three.
+--
+-- promos matters most. 047 prices every web order from the live `promos` rows.
+-- With `promos_ins` open to anon, anyone could insert a promotion setting a
+-- 450-cedi duvet to 1 cedi, and 047 would price the order at 1 cedi and agree
+-- with itself all the way to the receipt and the day's takings.
+--
+-- bundles and promos keep SELECT open to anon: the shop front renders both.
+-- invoices are supplier records and only InvoicesPage.jsx touches them.
+-- ---------------------------------------------------------------------------
+
+-- Expenses: close the duplicate set too, or nothing above took effect.
+DROP POLICY IF EXISTS expenses_sel ON expenses;
+DROP POLICY IF EXISTS expenses_ins ON expenses;
+DROP POLICY IF EXISTS expenses_upd ON expenses;
+
+-- Products: writes become staff-only. Exactly one SELECT policy is left, open,
+-- so the catalogue keeps loading for a shopper with no session.
+DROP POLICY IF EXISTS products_ins ON products;
+DROP POLICY IF EXISTS products_upd ON products;
+DROP POLICY IF EXISTS products_sel ON products;
+DROP POLICY IF EXISTS products_select ON products;
+CREATE POLICY products_select ON products FOR SELECT TO anon, authenticated USING (true);
+
+-- Bundles and promos: read by the shop, written only by staff.
+DROP POLICY IF EXISTS bundles_ins    ON bundles;
+DROP POLICY IF EXISTS bundles_upd    ON bundles;
+DROP POLICY IF EXISTS bundles_insert ON bundles;
+DROP POLICY IF EXISTS bundles_update ON bundles;
+CREATE POLICY bundles_insert ON bundles FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY bundles_update ON bundles FOR UPDATE TO authenticated USING (true);
+
+DROP POLICY IF EXISTS promos_ins    ON promos;
+DROP POLICY IF EXISTS promos_upd    ON promos;
+DROP POLICY IF EXISTS promos_insert ON promos;
+DROP POLICY IF EXISTS promos_update ON promos;
+CREATE POLICY promos_insert ON promos FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY promos_update ON promos FOR UPDATE TO authenticated USING (true);
+
+-- Invoices: supplier records, admin surface only.
+DROP POLICY IF EXISTS invoices_sel    ON invoices;
+DROP POLICY IF EXISTS invoices_ins    ON invoices;
+DROP POLICY IF EXISTS invoices_upd    ON invoices;
+DROP POLICY IF EXISTS invoices_select ON invoices;
+DROP POLICY IF EXISTS invoices_insert ON invoices;
+DROP POLICY IF EXISTS invoices_update ON invoices;
+CREATE POLICY invoices_select ON invoices FOR SELECT TO authenticated USING (true);
+CREATE POLICY invoices_insert ON invoices FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY invoices_update ON invoices FOR UPDATE TO authenticated USING (true);
