@@ -1,5 +1,5 @@
 import { suite } from './harness.mjs'
-import { matchProducts, toItem, applyPercent, applyFixed, validate, summarise, round2 } from '../src/lib/promoBuilder.js'
+import { matchProducts, toItem, applyPercent, applyFixed, validate, summarise, round2, groupProducts, commonName } from '../src/lib/promoBuilder.js'
 const t = suite('Admin: building a promotion')
 
 // The shop really does sell one bedsheet in forty colours, each its own row.
@@ -98,3 +98,39 @@ t.ok('a category search still reads the name', matchProducts(products, { query: 
   t.eq('nothing priced yet claims no saving', none.maxPct, 0)
   t.eq('an empty promotion counts nothing', summarise([]).count, 0)
 }
+
+// ── forty colours are one row, not forty ───────────────────────────────────
+// Products.jsx already asks the shop to tag every colour of a product with the
+// same variant group, so that five across colours trigger wholesale. The promo
+// picker reads the same tag: one row, one button, forty products.
+{
+  const tagged = sheets.map(s => ({ ...s, groupTag: 'double-bedsheet-2-cases' }))
+  const rows = groupProducts([...tagged,
+    { id: 'd1', name: 'Satin Duvet Set', category: 'Duvets', price: 450, groupTag: '' },
+    { id: 'p1', name: 'Memory Pillow', category: 'Pillows', price: 90 }])
+  t.eq('forty variants and two singles make three rows', rows.length, 3)
+  t.eq('the group holds all forty', rows[0].items.length, 40)
+  t.eq('and is named by what they share', rows[0].label, '1 Double Bedsheet with 2 pillow cases')
+  t.eq('an untagged product is its own row', rows[1].items.length, 1)
+  t.eq('named as itself', rows[1].label, 'Satin Duvet Set')
+  t.ok('a group keeps its tag', rows[0].tag === 'double-bedsheet-2-cases')
+  t.eq('and the row appears where its first member did', rows[0].key, 'g:double-bedsheet-2-cases')
+
+  // Variants at different prices show the range rather than claiming one.
+  const mixed = groupProducts([
+    { id: 'x1', name: 'Curtain (blue)', price: 120, groupTag: 'curtain' },
+    { id: 'x2', name: 'Curtain (gold)', price: 180, groupTag: 'curtain' }])
+  t.eq('a group spanning prices reports the floor', mixed[0].priceFrom, 120)
+  t.eq('and the ceiling', mixed[0].priceTo, 180)
+
+  t.eq('no products, no rows', groupProducts([]).length, 0)
+}
+
+// ── naming a group from its members ────────────────────────────────────────
+t.eq('the shared opening is the name',
+  commonName(['Sunblock Curtain (color 1)', 'Sunblock Curtain (color 2)']), 'Sunblock Curtain')
+t.eq('a dangling bracket is dropped',
+  commonName(['Sheet (color 1)', 'Sheet (color 2)']), 'Sheet')
+t.eq('one name is its own name', commonName(['Only One']), 'Only One')
+t.eq('nothing shared gives nothing', commonName(['Duvet', 'Pillow']), '')
+t.eq('too little shared gives nothing', commonName(['A blue', 'A gold']), '')

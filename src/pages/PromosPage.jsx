@@ -5,11 +5,18 @@ import { money, num, fmtDate, today } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 import { adminDelete } from '../lib/adminActions'
-import { matchProducts, toItem, applyPercent, applyFixed, validate, summarise } from '../lib/promoBuilder'
+import { matchProducts, toItem, applyPercent, applyFixed, validate, summarise, groupProducts } from '../lib/promoBuilder'
 
 /** Matches shown at once. The shop has 652 products; the list is for picking
  *  from, not for reading, and "Add all" does not care how many are drawn. */
 const PICK_MAX = 60
+
+/** A product's picture. For "(color 31)" it is the only way to tell them apart. */
+function Thumb({ src }) {
+  if (!src) return <span className="w-9 h-9 shrink-0 rounded-lg bg-gray-100" />
+  return <img src={src} alt="" loading="lazy" className="w-9 h-9 shrink-0 rounded-lg object-cover bg-gray-100"
+    onError={e => { e.target.style.visibility = 'hidden' }} />
+}
 
 export default function PromosPage() {
   const { promos, bundles, products, refreshPromos, refreshBundles, setLoading } = useStore()
@@ -41,10 +48,36 @@ export default function PromosPage() {
   const chosen = useMemo(() => new Set(form.items.map(i => i.productId)), [form.items])
   const matches = useMemo(() => matchProducts(products, pick), [products, pick])
   const unchosen = useMemo(() => matches.filter(p => !chosen.has(p.id)), [matches, chosen])
+  // Forty colours of one bedsheet are one row here, because that is how the
+  // shop already tags them for wholesale pricing.
+  const rows = useMemo(() => groupProducts(matches), [matches])
+  const picked = useMemo(() => summarise(form.items), [form.items])
+  // Forty lines reading "1 Double Bedsheet with 2 pillow ca…" tell nobody
+  // anything. The chosen side groups exactly as the picker does, with one
+  // price box for the set, and opens if a colour needs its own price.
+  const chosenRows = useMemo(() => {
+    const prods = form.items.map(i => products.find(p => p.id === i.productId)).filter(Boolean)
+    return groupProducts(prods).map(row => {
+      const lines = row.items.map(p => form.items.find(i => i.productId === p.id)).filter(Boolean)
+      const prices = [...new Set(lines.map(l => String(l.promoPrice ?? '')))]
+      return { ...row, lines, price: prices.length === 1 ? prices[0] : '', mixed: prices.length > 1 }
+    })
+  }, [form.items, products])
+  const [openRows, setOpenRows] = useState(() => new Set())
+  const setRowPrice = (row, value) =>
+    setForm(f => ({ ...f, items: f.items.map(i =>
+      row.items.some(p => p.id === i.productId) ? { ...i, promoPrice: value } : i) }))
+  const removeRow = (row) => setForm(f => ({ ...f, items: f.items.filter(i => !row.items.some(p => p.id === i.productId)) }))
 
-  const togglePromoItem = (prod) => setForm(f => chosen.has(prod.id)
-    ? { ...f, items: f.items.filter(i => i.productId !== prod.id) }
-    : { ...f, items: [...f.items, toItem(prod)] })
+  // A row is a product or a whole variant group; tapping it takes the lot in
+  // or out, which is the difference between one tap and forty.
+  const toggleRow = (row) => setForm(f => {
+    const ids = new Set(row.items.map(p => p.id))
+    const already = row.items.every(p => chosen.has(p.id))
+    return already
+      ? { ...f, items: f.items.filter(i => !ids.has(i.productId)) }
+      : { ...f, items: [...f.items, ...row.items.filter(p => !chosen.has(p.id)).map(toItem)] }
+  })
   // The whole point: forty colours of one bedsheet go in with one tap.
   const addAllMatching = () => setForm(f => ({ ...f, items: [...f.items, ...unchosen.map(toItem)] }))
   const applyBulkPct = () => { setForm(f => ({ ...f, items: applyPercent(f.items, bulk.pct) })); setBulk(b => ({ ...b, pct: '' })) }
@@ -173,96 +206,149 @@ export default function PromosPage() {
       )}
 
       {/* Promo Modal */}
-      <Modal open={modal} onClose={() => setModal(false)} title={form.id ? 'Edit Promo' : 'New Promo'}
+      <Modal open={modal} wide onClose={() => setModal(false)} title={form.id ? 'Edit Promo' : 'New Promo'}
         footer={<><button onClick={() => setModal(false)} className="h-11 px-5 border border-stone-300 rounded-xl text-sm font-semibold text-stone-600">Cancel</button><button onClick={savePromo} className="flex-1 h-11 bg-gray-700 text-white rounded-xl text-sm font-bold">Save</button></>}>
         <div className="space-y-4">
-          <input className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Promo name" />
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs font-semibold text-gray-500 mb-1">Start</label><input type="date" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} /></div>
-            <div><label className="block text-xs font-semibold text-gray-500 mb-1">End</label><input type="date" className="w-full h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} /></div>
-          </div>
-          {/* ── Pick the products ───────────────────────────────────────
-              One bedsheet in forty colours is forty products. Searching once
-              and adding everything that matches is the difference between a
-              minute and a quarter of an hour. */}
-          <div className="border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex gap-2 p-2.5 bg-gray-50 border-b border-gray-200">
-              <input
-                className="flex-1 h-10 px-3 bg-white border border-gray-200 rounded-lg text-sm"
-                placeholder="Search products, e.g. bedsheet"
-                value={pick.query}
-                onChange={e => setPick({ ...pick, query: e.target.value })} />
-              <select
-                className="h-10 px-2 bg-white border border-gray-200 rounded-lg text-sm max-w-[9rem]"
-                value={pick.category}
-                onChange={e => setPick({ ...pick, category: e.target.value })}>
-                <option value="all">All categories</option>
-                {cats.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-
-            <div className="flex items-center justify-between px-3 py-2 text-xs border-b border-gray-100">
-              <span className="text-gray-500">
-                {matches.length} match{matches.length === 1 ? '' : 'es'}
-                {matches.length > PICK_MAX && <span className="text-gray-400"> · showing {PICK_MAX}</span>}
-              </span>
-              <button type="button" onClick={addAllMatching} disabled={!unchosen.length}
-                className="h-7 px-3 rounded-lg text-xs font-bold bg-gray-800 text-white disabled:opacity-30">
-                Add all {unchosen.length || ''}
-              </button>
-            </div>
-
-            <div className="max-h-44 overflow-y-auto">
-              {matches.length === 0 && <div className="text-center text-gray-400 py-6 text-sm">Nothing matches that</div>}
-              {matches.slice(0, PICK_MAX).map(p => {
-                const on = chosen.has(p.id)
-                return (
-                  <button type="button" key={p.id} onClick={() => togglePromoItem(p)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-left border-b border-gray-50 last:border-0 ${on ? 'bg-gray-50' : 'hover:bg-gray-50'}`}>
-                    <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${on ? 'bg-gray-800 border-gray-800 text-white' : 'border-gray-300'}`}>{on ? '✓' : ''}</span>
-                    <span className="flex-1 text-sm truncate">{p.name}</span>
-                    <span className="text-xs text-gray-400 shrink-0">{money(p.price)}</span>
-                  </button>
-                )
-              })}
-            </div>
+          <div className="grid md:grid-cols-[1fr_auto_auto] gap-3">
+            <input className="h-12 px-4 bg-gray-50 border border-gray-200 rounded-xl text-sm" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Promo name" />
+            <div><label className="block text-[11px] font-semibold text-gray-500 mb-1">Start</label><input type="date" className="h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl text-sm" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} /></div>
+            <div><label className="block text-[11px] font-semibold text-gray-500 mb-1">End</label><input type="date" className="h-10 px-3 bg-gray-50 border border-gray-200 rounded-xl text-sm" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} /></div>
           </div>
 
-          {/* ── Price them, all at once ─────────────────────────────────── */}
-          {form.items.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
-              <span className="text-xs font-bold text-gray-600 mr-auto">{form.items.length} selected</span>
-              <div className="flex items-center gap-1">
-                <input type="number" min="1" max="99" placeholder="20" value={bulk.pct}
-                  onChange={e => setBulk({ ...bulk, pct: e.target.value })}
-                  className="w-14 h-9 px-2 text-center bg-white border border-gray-200 rounded-lg text-sm" />
-                <button type="button" onClick={applyBulkPct} disabled={!num(bulk.pct)}
-                  className="h-9 px-3 rounded-lg text-xs font-bold bg-white border border-gray-300 disabled:opacity-30">% off all</button>
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* ── Choose ─────────────────────────────────────────────────
+                A bedsheet sold in forty colours is one row with one button.
+                The picture is how a colour is actually told apart; the name
+                only says "(color 31)". */}
+            <div className="border border-gray-200 rounded-xl flex flex-col overflow-hidden">
+              <div className="flex gap-2 p-2.5 bg-gray-50 border-b border-gray-200">
+                <input
+                  className="flex-1 min-w-0 h-10 px-3 bg-white border border-gray-200 rounded-lg text-sm"
+                  placeholder="Search products, e.g. bedsheet"
+                  value={pick.query}
+                  onChange={e => setPick({ ...pick, query: e.target.value })} />
+                <select
+                  className="h-10 px-2 bg-white border border-gray-200 rounded-lg text-sm max-w-[8rem]"
+                  value={pick.category}
+                  onChange={e => setPick({ ...pick, category: e.target.value })}>
+                  <option value="all">All</option>
+                  {cats.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
-              <div className="flex items-center gap-1">
-                <input type="number" min="0" placeholder="75" value={bulk.price}
-                  onChange={e => setBulk({ ...bulk, price: e.target.value })}
-                  className="w-16 h-9 px-2 text-center bg-white border border-gray-200 rounded-lg text-sm" />
-                <button type="button" onClick={applyBulkPrice} disabled={!num(bulk.price)}
-                  className="h-9 px-3 rounded-lg text-xs font-bold bg-white border border-gray-300 disabled:opacity-30">Set all to</button>
-              </div>
-              <button type="button" onClick={() => setForm({ ...form, items: [] })}
-                className="h-9 px-3 rounded-lg text-xs font-semibold text-red-500 hover:bg-red-50">Clear</button>
-            </div>
-          )}
 
-          {/* ── What is in it, and for how much ─────────────────────────── */}
-          <div className="bg-gray-50 rounded-xl p-3 min-h-[60px] max-h-56 overflow-y-auto">
-            {form.items.length === 0 ? <div className="text-center text-gray-400 py-5 text-sm">No products yet — search above</div> : form.items.map((it, i) => (
-              <div key={it.productId} className="flex items-center gap-2 p-2.5 bg-white rounded-lg mb-2">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold truncate">{it.name}</div>
-                  <div className="text-xs text-gray-400">Was: {money(it.originalPrice)}</div>
+              <div className="flex items-center justify-between px-3 py-2 text-xs border-b border-gray-100">
+                <span className="text-gray-500">
+                  {matches.length} match{matches.length === 1 ? '' : 'es'}
+                  {rows.length !== matches.length && <span className="text-gray-400"> in {rows.length} row{rows.length === 1 ? '' : 's'}</span>}
+                </span>
+                <button type="button" onClick={addAllMatching} disabled={!unchosen.length}
+                  className="h-7 px-3 rounded-lg text-xs font-bold bg-gray-800 text-white disabled:opacity-30">
+                  {unchosen.length < matches.length ? 'Add remaining' : 'Add all'} {unchosen.length || ''}
+                </button>
+              </div>
+
+              <div className="overflow-y-auto" style={{ maxHeight: '19rem' }}>
+                {rows.length === 0 && <div className="text-center text-gray-400 py-8 text-sm">Nothing matches that</div>}
+                {rows.slice(0, PICK_MAX).map(row => {
+                  const all = row.items.every(p => chosen.has(p.id))
+                  const some = !all && row.items.some(p => chosen.has(p.id))
+                  const n = row.items.length
+                  return (
+                    <button type="button" key={row.key} onClick={() => toggleRow(row)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left border-b border-gray-50 last:border-0 transition ${all ? 'bg-gray-50' : 'hover:bg-gray-50'}`}>
+                      <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center text-[10px] ${all ? 'bg-gray-800 border-gray-800 text-white' : some ? 'bg-gray-300 border-gray-400 text-white' : 'border-gray-300'}`}>{all ? '✓' : some ? '–' : ''}</span>
+                      <Thumb src={row.image} />
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-sm truncate">{row.label}</span>
+                        <span className="block text-[11px] text-gray-400">
+                          {n > 1 && <>{n} variants · </>}
+                          {row.priceFrom === row.priceTo ? money(row.priceFrom) : `${money(row.priceFrom)}–${money(row.priceTo)}`}
+                        </span>
+                      </span>
+                      {n > 1 && <span className="shrink-0 text-[11px] font-bold text-gray-500">{all ? 'Added' : `Add ${n}`}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* ── In the promotion ───────────────────────────────────────── */}
+            <div className="border border-gray-200 rounded-xl flex flex-col overflow-hidden">
+              <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-gray-600 truncate">
+                  {form.items.length === 0 ? 'Nothing added yet' : <>
+                    {form.items.length} selected
+                    {picked.count > 0 && picked.uniform && <> · <s className="text-gray-400 font-normal">{money(picked.from)}</s> {money(picked.to)}</>}
+                    {picked.maxPct > 0 && <> · {picked.maxPct}% off</>}
+                  </>}
+                </span>
+                {form.items.length > 0 && <button type="button" onClick={() => setForm({ ...form, items: [] })}
+                  className="shrink-0 h-7 px-2 rounded-lg text-[11px] font-semibold text-red-500 hover:bg-red-50">Clear</button>}
+              </div>
+
+              {form.items.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-gray-100">
+                  <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide w-full">Price them together</span>
+                  <div className="flex items-center gap-1">
+                    <input type="number" min="1" max="99" placeholder="20" value={bulk.pct}
+                      onChange={e => setBulk({ ...bulk, pct: e.target.value })}
+                      className="w-14 h-9 px-2 text-center bg-white border border-gray-200 rounded-lg text-sm" />
+                    <button type="button" onClick={applyBulkPct} disabled={!num(bulk.pct)}
+                      className="h-9 px-3 rounded-lg text-xs font-bold bg-white border border-gray-300 disabled:opacity-30">% off all</button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input type="number" min="0" placeholder="75" value={bulk.price}
+                      onChange={e => setBulk({ ...bulk, price: e.target.value })}
+                      className="w-16 h-9 px-2 text-center bg-white border border-gray-200 rounded-lg text-sm" />
+                    <button type="button" onClick={applyBulkPrice} disabled={!num(bulk.price)}
+                      className="h-9 px-3 rounded-lg text-xs font-bold bg-white border border-gray-300 disabled:opacity-30">Set all to</button>
+                  </div>
                 </div>
-                <input type="number" className="w-20 h-8 px-2 text-center border border-gray-300 rounded-lg text-sm font-bold text-gray-700" placeholder="Price" value={it.promoPrice} onChange={e => { const items = [...form.items]; items[i].promoPrice = e.target.value; setForm({ ...form, items }) }} />
-                <button onClick={() => { const items = [...form.items]; items.splice(i, 1); setForm({ ...form, items }) }} className="w-7 h-7 bg-red-50 text-red-500 rounded-md text-xs flex items-center justify-center">✕</button>
+              )}
+
+              <div className="overflow-y-auto flex-1" style={{ maxHeight: '15rem' }}>
+                {form.items.length === 0
+                  ? <div className="text-center text-gray-400 py-10 text-sm px-4">Search on the left, then add a product or a whole set of colours</div>
+                  : chosenRows.map(row => {
+                    const many = row.lines.length > 1
+                    const open = openRows.has(row.key)
+                    return (
+                      <div key={row.key} className="border-b border-gray-50 last:border-0">
+                        <div className="flex items-center gap-2 px-3 py-2">
+                          <Thumb src={row.image} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm truncate">{row.label}</div>
+                            <div className="text-[11px] text-gray-400">
+                              {many && <>{row.lines.length} variants · </>}
+                              Was {row.priceFrom === row.priceTo ? money(row.priceFrom) : `${money(row.priceFrom)}–${money(row.priceTo)}`}
+                              {many && <button onClick={() => setOpenRows(prev => { const n = new Set(prev); n.has(row.key) ? n.delete(row.key) : n.add(row.key); return n })}
+                                className="ml-2 text-gray-500 hover:text-gray-700 font-semibold">{open ? 'Hide' : 'Price each'}</button>}
+                            </div>
+                          </div>
+                          <input type="number" className="w-20 h-9 px-2 text-center border border-gray-300 rounded-lg text-sm font-bold text-gray-700"
+                            placeholder={row.mixed ? 'Mixed' : 'Price'} value={row.price}
+                            onChange={e => setRowPrice(row, e.target.value)} />
+                          <button onClick={() => removeRow(row)} aria-label="Remove"
+                            className="w-7 h-7 shrink-0 bg-red-50 text-red-500 rounded-md text-xs flex items-center justify-center">✕</button>
+                        </div>
+                        {many && open && row.lines.map(line => {
+                          const i = form.items.findIndex(x => x.productId === line.productId)
+                          return (
+                            <div key={line.productId} className="flex items-center gap-2 pl-12 pr-3 py-1.5 bg-gray-50/60">
+                              <span className="flex-1 min-w-0 text-[12px] text-gray-600 truncate">{line.name}</span>
+                              <input type="number" className="w-20 h-8 px-2 text-center border border-gray-200 rounded-lg text-[13px]"
+                                placeholder="Price" value={line.promoPrice}
+                                onChange={e => { const items = [...form.items]; items[i].promoPrice = e.target.value; setForm({ ...form, items }) }} />
+                              <button onClick={() => { const items = [...form.items]; items.splice(i, 1); setForm({ ...form, items }) }}
+                                className="w-6 h-6 shrink-0 text-gray-400 hover:text-red-500 text-xs">✕</button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })}
               </div>
-            ))}
+            </div>
           </div>
 
           {/* Said before the Save button is pressed, not after. */}
