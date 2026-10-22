@@ -65,10 +65,56 @@ export function promoHeading(promos) {
 /**
  * The moment the countdown should reach zero: the END of the last day, not its
  * midnight start, because the last day is a trading day like any other.
+ *
+ * The offset is written out. Without it `new Date()` reads the string in the
+ * viewer's own timezone, so a customer in London saw the sale end an hour early
+ * and one in New York saw five hours that were not there. The shop trades in
+ * Ghana, which is UTC+0 all year, so that is the clock the countdown runs on
+ * wherever it is being watched from.
  */
 export function promoEndsAt(promos) {
   const ends = (promos || []).map(p => (p?.end_date || '').slice(0, 10)).filter(Boolean).sort()
-  return ends.length ? `${ends[ends.length - 1]}T23:59:59` : null
+  return ends.length ? `${ends[ends.length - 1]}T23:59:59+00:00` : null
+}
+
+/**
+ * What the promotion is worth, for the line under the heading.
+ *
+ * `count` is how many products are in it, `maxPct` the biggest saving, and
+ * `totalSaved` what a shopper would keep by taking one of each — the figure
+ * that makes "12 items" mean something.
+ */
+export function promoSavings(products, map) {
+  let count = 0, maxPct = 0, totalSaved = 0
+  for (const p of products || []) {
+    const promo = map?.[p.id]
+    if (!promo) continue
+    const was = Number(p.price), now = Number(promo.price)
+    count++
+    maxPct = Math.max(maxPct, discountPct(was, now))
+    if (was > now) totalSaved += was - now
+  }
+  return { count, maxPct, totalSaved: Math.round(totalSaved * 100) / 100 }
+}
+
+/**
+ * Has the promotion finished while the page sat open?
+ *
+ * A tab left open overnight keeps rendering yesterday's prices, because the
+ * promos are read once on load. The customer adds a 300-cedi duvet, and
+ * public_order_create reprices it at 450 and refuses the order with "prices
+ * have changed" — correct, and baffling to someone looking at a 300 label.
+ * The countdown already knows the moment it ends; this is what it reports.
+ */
+export function isPromoOver(endsAt, now = Date.now()) {
+  if (!endsAt) return false
+  const t = new Date(endsAt).getTime()
+  return Number.isFinite(t) && t <= now
+}
+
+/** Only the products in a live promo, in the order the section shows them. */
+export function promoIds(products, map) {
+  return new Set((products || []).filter(p => map?.[p.id]).map(p => p.id))
 }
 
 /** Only the products in a live promo, biggest saving first. */

@@ -1,6 +1,7 @@
 import { suite } from './harness.mjs'
 import {
   isLive, buildPromoMap, discountPct, promoHeading, promoEndsAt, promoFirst, orderPromoFirst,
+  promoSavings, isPromoOver, promoIds,
 } from '../storefront/src/lib/promo.js'
 const t = suite('Shop front: Black Friday promotion')
 
@@ -60,8 +61,8 @@ t.eq('two promos get a neutral heading', promoHeading([bf, { name: 'Clearance' }
 t.eq('no promo, no heading to show', promoHeading([]), 'Deals')
 
 // The countdown must run to the END of the last day, not its midnight start.
-t.eq('countdown targets the end of the last day', promoEndsAt([bf]), '2026-10-11T23:59:59')
-t.eq('the latest end date wins', promoEndsAt([bf, { end_date: '2026-10-20' }]), '2026-10-20T23:59:59')
+t.eq('countdown targets the end of the last day', promoEndsAt([bf]), '2026-10-11T23:59:59+00:00')
+t.eq('the latest end date wins', promoEndsAt([bf, { end_date: '2026-10-20' }]), '2026-10-20T23:59:59+00:00')
 t.eq('no end date, no countdown', promoEndsAt([{ name: 'x' }]), null)
 
 // ── the rest of the catalogue ──────────────────────────────────────────────
@@ -79,3 +80,54 @@ t.eq('320 → 300 is 6% off', discountPct(320, 300), 6)
 t.eq('a "promo" price that is higher claims nothing', discountPct(100, 120), 0)
 t.eq('an equal price claims nothing', discountPct(100, 100), 0)
 t.eq('a missing original claims nothing', discountPct(0, 50), 0)
+
+// ── what the promotion is worth ────────────────────────────────────────────
+// "12 items" says nothing a shopper can weigh. The biggest saving and the
+// cedis kept are what the heading needs.
+{
+  const map = buildPromoMap([bf], TODAY).map
+  const s = promoSavings(products, map)
+  t.eq('counts only the discounted products', s.count, 2)
+  t.eq('reports the biggest saving', s.maxPct, 21)
+  t.eq('adds up what is kept, in cedis', s.totalSaved, 45)   // 120-95 + 320-300
+  const none = promoSavings(products, {})
+  t.eq('nothing live, nothing claimed', none.count, 0)
+  t.eq('and no percentage invented', none.maxPct, 0)
+}
+
+// ── the countdown runs on Ghana's clock, not the viewer's ──────────────────
+// Without the offset, `new Date('2026-10-11T23:59:59')` is read in whatever
+// timezone the browser sits in: a customer in London saw the sale end an hour
+// early, one in New York saw five hours that did not exist.
+{
+  const ends = promoEndsAt([bf])
+  t.eq('ends at the close of the last day, in UTC+0', ends, '2026-10-11T23:59:59+00:00')
+  t.eq('which is an unambiguous instant', new Date(ends).toISOString(), '2026-10-11T23:59:59.000Z')
+  t.eq('no promo, no countdown', promoEndsAt([]), null)
+}
+
+// ── a tab left open past the end ───────────────────────────────────────────
+// The promos are read once on load. Left open overnight the page kept showing
+// yesterday's prices, and public_order_create refused the order with "prices
+// have changed" — correct, and baffling beside a label still saying 300.
+{
+  const ends = promoEndsAt([bf])
+  t.ok('still running during the sale', !isPromoOver(ends, Date.parse('2026-10-11T12:00:00Z')))
+  t.ok('still running in its last second', !isPromoOver(ends, Date.parse('2026-10-11T23:59:58Z')))
+  t.ok('over once the last day closes', isPromoOver(ends, Date.parse('2026-10-12T00:00:01Z')))
+  t.ok('no end date is not an expiry', !isPromoOver(null, Date.now()))
+  t.ok('a date that makes no sense does not expire everything', !isPromoOver('not a date', Date.now()))
+}
+
+// ── which products the promotion already showed ────────────────────────────
+// The homepage printed the same discounted duvet twice: once in the promotion,
+// once in New arrivals a scroll below.
+{
+  const map = buildPromoMap([bf], TODAY).map
+  const shown = promoIds(products, map)
+  t.eq('knows the two it showed', shown.size, 2)
+  t.ok('the discounted ones', shown.has('a') && shown.has('b'))
+  t.ok('and not the rest', !shown.has('c') && !shown.has('d'))
+  const rest = products.filter(p => !shown.has(p.id))
+  t.eq('so New arrivals has the others', rest.map(p => p.id).join(','), 'c,d')
+}

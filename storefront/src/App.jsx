@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase, rpcOrNull } from './lib/supabase'
 import VoiceShopper from './components/VoiceShopper'
 import { voiceSupported } from './lib/speech'
 import { priceCart } from './lib/pricing'
-import { buildPromoMap, discountPct, promoHeading as headingFor, promoEndsAt as endsAtFor, promoFirst, orderPromoFirst } from './lib/promo'
+import { buildPromoMap, discountPct, promoHeading as headingFor, promoEndsAt as endsAtFor, promoFirst, orderPromoFirst, promoSavings, promoIds } from './lib/promo'
 import { money, thumb, SHOP, PAYMENTS_ENABLED, EDGE_URL } from './lib/utils'
 
 const WA = SHOP.whatsapp
@@ -23,18 +23,50 @@ const I = {
   track: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 22s-8-4.5-8-11.8A8 8 0 0112 2a8 8 0 018 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/></svg>,
 }
 
-function Timer({ endDate }) {
-  const [t, setT] = useState({})
+function Timer({ endDate, onEnd }) {
+  const [t, setT] = useState(null)
+  const ended = useRef(false)
   useEffect(() => {
-    const calc = () => { const d = new Date(endDate) - new Date(); if (d <= 0) return { d: 0, h: 0, m: 0, s: 0 }; return { d: Math.floor(d / 864e5), h: Math.floor((d % 864e5) / 36e5), m: Math.floor((d % 36e5) / 6e4), s: Math.floor((d % 6e4) / 1e3) } }
-    setT(calc()); const i = setInterval(() => setT(calc()), 1000); return () => clearInterval(i)
-  }, [endDate])
+    ended.current = false
+    const calc = () => {
+      const d = new Date(endDate) - new Date()
+      if (d <= 0) return null
+      return { d: Math.floor(d / 864e5), h: Math.floor((d % 864e5) / 36e5), m: Math.floor((d % 36e5) / 6e4), s: Math.floor((d % 6e4) / 1e3) }
+    }
+    const tick = () => {
+      const next = calc()
+      setT(next)
+      // Report the end once, so the page can drop prices that have stopped
+      // applying rather than keep offering them to a tab left open overnight.
+      if (!next && !ended.current) { ended.current = true; onEnd?.() }
+    }
+    tick()
+    const i = setInterval(tick, 1000)
+    return () => clearInterval(i)
+  }, [endDate, onEnd])
+
+  if (!t) return null
   const p = n => String(n).padStart(2, '0')
-  return <div className="flex gap-1">{[['d',t.d],['h',t.h],['m',t.m],['s',t.s]].map(([l,v]) => <div key={l} className="bg-white text-[var(--color-promo)] text-[11px] font-bold px-1.5 py-0.5 rounded font-mono min-w-[22px] text-center">{p(v||0)}<span className="text-[8px] text-gray-400 ml-0.5">{l}</span></div>)}</div>
+  // The days box is dropped on the last day: "04h 11m 09s" reads as urgent,
+  // "00d 04h" reads as a rounding error.
+  const parts = t.d > 0 ? [['d', t.d], ['h', t.h], ['m', t.m]] : [['h', t.h], ['m', t.m], ['s', t.s]]
+  return (
+    <div className="flex gap-1" role="timer" aria-label={`Offer ends in ${t.d > 0 ? `${t.d} days ` : ''}${t.h} hours ${t.m} minutes`}>
+      {parts.map(([l, v]) => (
+        <div key={l} className="bg-white text-[var(--color-promo)] text-[11px] font-bold px-1.5 py-0.5 rounded font-mono min-w-[24px] text-center">
+          {p(v || 0)}<span className="text-[8px] text-zinc-500 ml-0.5">{l}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /** How many promo products the homepage shows before "See all". */
 const HOME_PROMO_MAX = 10
+/** At or below this many in stock, the card says so. */
+const LOW_STOCK = 5
+/** The pseudo-category that filters the shop down to the promotion. */
+const OFFERS = '__offers'
 
 function Card({ p, promo, onOpen, onAdd }) {
   const [ok, setOk] = useState(false)
@@ -57,12 +89,22 @@ function Card({ p, promo, onOpen, onAdd }) {
       <div className="flex items-center justify-between mt-1.5">
         <div className="flex items-baseline gap-1.5">
           <span className="text-[14px] font-bold text-zinc-900">{money(promo ? promo.price : p.price)}</span>
-          {promo && <span className="text-[11px] text-zinc-300 line-through">{money(p.price)}</span>}
+          {promo && <span className="text-[11px] text-zinc-500 line-through">{money(p.price)}</span>}
         </div>
         <button onClick={add} className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all duration-200 btn-press ${ok ? 'bg-black text-white' : 'bg-black text-white hover:bg-black'}`}>{ok ? '✓ Added' : 'Add'}</button>
       </div>
+      {/* A percentage is abstract; the cedis saved are the reason to buy today. */}
+      {promo && Number(p.price) > Number(promo.price) && (
+        <div className="text-[9px] font-bold text-[var(--color-promo)] mt-1">You save {money(Number(p.price) - Number(promo.price))}</div>
+      )}
       {!promo && Number(p.wholesale_price || 0) > 0 && Number(p.wholesale_min_qty || 0) > 0 && (
         <div className="text-[9px] text-zinc-400 mt-1">Buy {p.wholesale_min_qty}+ for {money(p.wholesale_price)} each</div>
+      )}
+      {/* Said before checkout rather than after: the order is repriced and
+          stock-checked in the database, so "only 2 left" here is what stops a
+          customer filling a basket the shop cannot fill. */}
+      {Number(p.quantity) > 0 && Number(p.quantity) <= LOW_STOCK && (
+        <div className="text-[9px] text-amber-700 mt-0.5">Only {p.quantity} left</div>
       )}
     </div>
   )
@@ -72,6 +114,9 @@ export default function App() {
   const [products, setProducts] = useState([])
   const [promos, setPromos] = useState([])
   const [promoMap, setPromoMap] = useState({})
+  // The rows as they arrived. A promotion is only live between two dates, and
+  // this page may still be open when it stops being so.
+  const promoRows = useRef([])
   const [bundles, setBundles] = useState([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState('home')
@@ -203,6 +248,7 @@ export default function App() {
       // promo stopped showing at midnight ON its last day while the shop was
       // still selling it at the counter. Ghana keeps UTC+0 all year, so the
       // ISO date is already the local trading day.
+      promoRows.current = data
       const { map, active } = buildPromoMap(data)
       setPromoMap(map); setPromos(active)
     })
@@ -212,7 +258,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const handle = () => { const h = window.location.hash.slice(1); if (h.startsWith('/product/')) { const p = products.find(x => x.id === h.replace('/product/','')); if (p) { setSel(p); setPage('product') } } else if (h === '/shop') setPage('shop'); else if (h === '/cart') setPage('cart'); else if (h === '/track') setPage('track'); else if (h === '/checkout') setPage('checkout'); else if (h === '/success') { /* stay on success */ } else setPage('home') }
+    const handle = () => { const h = window.location.hash.slice(1); if (h.startsWith('/product/')) { const p = products.find(x => x.id === h.replace('/product/','')); if (p) { setSel(p); setPage('product') } } else if (h === '/shop/offers') { setCat(OFFERS); setPage('shop') } else if (h === '/shop') setPage('shop'); else if (h === '/cart') setPage('cart'); else if (h === '/track') setPage('track'); else if (h === '/checkout') setPage('checkout'); else if (h === '/success') { /* stay on success */ } else setPage('home') }
     window.addEventListener('hashchange', handle); handle(); return () => window.removeEventListener('hashchange', handle)
   }, [products])
 
@@ -227,6 +273,20 @@ export default function App() {
       return updated
     })
   }
+  // The countdown reaching zero is the moment the prices stop applying. Until
+  // this, a tab left open overnight went on showing yesterday's figures, and
+  // public_order_create refused the order at the end with "prices have changed"
+  // — right, and incomprehensible next to a label still saying 300.
+  const onPromoEnded = useCallback(() => {
+    const { map, active } = buildPromoMap(promoRows.current)
+    setPromoMap(map); setPromos(active)
+    setCart(prev => prev.map(l => {
+      const prod = products.find(x => x.id === l.id)
+      return prod && !map[l.id] ? { ...l, price: Number(prod.price) } : l
+    }))
+    setCat(c => (c === OFFERS && !Object.keys(map).length ? 'all' : c))
+  }, [products])
+
   const cats = useMemo(() => ['all', ...[...new Set(products.filter(p => p.category).map(p => p.category))].sort()], [products])
   // Category tiles: each category with the first in-stock product image as its cover.
   const catTiles = useMemo(() => {
@@ -244,7 +304,9 @@ export default function App() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return orderPromoFirst(
-      products.filter(p => (!q || p.name.toLowerCase().includes(q)) && (cat === 'all' || p.category === cat)),
+      products.filter(p =>
+        (!q || p.name.toLowerCase().includes(q)) &&
+        (cat === 'all' || (cat === OFFERS ? !!promoMap[p.id] : p.category === cat))),
       promoMap)
   }, [products, search, cat, promoMap])
 
@@ -305,6 +367,10 @@ export default function App() {
   // Heading and countdown come from the promo the shop set up, so renaming the
   // campaign in the admin screen renames it here — no code change needed.
   const promoHeading = useMemo(() => headingFor(promos), [promos])
+  const savings = useMemo(() => promoSavings(products, promoMap), [products, promoMap])
+  // Products already shown in the promotion, so the homepage does not print the
+  // same discounted duvet twice within one scroll.
+  const promoShown = useMemo(() => promoIds(products, promoMap), [products, promoMap])
   const promoEndsAt = useMemo(() => endsAtFor(promos), [promos])
   // "Trending" — shuffle products deterministically by day
 
@@ -481,7 +547,7 @@ export default function App() {
         onNavigate={(dest) => { setVoiceOpen(false); if (dest === 'checkout') go('checkout', '/checkout'); else go(dest, '/' + dest) }}
       />
 
-      {activePromo && <div className="bg-[var(--color-promo)] relative overflow-hidden"><div className="max-w-7xl mx-auto px-4 h-10 flex items-center justify-center gap-3 text-xs text-white relative z-10"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /><span className="font-bold uppercase tracking-wide truncate">{activePromo.name}</span><span className="hidden sm:inline text-white/70">ends in</span><Timer endDate={promoEndsAt || activePromo.end_date} /><button onClick={() => go('shop', '/shop')} className="ml-1 h-6 px-3 bg-white text-[var(--color-promo)] rounded-full text-[10px] font-bold hover:bg-white/90 transition">Shop Now</button></div></div>}
+      {activePromo && <div className="bg-[var(--color-promo)] relative overflow-hidden"><div className="max-w-7xl mx-auto px-4 h-10 flex items-center justify-center gap-3 text-xs text-white relative z-10"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /><span className="font-bold uppercase tracking-wide truncate">{activePromo.name}</span><span className="hidden sm:inline text-white/70">ends in</span><Timer endDate={promoEndsAt || activePromo.end_date} onEnd={onPromoEnded} /><button onClick={() => { setCat(OFFERS); go('shop', '/shop/offers') }} className="ml-1 h-6 px-3 bg-white text-[var(--color-promo)] rounded-full text-[10px] font-bold hover:bg-white/90 transition">Shop Now</button></div></div>}
 
       {/* TOAST */}
       {toast && <div className="fixed top-16 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-5 py-2 rounded-full text-sm font-medium z-[100] shadow-lg" style={{ animation: 'fadeIn 0.2s ease' }}>{toast}</div>}
@@ -518,12 +584,13 @@ export default function App() {
                   <h2 className="text-2xl sm:text-3xl font-black leading-tight" style={{ fontFamily: 'var(--font-display)' }}>{promoHeading}</h2>
                   <p className="text-[12px] text-zinc-400 mt-1">
                     {promoProducts.length} item{promoProducts.length === 1 ? '' : 's'} at a reduced price
+                    {savings.maxPct > 0 && <> · up to <span className="text-white font-bold">{savings.maxPct}% off</span></>}
                   </p>
                 </div>
                 {promoEndsAt && (
                   <div className="ml-auto flex items-center gap-2.5">
                     <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">Ends in</span>
-                    <Timer endDate={promoEndsAt} />
+                    <Timer endDate={promoEndsAt} onEnd={onPromoEnded} />
                   </div>
                 )}
               </div>
@@ -534,7 +601,7 @@ export default function App() {
                   ))}
                 </div>
                 {promoProducts.length > HOME_PROMO_MAX && (
-                  <button onClick={() => go('shop', '/shop')}
+                  <button onClick={() => { setCat(OFFERS); go('shop', '/shop/offers') }}
                     className="mt-5 w-full h-11 border border-zinc-300 rounded-lg text-[13px] font-bold hover:bg-zinc-50 transition">
                     See all {promoProducts.length} offers
                   </button>
@@ -634,7 +701,7 @@ export default function App() {
               <button onClick={() => go('shop','/shop')} className="text-xs text-zinc-500 font-semibold hover:text-black transition flex items-center gap-0.5">See all {I.arrow}</button>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-3 gap-y-5">
-              {products.slice(0, 10).map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}
+              {products.filter(p => !promoShown.has(p.id)).slice(0, 10).map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}
             </div>
           </section>
         )}
@@ -682,8 +749,16 @@ export default function App() {
 
       {/* ═══ SHOP ═══ */}
       {page === 'shop' && <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5">
-        <div className="flex items-center justify-between mb-4"><h1 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>{cat === 'all' ? 'All Products' : cat}</h1><span className="text-xs text-gray-300">{filtered.length} items</span></div>
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide mb-5">{cats.map(c => <button key={c} onClick={() => setCat(c)} className={`h-8 px-4 rounded-lg text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${cat === c ? 'bg-black text-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{c === 'all' ? 'All' : c}</button>)}</div>
+        <div className="flex items-center justify-between mb-4"><h1 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)' }}>{cat === 'all' ? 'All Products' : cat === OFFERS ? promoHeading : cat}</h1><span className="text-xs text-gray-300">{filtered.length} items</span></div>
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide mb-5">
+          {promoProducts.length > 0 && (
+            <button onClick={() => { setCat(OFFERS); window.location.hash = '/shop/offers' }}
+              className={`h-8 px-4 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 transition ${cat === OFFERS ? 'bg-[var(--color-promo)] text-white' : 'bg-[var(--color-promo)]/10 text-[var(--color-promo)] hover:bg-[var(--color-promo)]/20'}`}>
+              Offers ({promoProducts.length})
+            </button>
+          )}
+          {cats.map(c => <button key={c} onClick={() => { setCat(c); window.location.hash = '/shop' }} className={`h-8 px-4 rounded-lg text-[11px] font-semibold whitespace-nowrap shrink-0 transition ${cat === c ? 'bg-black text-white' : 'bg-gray-50 text-gray-500 hover:bg-gray-100'}`}>{c === 'all' ? 'All' : c}</button>)}
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-3 gap-y-5">{filtered.map(p => <Card key={p.id} p={p} promo={promoMap[p.id]} onOpen={() => open(p)} onAdd={() => addToCart(p)} />)}</div>
         {filtered.length === 0 && <p className="text-center py-20 text-gray-300 text-sm">No products found</p>}
       </div>}
@@ -715,7 +790,18 @@ export default function App() {
             <h1 className="text-lg md:text-xl font-bold mb-3" style={{ fontFamily: 'var(--font-display)' }}>{sel.name}</h1>
             <div className="flex items-baseline gap-2 mb-6">
               <span className="text-xl font-bold">{money(gp(sel))}</span>
-              {promoMap[sel.id] && <><span className="text-sm text-gray-300 line-through">{money(sel.price)}</span><span className="text-[10px] font-bold text-black bg-zinc-100 px-1.5 py-0.5 rounded">PROMO</span></>}
+              {promoMap[sel.id] && <>
+              <span className="text-sm text-zinc-500 line-through">{money(sel.price)}</span>
+              {/* "PROMO" told a shopper nothing they could weigh. The saving does. */}
+              {discountPct(sel.price, promoMap[sel.id].price) > 0 && (
+                <span className="text-[10px] font-bold text-white bg-[var(--color-promo)] px-2 py-0.5 rounded">
+                  -{discountPct(sel.price, promoMap[sel.id].price)}%
+                </span>
+              )}
+              <span className="text-[11px] font-bold text-[var(--color-promo)]">
+                You save {money(Number(sel.price) - Number(promoMap[sel.id].price))}
+              </span>
+            </>}
             </div>
 
             {/* Wholesale info */}
