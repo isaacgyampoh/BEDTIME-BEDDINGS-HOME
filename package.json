@@ -20,7 +20,8 @@
     "test:e2e": "npm run test:serial && npm run test:raster && npm run test:pos",
     "test:pos": "node tests/e2e/run-pos.mjs",
     "test:shop": "node tests/e2e/run-shop.mjs",
-    "test:promos": "node tests/e2e/run-promos.mjs"
+    "test:promos": "node tests/e2e/run-promos.mjs",
+    "deploy": "./scripts/deploy.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",

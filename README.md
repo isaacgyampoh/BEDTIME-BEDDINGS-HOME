@@ -72,9 +72,22 @@ Point the Paystack webhook at `https://<ref>.supabase.co/functions/v1/paystack-w
 npm install
 npm run build
 ```
-Publishing is done by `.github/workflows/deploy-cloudflare.yml` on every push to
-`main`, once `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` exist as
-repository secrets. To publish by hand instead: `./scripts/go-live.sh cloudflare`.
+Publishing:
+
+```bash
+npm run deploy          # both sites
+npm run deploy shop     # the shop front only
+npm run deploy admin    # the POS only
+```
+
+That runs the lint, the tests and both builds first, refuses to publish a
+bundle containing a server secret or missing its `_redirects`, pushes to
+Cloudflare Pages, and then asks all three hostnames for a 200. It uses the
+machine's existing `wrangler` login (`npx wrangler login` once, if ever needed).
+
+`.github/workflows/deploy-cloudflare.yml` does the same on every push to `main`
+once `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` exist as repository
+secrets; without them it builds, tests and skips publishing with a warning.
 
 ### 6. First login
 Open the deployed URL and enter a staff PIN. PINs are managed in **Staff &
