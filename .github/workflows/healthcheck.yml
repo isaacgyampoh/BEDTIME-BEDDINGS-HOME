@@ -1,0 +1,26 @@
+name: Is the shop open?
+
+# The sites can return HTTP 200 all day while the shop is unsellable: on
+# 26 October 2026 the database was deleted and both sites went on serving an
+# empty catalogue until someone checked by hand. This asks the database for a
+# product, every 15 minutes, and fails loudly when there is not one.
+#
+# A failed run emails the repository owner. That is the alert.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: healthcheck
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ask the shop whether it can sell anything
+        run: ./scripts/healthcheck.sh

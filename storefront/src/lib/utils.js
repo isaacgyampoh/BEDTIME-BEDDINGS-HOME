@@ -4,7 +4,8 @@ export const money = v => 'GHS ' + Number(v || 0).toFixed(2)
 // and the shop contacts the customer to arrange payment (pay on delivery /
 // pickup). Flip to true + point EDGE_URL at the new project to enable MoMo.
 export const PAYMENTS_ENABLED = true
-export const EDGE_URL = 'https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/super-service'
+// Same env override as the client, so one setting repoints the whole shop.
+export const EDGE_URL = `${import.meta.env.VITE_SUPABASE_URL || 'https://wqkgfvmvuljzexhevlnp.supabase.co'}/functions/v1/super-service`
 export const thumb = (url, w = 600) => {
   if (!url) return ''
   // Supabase storage: serve a resized/compressed version via the image transform

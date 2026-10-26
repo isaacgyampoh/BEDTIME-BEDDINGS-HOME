@@ -1,6 +1,17 @@
 import { createClient } from '@supabase/supabase-js'
-const url = 'https://wqkgfvmvuljzexhevlnp.supabase.co'
-const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indxa2dmdm12dWxqemV4aGV2bG5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTc5NzEsImV4cCI6MjEwMDU5Mzk3MX0.BOAaKOnE_RaZtTBa_GED793Xn5hdjRxT4hEvG_Ivkpo'
+// Read from Vite env when provided, so the shop can be pointed at a different
+// project without editing code — matching how the POS already does it.
+//
+// This mattered on 26 October 2026: the project was deleted and the shop served
+// an empty catalogue for as long as it took to get it back. Had it been
+// restored into a NEW project, the shop could not have been repointed without a
+// code change and a rebuild. The current project stays the default, so existing
+// deploys keep working with no configuration.
+const url = import.meta.env.VITE_SUPABASE_URL || 'https://wqkgfvmvuljzexhevlnp.supabase.co'
+const key = import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indxa2dmdm12dWxqemV4aGV2bG5wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUwMTc5NzEsImV4cCI6MjEwMDU5Mzk3MX0.BOAaKOnE_RaZtTBa_GED793Xn5hdjRxT4hEvG_Ivkpo'
+
+export const SUPABASE_URL = url
 export const supabase = createClient(url, key)
 
 /**
