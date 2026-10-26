@@ -231,7 +231,7 @@ export default function VoiceShopper({
     else handle(v)
   }, [handle])
 
-  const cartCount = useMemo(() => cart.reduce((a, c) => a + Number(c.qty || 0), 0), [cart])
+
   const cartTotal = useMemo(() => cart.reduce((a, c) => a + Number(c.price || 0) * Number(c.qty || 0), 0), [cart])
 
   if (!open) return null

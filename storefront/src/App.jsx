@@ -193,7 +193,7 @@ export default function App() {
       } catch {}
     }, 3000)
     return () => clearInterval(iv)
-  }, [page, orderResult?.orderId, orderResult?.status]) // eslint-disable-line
+  }, [page, orderResult?.orderId, orderResult?.status])
 
   // Broken product images (dead Cloudinary links) show a clean placeholder
   // instead of the browser's broken-image icon.
@@ -478,7 +478,7 @@ export default function App() {
         const j = await r.json()
         promptOk = !!j.success
         if (!promptOk) promptErr = j.error || 'Could not send prompt'
-      } catch (e) { promptErr = 'Network error' }
+      } catch { promptErr = 'Network error' }
     }
 
     sessionStorage.setItem('last_order', String(Date.now()))
