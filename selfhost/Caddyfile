@@ -1,0 +1,38 @@
+# The only thing listening on the public interface.
+#
+# Caddy gets its certificate from Let's Encrypt and renews it unattended, so
+# nobody has to remember. Everything behind it — Postgres, PostgREST, Studio,
+# Realtime, Storage — stays on the internal Docker network.
+#
+# Point api.bedtimehome.com at the server's IP (an A record) before starting.
+
+{
+	email admin@bedtimehome.com
+}
+
+api.bedtimehome.com {
+	encode zstd gzip
+
+	# Kong is the stack's gateway; it decides which service a path belongs to.
+	reverse_proxy kong:8000
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}
+
+# The dashboard is not for the public. Reach it over an SSH tunnel instead:
+#   ssh -L 3000:localhost:3000 bedtime@<server>   then open http://localhost:3000
+# Publishing it would put a Postgres console on the internet behind nothing but
+# basic auth.

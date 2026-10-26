@@ -1,0 +1,82 @@
+# What this shop needs that the stock self-hosting bundle does not do.
+#
+# Copy this next to the official docker-compose.yml in /opt/supabase and it is
+# merged automatically. Keeping our changes here instead of editing the
+# upstream file means `git pull` stays the upgrade path.
+#
+#   cp selfhost/docker-compose.override.yml /opt/supabase/
+#   cd /opt/supabase && docker compose up -d
+
+services:
+  db:
+    # 17 scheduled jobs run inside the database, and they call the Edge
+    # Functions over HTTP. Neither works unless the two extensions are loaded
+    # at startup — pg_cron in particular has to be in shared_preload_libraries
+    # before it can be created at all.
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - shared_preload_libraries=pg_stat_statements,pg_cron
+      - -c
+      - cron.database_name=postgres
+      # Realtime reads the write-ahead log, so it has to be logical.
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+    restart: unless-stopped
+    # The database is never published to the host. Everything that needs it is
+    # on the compose network; anything else goes through an SSH tunnel.
+    ports: !override []
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Everything else keeps its upstream definition and only gains a restart
+  # policy, so a reboot of the server brings the shop back by itself.
+  studio:        { restart: unless-stopped }
+  kong:          { restart: unless-stopped }
+  auth:          { restart: unless-stopped }
+  rest:          { restart: unless-stopped }
+  realtime:      { restart: unless-stopped }
+  storage:       { restart: unless-stopped }
+  imgproxy:      { restart: unless-stopped }
+  meta:          { restart: unless-stopped }
+  functions:     { restart: unless-stopped }
+  supavisor:     { restart: unless-stopped }
+
+  # TLS, and the only thing listening on the public interface.
+  #
+  # The stock bundle expects you to put your own proxy in front. Caddy gets a
+  # certificate from Let's Encrypt on its own and renews it, which is one less
+  # thing to forget.
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: supabase-caddy
+    restart: unless-stopped
+    depends_on: [kong]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db-data:
+    # A named volume, so `docker compose down` and a container rebuild do not
+    # take the shop's books with them. Only `down -v` removes it.
+    name: supabase-db-data
+  caddy-data:
+    name: supabase-caddy-data
+  caddy-config:
+    name: supabase-caddy-config
