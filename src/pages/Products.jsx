@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../hooks/useStore'
 import { getSupabase, STORAGE_URL } from '../lib/supabase'
+import { chooseUpload, uploadPath } from '../lib/productImage'
 import { money, num, thumb } from '../lib/utils'
 import Modal from '../components/Modal'
 import PromoteProduct from '../components/PromoteProduct'
@@ -11,6 +12,15 @@ import { auditProducts } from '../lib/dataHealth'
 // Shrink an image file client-side to a max width, re-encoded as JPEG. Keeps
 // stored product photos small and uploads fast. Falls back to the original
 // file if anything goes wrong.
+/**
+ * Re-encode a photo to a sensible width as JPEG.
+ *
+ * Resolves with null when the browser cannot decode the file — a HEIC photo
+ * off an iPhone, say. It used to resolve with the ORIGINAL file, which was
+ * then uploaded under a .jpg name as image/jpeg, and the picture never
+ * appeared anywhere. The caller decides what to do about null; this function's
+ * job is to be honest about having failed.
+ */
 function resizeImage(file, maxW = 1400, quality = 0.82) {
   return new Promise((resolve) => {
     try {
@@ -18,18 +28,21 @@ function resizeImage(file, maxW = 1400, quality = 0.82) {
       const url = URL.createObjectURL(file)
       img.onload = () => {
         URL.revokeObjectURL(url)
-        const scale = Math.min(1, maxW / img.width)
-        if (scale === 1 && file.size < 500 * 1024) { resolve(file); return } // already small
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.round(img.width * scale)
-        canvas.height = Math.round(img.height * scale)
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        canvas.toBlob((blob) => resolve(blob && blob.size < file.size ? blob : file), 'image/jpeg', quality)
+        try {
+          const scale = Math.min(1, maxW / img.width)
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(img.width * scale)
+          canvas.height = Math.round(img.height * scale)
+          const ctx = canvas.getContext('2d')
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          // Null here means the browser declined to encode; the caller falls
+          // back to the original file when that file is one a browser can show.
+          canvas.toBlob((b) => resolve(b && b.size > 0 ? b : null), 'image/jpeg', quality)
+        } catch { resolve(null) }
       }
-      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null) }
       img.src = url
-    } catch { resolve(file) }
+    } catch { resolve(null) }
   })
 }
 
@@ -72,9 +85,16 @@ export default function Products() {
       try {
         const rawFile = form.file
         if (rawFile.size > 15 * 1024 * 1024) { toast.error('Image too large (max 15MB)'); setLoading(false); return }
-        const file = await resizeImage(rawFile, 1400, 0.82)
-        const path = `products/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
-        const { error: upErr } = await sb.storage.from('product-images').upload(path, file, { cacheControl: '31536000', upsert: true, contentType: 'image/jpeg' })
+        // A small JPEG needs no re-encoding; anything else goes through the
+        // canvas so that what we store is what we say it is.
+        const alreadyFine = rawFile.type === 'image/jpeg' && rawFile.size < 500 * 1024
+        const encoded = alreadyFine ? null : await resizeImage(rawFile, 1400, 0.82)
+        const picked = chooseUpload(rawFile, encoded)
+        if (picked.error) { toast.error(picked.error, { duration: 8000 }); setLoading(false); return }
+
+        const path = uploadPath(picked.ext)
+        const { error: upErr } = await sb.storage.from('product-images')
+          .upload(path, picked.blob, { cacheControl: '31536000', upsert: true, contentType: picked.contentType })
         if (upErr) { toast.error('Upload failed: ' + (upErr.message || 'create a public "product-images" bucket in Supabase')); setLoading(false); return }
         imageUrl = `${STORAGE_URL}/product-images/${path}`
       } catch (e) { console.error('Image upload failed:', e); toast.error('Image upload failed: ' + (e?.message || '')); setLoading(false); return }
@@ -133,14 +153,14 @@ export default function Products() {
         <input className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base mb-5" placeholder="Search..." value={query} onChange={e => setQuery(e.target.value)} />
         <div className="overflow-x-auto"><table className="w-full min-w-[600px]"><thead><tr><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Product</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Price</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Margin</th><th className="p-3 bg-gray-50 text-left text-[11px] font-bold text-gray-500 uppercase">Stock</th><th className="p-3 bg-gray-50 text-[11px] font-bold text-gray-500 uppercase">Actions</th></tr></thead>
           <tbody>{filtered.map(p => (
-            <tr key={p.id} className="border-b border-gray-50"><td className="p-3"><div className="flex items-center gap-3"><div className={`w-11 h-11 bg-gray-100 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center text-xl ${needsPhoto(p) ? 'ring-2 ring-amber-400' : ''}`} title={needsPhoto(p) ? 'Needs a new photo' : ''}>{p.image ? <img src={thumb(p.image, 88)} alt="" className="w-full h-full object-cover" /> : ''}</div><div><b className="text-sm">{p.name}</b><br /><small className="text-gray-400">{p.category || '-'}</small></div></div></td><td className="p-3 font-bold text-sm">{money(p.price)}</td><td className="p-3 text-xs">{p.costPrice > 0 ? <span className={`font-bold ${((p.price - p.costPrice) / p.price * 100) >= 30 ? 'text-emerald-600' : ((p.price - p.costPrice) / p.price * 100) >= 15 ? 'text-amber-600' : 'text-red-500'}`}>{((p.price - p.costPrice) / p.price * 100).toFixed(0)}%</span> : <span className="text-stone-300">—</span>}</td><td className={`p-3 font-bold text-sm ${p.quantity === 0 ? 'text-red-500' : p.quantity <= 5 ? 'text-amber-500' : ''}`}>{p.quantity}</td><td className="p-3"><div className="flex gap-2 justify-center"><button onClick={() => setPromoting(p)} disabled={p.quantity === 0} title={p.quantity === 0 ? 'Out of stock' : 'Promote on TikTok or WhatsApp'} className="h-9 px-3 bg-[#0e7c86] text-white rounded-lg text-xs font-medium hover:bg-[#0b626a] disabled:opacity-30 transition">Promote</button><button onClick={() => openEdit(p)} className="h-9 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-100 transition">Edit</button><button onClick={() => del(p)} className="h-9 px-3 bg-[#c0492f] text-white rounded-lg text-xs font-medium hover:bg-[#a83d27] transition">Delete</button></div></td></tr>
+            <tr key={p.id} className="border-b border-gray-50"><td className="p-3"><div className="flex items-center gap-3"><div className={`w-11 h-11 bg-gray-100 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center text-xl ${needsPhoto(p) ? 'ring-2 ring-amber-400' : ''}`} title={needsPhoto(p) ? 'Needs a new photo' : ''}>{p.image ? <img src={thumb(p.image, 88)} alt="" onError={e => { if (!e.target.dataset.fb) { e.target.dataset.fb = 1; e.target.src = p.image } }} className="w-full h-full object-cover" /> : ''}</div><div><b className="text-sm">{p.name}</b><br /><small className="text-gray-400">{p.category || '-'}</small></div></div></td><td className="p-3 font-bold text-sm">{money(p.price)}</td><td className="p-3 text-xs">{p.costPrice > 0 ? <span className={`font-bold ${((p.price - p.costPrice) / p.price * 100) >= 30 ? 'text-emerald-600' : ((p.price - p.costPrice) / p.price * 100) >= 15 ? 'text-amber-600' : 'text-red-500'}`}>{((p.price - p.costPrice) / p.price * 100).toFixed(0)}%</span> : <span className="text-stone-300">—</span>}</td><td className={`p-3 font-bold text-sm ${p.quantity === 0 ? 'text-red-500' : p.quantity <= 5 ? 'text-amber-500' : ''}`}>{p.quantity}</td><td className="p-3"><div className="flex gap-2 justify-center"><button onClick={() => setPromoting(p)} disabled={p.quantity === 0} title={p.quantity === 0 ? 'Out of stock' : 'Promote on TikTok or WhatsApp'} className="h-9 px-3 bg-[#0e7c86] text-white rounded-lg text-xs font-medium hover:bg-[#0b626a] disabled:opacity-30 transition">Promote</button><button onClick={() => openEdit(p)} className="h-9 px-3 border border-stone-300 rounded-lg text-xs font-medium text-stone-600 hover:bg-stone-100 transition">Edit</button><button onClick={() => del(p)} className="h-9 px-3 bg-[#c0492f] text-white rounded-lg text-xs font-medium hover:bg-[#a83d27] transition">Delete</button></div></td></tr>
           ))}</tbody></table></div>
       </div>
       <PromoteProduct product={promoting} open={!!promoting} onClose={() => setPromoting(null)} />
 
       <Modal open={modal} onClose={() => setModal(false)} title={form.id ? 'Edit Product' : 'Add Product'} footer={<><button onClick={() => setModal(false)} className="h-12 px-5 border border-stone-300 rounded-xl text-sm font-semibold text-stone-600">Cancel</button><button onClick={save} className="flex-1 h-12 bg-gray-700 text-white rounded-xl text-sm font-bold">Save</button></>}>
         <div className="space-y-4">
-          <div><label className="block text-xs font-semibold text-gray-500 mb-2">Product Image</label><div className="flex items-center gap-4"><div className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center text-3xl flex-shrink-0">{preview ? <img src={thumb(preview, 160)} alt="" className="w-full h-full object-cover" /> : ''}</div><div className="flex-1"><input type="file" accept="image/*" className="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-600" onChange={handleFile} /><p className="text-xs text-gray-400 mt-1">JPG, PNG up to 15MB</p></div></div></div>
+          <div><label className="block text-xs font-semibold text-gray-500 mb-2">Product Image</label><div className="flex items-center gap-4"><div className="w-20 h-20 bg-gray-100 rounded-xl overflow-hidden flex items-center justify-center text-3xl flex-shrink-0">{preview ? <img src={thumb(preview, 160)} alt="" onError={e => { if (!e.target.dataset.fb) { e.target.dataset.fb = 1; e.target.src = preview } }} className="w-full h-full object-cover" /> : ''}</div><div className="flex-1"><input type="file" accept="image/*" className="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-600" onChange={handleFile} /><p className="text-xs text-gray-400 mt-1">JPG, PNG or WebP up to 15MB. iPhone photos saved as HEIC cannot be shown on the web.</p></div></div></div>
           <div><label className="block text-xs font-semibold text-gray-500 mb-2">Name</label><input className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
           <div><label className="block text-xs font-semibold text-gray-500 mb-2">Category</label><select className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base appearance-none" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}><option value="">Select category...</option>{['Curtains','Kitchenware','Cookware Sets','Racks','Rods','Chairs','Carpets','Home Appliances','Blankets','Bed Sheets','Mats','Pillows','Towels & Covers','Artefacts & Decor','Other'].map(c => <option key={c} value={c}>{c}</option>)}</select></div>
           <div><label className="block text-xs font-semibold text-gray-500 mb-2">Description <span className="font-normal text-gray-400">(optional — used in promotions)</span></label><textarea rows={3} className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl text-base resize-y" placeholder="A short selling line for TikTok and WhatsApp posts" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>

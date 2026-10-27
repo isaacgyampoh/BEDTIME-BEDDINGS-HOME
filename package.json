@@ -22,7 +22,8 @@
     "test:shop": "node tests/e2e/run-shop.mjs",
     "test:promos": "node tests/e2e/run-promos.mjs",
     "deploy": "./scripts/deploy.sh",
-    "test:buying": "node tests/e2e/run-buying.mjs"
+    "test:buying": "node tests/e2e/run-buying.mjs",
+    "test:upload": "node tests/e2e/run-upload.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.4",
