@@ -74,3 +74,39 @@ export function uploadPath(ext, now = Date.now(), rand = Math.random()) {
   const safe = DISPLAYABLE[`image/${ext}`] ? ext : (extensionFor(`image/${ext}`) || 'jpg')
   return `products/${now}-${rand.toString(36).slice(2, 8)}.${safe}`
 }
+
+/**
+ * Did the photo we just uploaded actually become visible?
+ *
+ * "Saved!" appearing while no picture ever shows is the failure that wastes
+ * the most time, because nothing on screen says which half went wrong. The
+ * upload can succeed and the file still be unreadable — a bucket that is no
+ * longer public, a policy that did not survive a restore, a transform that
+ * refuses the file. So ask for it back before claiming success, and report
+ * what came back.
+ *
+ * `fetchFn` is injectable so this can be tested without a network.
+ */
+export async function verifyUploaded(publicUrl, fetchFn = fetch) {
+  if (!publicUrl) return { ok: false, why: 'No image URL was produced' }
+  try {
+    const res = await fetchFn(publicUrl, { method: 'GET', headers: { Range: 'bytes=0-0' } })
+    const status = res.status
+    if (status === 200 || status === 206) {
+      const type = (res.headers && res.headers.get && res.headers.get('content-type')) || ''
+      if (type && !type.startsWith('image/')) {
+        return { ok: false, status, why: `The file came back as ${type}, not an image. It was stored, but nothing can display it.` }
+      }
+      return { ok: true, status }
+    }
+    if (status === 400 || status === 404) {
+      return { ok: false, status, why: 'The photo uploaded but cannot be read back. The "product-images" bucket may no longer be public — check it in Supabase under Storage.' }
+    }
+    if (status === 401 || status === 403) {
+      return { ok: false, status, why: 'The photo uploaded but access to it is denied. The "product-images" bucket is private, or its read policy is missing.' }
+    }
+    return { ok: false, status, why: `The photo uploaded but reading it back returned ${status}.` }
+  } catch (e) {
+    return { ok: false, why: `The photo uploaded but could not be reached: ${e?.message || 'network error'}` }
+  }
+}

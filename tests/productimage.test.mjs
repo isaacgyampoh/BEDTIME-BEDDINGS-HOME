@@ -1,5 +1,5 @@
 import { suite } from './harness.mjs'
-import { chooseUpload, extensionFor, isDisplayable, uploadPath } from '../src/lib/productImage.js'
+import { chooseUpload, extensionFor, isDisplayable, uploadPath, verifyUploaded } from '../src/lib/productImage.js'
 const t = suite('Admin: what actually gets uploaded as a product photo')
 
 const f = (type, size = 900_000, name = 'photo') => ({ type, size, name })
@@ -83,3 +83,29 @@ t.eq('case does not matter', extensionFor('IMAGE/PNG'), 'png')
 t.eq('an unknown type has no extension', extensionFor('image/heic'), '')
 t.ok('heic is not displayable', !isDisplayable('image/heic'))
 t.ok('webp is', isDisplayable('image/webp'))
+
+// ── "Saved!" with no picture is the failure that wastes the most time ──────
+// The upload can succeed and the file still be invisible. Asking for it back
+// turns that into a sentence naming the cause.
+{
+  const res = (status, type) => async () => ({ status, headers: { get: () => type } })
+  const ok200 = await verifyUploaded('https://x/img.jpg', res(200, 'image/jpeg'))
+  t.ok('a readable image passes', ok200.ok)
+  const ok206 = await verifyUploaded('https://x/img.jpg', res(206, 'image/webp'))
+  t.ok('a ranged response passes too', ok206.ok)
+
+  const gone = await verifyUploaded('https://x/img.jpg', res(400, ''))
+  t.ok('400 is reported, not swallowed', !gone.ok)
+  t.ok('and names the bucket as the thing to check', /product-images|bucket/i.test(gone.why))
+
+  const denied = await verifyUploaded('https://x/img.jpg', res(403, ''))
+  t.ok('403 says access is denied', !denied.ok && /denied|private/i.test(denied.why))
+
+  const wrongType = await verifyUploaded('https://x/img.jpg', res(200, 'application/json'))
+  t.ok('a 200 that is not an image still fails', !wrongType.ok)
+  t.ok('and says what came back instead', /application\/json/.test(wrongType.why))
+
+  const dead = await verifyUploaded('https://x/img.jpg', async () => { throw new Error('Failed to fetch') })
+  t.ok('a network failure is reported', !dead.ok && /could not be reached/i.test(dead.why))
+  t.ok('no url at all is reported', !(await verifyUploaded('', res(200, 'image/jpeg'))).ok)
+}

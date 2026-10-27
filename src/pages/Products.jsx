@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../hooks/useStore'
 import { getSupabase, STORAGE_URL } from '../lib/supabase'
-import { chooseUpload, uploadPath } from '../lib/productImage'
+import { chooseUpload, uploadPath, verifyUploaded } from '../lib/productImage'
 import { money, num, thumb } from '../lib/utils'
 import Modal from '../components/Modal'
 import PromoteProduct from '../components/PromoteProduct'
@@ -97,6 +97,17 @@ export default function Products() {
           .upload(path, picked.blob, { cacheControl: '31536000', upsert: true, contentType: picked.contentType })
         if (upErr) { toast.error('Upload failed: ' + (upErr.message || 'create a public "product-images" bucket in Supabase')); setLoading(false); return }
         imageUrl = `${STORAGE_URL}/product-images/${path}`
+
+        // Ask for it back before telling anyone it worked. An upload can
+        // succeed and the file still be invisible, and "Saved!" with no
+        // picture is the failure that is hardest to act on.
+        const seen = await verifyUploaded(imageUrl)
+        if (!seen.ok) {
+          console.error('Image verification failed:', seen)
+          toast.error(seen.why, { duration: 12000 })
+          setLoading(false)
+          return
+        }
       } catch (e) { console.error('Image upload failed:', e); toast.error('Image upload failed: ' + (e?.message || '')); setLoading(false); return }
     }
     const data = { name: form.name.trim(), category: form.category.trim(), description: form.description.trim() || null, cost_price: num(form.costPrice), price: num(form.price), wholesale_price: num(form.wholesalePrice), wholesale_min_qty: num(form.wholesaleMinQty), quantity: num(form.quantity), group_tag: form.groupTag.trim().toLowerCase(), image: imageUrl }
