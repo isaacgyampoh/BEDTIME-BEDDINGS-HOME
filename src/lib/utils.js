@@ -13,13 +13,31 @@ export const fmtDateTime = d => d ? new Date(d).toLocaleDateString('en-GB', { da
 // Example: 'https://ik.imagekit.io/bqikvsp59'
 export const IMAGEKIT_ENDPOINT = 'https://ik.imagekit.io/bqikvsp59'
 
+const TRANSFORMS_ON = String(import.meta.env?.VITE_IMAGE_TRANSFORMS || '') === 'on'
+
 export const thumb = (url, w) => {
   if (!url) return ''
   // Supabase storage: use the built-in image transform to serve a resized,
   // compressed version instead of the full-size upload. A 3MB photo becomes a
   // ~15-40KB thumbnail — the single biggest load-speed win. Falls back to the
   // original if transforms aren't available.
+  // Supabase's image transform endpoint is a paid feature, and on 27 October
+  // 2026 it stopped being enabled on this project: every /render/image/ request
+  // returns
+  //     {"statusCode":"403","error":"FeatureNotEnabled",
+  //      "message":"feature not enabled for this tenant"}
+  // while the original file still serves fine. Because every image in both
+  // apps was rewritten to that endpoint, every photo 403'd. The shop front only
+  // looked healthy because its <img onError> quietly re-fetched the original —
+  // two requests per photo, one of them always failing. The admin had no such
+  // fallback, so product photos were simply blank, which is what "the image
+  // doesn't show" was.
+  //
+  // So the original is served directly. Set VITE_IMAGE_TRANSFORMS=on to turn
+  // the resizing back on if the feature is ever enabled again; until then a
+  // photo that loads beats a smaller one that does not.
   if (url.includes('/storage/v1/object/public/')) {
+    if (!TRANSFORMS_ON) return url
     const width = w || 600
     return url.replace('/object/public/', '/render/image/public/') + `?width=${width}&quality=70&resize=contain`
   }

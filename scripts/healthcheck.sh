@@ -60,6 +60,24 @@ else
   fi
 fi
 
+note "== can a customer actually see a photo? =="
+# On 27 October 2026 every photo in both apps 403'd, because Supabase's image
+# transform endpoint stopped being enabled for this project and every image URL
+# was rewritten to it. The pages still returned 200 throughout. So ask for a
+# real product photo the way a browser does, and check an image comes back.
+img=$(curl -s --max-time 30 "https://wqkgfvmvuljzexhevlnp.supabase.co/rest/v1/products?select=image&image=like.*product-images*&limit=1" \
+      -H "apikey: ${key:-}" -H "Authorization: Bearer ${key:-}" | sed -n 's/.*"image":"\([^"]*\)".*/\1/p')
+if [ -z "$img" ]; then
+  bad "could not find a product photo to test"
+else
+  ct=$(curl -s -o /dev/null -w '%{content_type}' --max-time 30 "$img")
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$img")
+  case "$ct" in
+    image/*) good "product photos load ($ct)" ;;
+    *)       bad "a product photo returned $code as $ct, not an image — customers are seeing blank squares" ;;
+  esac
+fi
+
 note ""
 if [ "$fail" -eq 0 ]; then note "The shop is open."; else note "THE SHOP NEEDS ATTENTION — see the failures above."; fi
 exit "$fail"
