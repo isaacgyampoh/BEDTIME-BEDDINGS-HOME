@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { chaseSummary, isAwaitingPayment } from '../lib/orderReminders'
 import { useStore } from '../hooks/useStore'
 import { getSupabase, callFunction } from '../lib/supabase'
 import { money, fmtDateTime, PAYMENTS_ENABLED, SHOP } from '../lib/utils'
@@ -38,10 +39,12 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
   const pending = waOrders.filter(o => o.status === 'Pending').length
   const paid = waOrders.filter(o => o.status === 'Paid').length
   const completed = waOrders.filter(o => o.status === 'Completed').length
+  const awaitingCount = waOrders.filter(isAwaitingPayment).length
 
   const filtered = waFilter === 'all' ? waOrders : waOrders.filter(o => o.status === waFilter)
   const bySource = srcFilter === 'all' ? filtered
     : srcFilter === 'needs-address' ? filtered.filter(o => o.source === 'whatsapp' && !o.address)
+    : srcFilter === 'awaiting-payment' ? filtered.filter(isAwaitingPayment)
     : filtered.filter(o => o.source === srcFilter)
   const searched = search.trim()
     ? bySource.filter(o => (o.customerName || '').toLowerCase().includes(search.toLowerCase()) || (o.customerPhone || '').includes(search) || (o.orderNo || '').toLowerCase().includes(search.toLowerCase()))
@@ -283,10 +286,11 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
           { k: 'whatsapp', label: 'WhatsApp' },
           { k: 'web', label: 'Website' },
           { k: 'walkin', label: 'Walk-in' },
+          { k: 'awaiting-payment', label: `Awaiting payment${awaitingCount ? ` (${awaitingCount})` : ''}` },
           { k: 'needs-address', label: 'Needs address' },
         ].map(f => (
           <button key={f.k} onClick={() => setSrcFilter(f.k)}
-            className={`h-8 px-4 rounded-full text-xs font-semibold whitespace-nowrap transition ${srcFilter === f.k ? (f.k === 'needs-address' ? 'bg-amber-500 text-white' : 'bg-[#0e7c86] text-white') : 'bg-white text-stone-400'}`}>
+            className={`h-8 px-4 rounded-full text-xs font-semibold whitespace-nowrap transition ${srcFilter === f.k ? (f.k === 'needs-address' || f.k === 'awaiting-payment' ? 'bg-amber-500 text-white' : 'bg-[#0e7c86] text-white') : 'bg-white text-stone-400'}`}>
             {f.label}
           </button>
         ))}
@@ -313,6 +317,19 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
                     {order.source === 'whatsapp' && !order.detailsFilled && !order.address && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600">NO ADDRESS</span>}
                   </div>
                   <div className="text-xs text-stone-400 mt-0.5">{order.orderNo} · {fmtDateTime(order.date)}</div>
+                  {/* What the automated chaser has already done. Staff had no way to
+                      tell an order chased four times from one nobody had touched, so
+                      they would chase it again by hand. */}
+                  {(() => {
+                    const chase = chaseSummary(order)
+                    if (!chase) return null
+                    return (
+                      <div className={`text-[11px] mt-1 font-semibold ${chase.count ? 'text-stone-500' : 'text-amber-600'}`}>
+                        {chase.count > 0 && <span className="mr-1">{chase.sent.join(' ')}</span>}
+                        {chase.text}
+                      </div>
+                    )
+                  })()}
                 </div>
                 <span className={`px-3 py-1.5 rounded-lg text-[11px] font-bold ${statusColor(order.status)}`}>{order.status}</span>
               </div>
