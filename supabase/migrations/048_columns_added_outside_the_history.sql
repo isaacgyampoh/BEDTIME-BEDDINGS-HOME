@@ -26,6 +26,14 @@
 --    supabase/functions/wa-agent/index.ts and src/pages/WhatsAppChats.jsx need
 --    the rest: whose number it is, where the conversation has got to, whether
 --    the agent is answering, and whether a person needs to take over.
+-- updated_at drifts the OTHER way: 009 creates the table with it, and the
+-- 30-day cleanup job deletes rows by it, but it is absent from production —
+-- which is how applying this file the first time failed:
+--     ERROR: 42703: column "updated_at" does not exist
+-- So the cleanup job has been failing there too. Restored first, because the
+-- back-fill below reads it.
+ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS updated_at      TIMESTAMPTZ DEFAULT now();
+
 ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS phone           TEXT;
 ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS stage           TEXT;
 ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS agent_enabled   BOOLEAN     NOT NULL DEFAULT true;
