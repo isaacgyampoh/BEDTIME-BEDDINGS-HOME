@@ -73,7 +73,8 @@ export const ADMIN_PIN = null
 // edge-function secrets) to enable MoMo direct-prompt + USSD + Split payments.
 export const PAYMENTS_ENABLED = true
 
-// This brand has no e-commerce website yet. Hides the Online Shop toggle,
-// the WhatsApp online-order features, and website references. Flip to true
-// when the storefront is built.
-export const ECOMMERCE_ENABLED = false
+// The storefront is live at bedtimehome.com, so the Online Shop controls are
+// shown. This was left false long after the shop was built, which is why there
+// appeared to be no way to open or close it: the toggle existed in the sidebar
+// the whole time and was hidden by this flag.
+export const ECOMMERCE_ENABLED = true

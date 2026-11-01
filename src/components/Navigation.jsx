@@ -31,6 +31,7 @@ const icons = {
   expenses: <I d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />,
   reports: <I d="M18 20V10M12 20V4M6 20v-6" />,
   staff: <I d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
+  onlineshop: <I d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18" />,
 }
 
 const NAV_GROUPS = [
@@ -61,6 +62,7 @@ const NAV_GROUPS = [
     { id: 'promotions', label: 'Promotion History', admin: true },
   ]},
   { section: 'System', items: [
+    { id: 'onlineshop', label: 'Online Shop', admin: true },
     { id: 'staff', label: 'Staff & Roles', admin: true },
   ]},
 ]

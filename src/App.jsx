@@ -23,6 +23,7 @@ const WhatsAppChats = lazy(() => import('./pages/WhatsAppChats'))
 const Receipts = lazy(() => import('./pages/Receipts'))
 const Products = lazy(() => import('./pages/Products'))
 const StaffPage = lazy(() => import('./pages/StaffPage'))
+const OnlineShop = lazy(() => import('./pages/OnlineShop'))
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage'))
 const CustomersPage = lazy(() => import('./pages/CustomersPage'))
 const BundlesPage = lazy(() => import('./pages/BundlesPage'))
@@ -43,7 +44,7 @@ const DeliveryDetails = lazy(() => import('./pages/DeliveryDetails'))
 const CustomerDisplay = lazy(() => import('./pages/CustomerDisplay'))
 
 const INACTIVITY_TIMEOUT = 60 * 1000 // 1 minute
-const ADMIN_PAGES = ['products', 'staff', 'promos', 'invoices', 'stocktakes', 'stockadjustments', 'restock', 'social', 'promotions']
+const ADMIN_PAGES = ['products', 'staff', 'promos', 'invoices', 'stocktakes', 'stockadjustments', 'restock', 'social', 'promotions', 'onlineshop']
 
 export default function App() {
   const { user, page, setPage, loading, loadAll, logout, isAdmin, darkMode } = useStore()
@@ -257,6 +258,7 @@ export default function App() {
     receipts: <Receipts onPrintReceipt={(s) => setReceipt({ receiptNo: s.receiptNo, date: s.date, customer: s.customer, cashier: s.cashier, payment: s.payment, type: s.type, items: s.items, total: s.total, discount: s.discount })} />,
     products: <Products />,
     staff: <StaffPage />,
+    onlineshop: <OnlineShop />,
     expenses: <ExpensesPage />,
     customers: <CustomersPage />,
     bundles: <BundlesPage />,

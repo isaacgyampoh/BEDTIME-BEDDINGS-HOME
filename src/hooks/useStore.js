@@ -107,14 +107,39 @@ export const useStore = create((set, get) => ({
   // Shop on/off switch (shared with the e-commerce site via store_settings)
   shopOpen: true,
   shopSettingLoaded: false,
+  // What a customer reads on the closed page. The shop front has always shown
+  // this; nothing in the POS could ever set it.
+  closedMessage: '',
   fetchShopOpen: async () => {
     const sb = getSupabase(); if (!sb) return
     try {
+      // closed_message is selected separately so an older database without the
+      // column cannot stop the on/off state loading.
       const { data, error } = await sb.from('store_settings').select('shop_open').limit(1)
       if (error) console.error('store_settings read error:', error.message)
       const row = Array.isArray(data) ? data[0] : null
       set({ shopOpen: row ? row.shop_open === true : true, shopSettingLoaded: true })
+      const { data: msg } = await sb.from('store_settings').select('closed_message').limit(1)
+      const m = Array.isArray(msg) ? msg[0] : null
+      if (m && typeof m.closed_message === 'string') set({ closedMessage: m.closed_message })
     } catch (e) { console.error('fetchShopOpen failed:', e); set({ shopSettingLoaded: true }) }
+  },
+
+  /** The message customers see while the shop is closed. */
+  setClosedMessage: async (message) => {
+    const sb = getSupabase(); if (!sb) return { ok: false, error: 'No connection' }
+    const previous = get().closedMessage
+    const text = String(message || '').trim().slice(0, 300)
+    set({ closedMessage: text })
+    try {
+      const { data, error } = await sb.from('store_settings')
+        .upsert({ id: 1, closed_message: text, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+        .select('closed_message')
+      if (error) { set({ closedMessage: previous }); return { ok: false, error: error.message } }
+      const saved = Array.isArray(data) ? data[0] : null
+      if (!saved || saved.closed_message !== text) { set({ closedMessage: previous }); return { ok: false, error: 'Save did not persist' } }
+      return { ok: true }
+    } catch (e) { set({ closedMessage: previous }); return { ok: false, error: String(e) } }
   },
   setShopOpen: async (open) => {
     const sb = getSupabase(); if (!sb) return { ok: false, error: 'No connection' }
