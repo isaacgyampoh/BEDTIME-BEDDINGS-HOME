@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { dueReminder, isChaseable, reminderMessage, stepsFrom } from '../_shared/reminders.js'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevlnp.supabase.co'
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
@@ -706,21 +707,44 @@ serve(async (req) => {
     }
 
     if (action === 'remind') {
+      // The decision lives in _shared/reminders.js so it can be tested without
+      // deploying. It replaces minute-wide windows that an hourly job could
+      // only hit by luck: no customer ever received all four reminders, and a
+      // quarter of checkout times heard nothing for over an hour.
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY); const now = Date.now()
-      const { data: unpaid } = await supabase.from('whatsapp_orders').select('id,order_no,customer_name,customer_phone,total,ussd_code,date,notes').eq('status', 'Pending').order('date', { ascending: false }).limit(50)
+      const steps = stepsFrom(Deno.env.get('REMINDER_MINUTES'))
+      const { data: unpaid } = await supabase.from('whatsapp_orders')
+        .select('id,order_no,customer_name,customer_phone,total,ussd_code,date,notes,status,paid_at')
+        .in('status', ['Pending', 'Awaiting Payment'])
       if (!unpaid?.length) return new Response(JSON.stringify({ status: 'no_pending_orders' }), { headers: CORS })
-      let sent = 0
+
+      let sent = 0, skipped = 0, failed = 0
       for (const o of unpaid) {
-        if (!o.customer_phone || !o.ussd_code) continue
-        const mins = Math.floor((now - new Date(o.date).getTime()) / 60000); const notes = o.notes || ''; const firstName = (o.customer_name || 'Customer').split(' ')[0]; const amount = `GHS ${Number(o.total).toFixed(2)}`; const code = `*920*141*${o.ussd_code}#`
-        let msg = ''
-        if (mins >= 5 && mins < 25 && !notes.includes('[R1]')) { msg = `Hi ${firstName}, you're almost done! Complete your order of ${amount}.\n\nDial ${code} to pay now.\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`; await supabase.from('whatsapp_orders').update({ notes: notes + ' [R1]' }).eq('id', o.id) }
-        else if (mins >= 30 && mins < 55 && !notes.includes('[R2]')) { msg = `Hi ${firstName}, your order ${o.order_no} (${amount}) is still waiting.\n\nDial ${code} to pay via MoMo.\n\nDon't miss out!\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`; await supabase.from('whatsapp_orders').update({ notes: notes + ' [R2]' }).eq('id', o.id) }
-        else if (mins >= 60 && mins < 120 && !notes.includes('[R3]')) { msg = `Hi ${firstName}, friendly reminder. Your order ${o.order_no} (${amount}) is waiting.\n\nDial ${code} to complete payment.\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`; await supabase.from('whatsapp_orders').update({ notes: notes + ' [R3]' }).eq('id', o.id) }
-        else if (mins >= 1440 && !notes.includes('[R4]')) { msg = `Hi ${firstName}, final reminder. Your order ${o.order_no} (${amount}) will be cancelled soon.\n\nDial ${code} to pay now.\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`; await supabase.from('whatsapp_orders').update({ notes: notes + ' [R4]' }).eq('id', o.id) }
-        if (msg) { try { await sendSMS(o.customer_phone, msg); sent++ } catch {} }
+        if (!isChaseable(o)) { skipped++; continue }
+        const due = dueReminder(o, now, steps)
+        if (!due) { skipped++; continue }
+
+        // The link is what makes this recoverable: it opens the order with its
+        // items, its delivery details and a pay button, rather than assuming
+        // the customer can use a USSD code.
+        const payUrl = `${APP_URL}/#/pay/${o.id}`
+        const msg = reminderMessage({ order: o, tag: due.tag, payUrl, isFinal: due.isFinal })
+
+        try {
+          await sendSMS(o.customer_phone, msg)
+          sent++
+          // Mark this one AND the ones it superseded, so a catch-up run never
+          // fires four messages at a customer at once.
+          const marks = [due.tag, ...due.superseded].map((t) => `[${t}]`).join(' ')
+          const { error: markErr } = await supabase.from('whatsapp_orders')
+            .update({ notes: `${o.notes || ''} ${marks}`.trim() }).eq('id', o.id)
+          if (markErr) console.error(`remind: sent ${due.tag} for ${o.order_no} but could not mark it: ${markErr.message} - it may repeat`)
+        } catch (e) {
+          failed++
+          console.error(`remind: ${due.tag} for ${o.order_no} failed: ${e?.message || e}`)
+        }
       }
-      return new Response(JSON.stringify({ status: 'sent', reminders: sent, total_pending: unpaid.length }), { headers: CORS })
+      return new Response(JSON.stringify({ status: 'sent', reminders: sent, skipped, failed, total_pending: unpaid.length }), { headers: CORS })
     }
 
     // ==================== RESEND SMS ====================
