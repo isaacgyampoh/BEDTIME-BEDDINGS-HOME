@@ -42,6 +42,21 @@ const EMPTY = { pending: null, paid: null, completed: null, cancelled: null, awa
  * figure. Silently returning 0 on error is how an outage looked like a quiet
  * day's trading.
  */
+/**
+ * A PostgREST filter matching any of these statuses, ignoring case.
+ *
+ * Production holds 193 orders with status 'Cancelled' and one with
+ * 'cancelled'. Every filter in the app compares with ===, so that order was
+ * invisible: absent from the Cancelled list, absent from the counts, and the
+ * four status figures summed to 527 while the table held 528. An exact-match
+ * count is only as reliable as the spelling of the data it counts.
+ *
+ * `ilike` with no wildcards is a case-insensitive equality test. Values are
+ * escaped for the or() grammar, where a comma separates terms.
+ */
+export const anyStatus = (statuses) =>
+  statuses.map(v => `status.ilike.${String(v).replace(/([,().])/g, '\\$1')}`).join(',')
+
 export async function countWhere(sb, table, apply) {
   try {
     let query = sb.from(table).select('id', { count: 'exact', head: true })
@@ -64,11 +79,11 @@ export async function countWhere(sb, table, apply) {
 export async function orderCounts(sb) {
   if (!sb) return { ...EMPTY }
   const [pending, paid, completed, cancelled, awaiting, total] = await Promise.all([
-    countWhere(sb, 'whatsapp_orders', q => q.in('status', ORDER_STATES.pending.statuses)),
-    countWhere(sb, 'whatsapp_orders', q => q.in('status', ORDER_STATES.paid.statuses)),
-    countWhere(sb, 'whatsapp_orders', q => q.in('status', ORDER_STATES.completed.statuses)),
-    countWhere(sb, 'whatsapp_orders', q => q.in('status', ORDER_STATES.cancelled.statuses)),
-    countWhere(sb, 'whatsapp_orders', q => q.in('status', AWAITING_PAYMENT).is('paid_at', null)),
+    countWhere(sb, 'whatsapp_orders', q => q.or(anyStatus(ORDER_STATES.pending.statuses))),
+    countWhere(sb, 'whatsapp_orders', q => q.or(anyStatus(ORDER_STATES.paid.statuses))),
+    countWhere(sb, 'whatsapp_orders', q => q.or(anyStatus(ORDER_STATES.completed.statuses))),
+    countWhere(sb, 'whatsapp_orders', q => q.or(anyStatus(ORDER_STATES.cancelled.statuses))),
+    countWhere(sb, 'whatsapp_orders', q => q.or(anyStatus(AWAITING_PAYMENT)).is('paid_at', null)),
     countWhere(sb, 'whatsapp_orders', null),
   ])
   return { pending, paid, completed, cancelled, awaiting, total }
@@ -87,3 +102,31 @@ export function figure(counted, loadedFallback) {
   if (typeof loadedFallback === 'number') return { value: loadedFallback, exact: false }
   return { value: null, exact: false }
 }
+
+/**
+ * Does this order's status match one of these, whatever its capitalisation?
+ *
+ * The in-memory counterpart of anyStatus(), so an array filtered in the
+ * browser and a count made in the database agree about the same row.
+ */
+export const statusIs = (status, statuses) => {
+  const s = String(status || '').trim().toLowerCase()
+  return statuses.some(v => String(v).trim().toLowerCase() === s)
+}
+
+/**
+ * Orders that were paid but never booked as a sale.
+ *
+ * The goods have gone and the money is in, but no sale row exists — so the
+ * revenue is missing from every report and the stock was never deducted. The
+ * dashboard showed this from the loaded array, which capped at 500 orders, so
+ * the figure it quoted was whatever fraction happened to be in the window.
+ */
+export async function unbookedPaid(sb) {
+  if (!sb) return null
+  return countWhere(sb, 'whatsapp_orders', q =>
+    q.or(anyStatus(['Paid', 'Completed'])).is('sale_receipt_no', null))
+}
+
+/** How many rows a table holds, for a screen that shows a bare total. */
+export const tableCount = (sb, table) => countWhere(sb, table, null)

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useStore } from '../hooks/useStore'
 import { callFunction } from '../lib/supabase'
 import { unknownCostExposure } from '../lib/dataHealth'
+import { statusIs } from '../lib/counts'
+import { isTruncated } from '../hooks/useStore'
 import { money, today, weekStartDate, monthStart, isoDate, fmtDateTime } from '../lib/utils'
 
 // Module scope: components declared inside render are a new type every render,
@@ -20,19 +22,25 @@ const HealthRow = ({ ok, warn, label, detail }) => (
  * Pending and the SMS key stayed dead for months. This makes that visible on
  * the screen the owner already looks at every morning.
  */
-function SystemHealth({ health, waOrders }) {
+function SystemHealth({ health, waOrders, counts }) {
   const calls = health?.recent_outbound_calls || []
   const lastCall = calls[0]
   const cronOk = calls.length > 0 && calls.slice(0, 3).every(c => c.code >= 200 && c.code < 300)
   const smsCount = health?.sms_last_24h ?? null
   const stuck = (waOrders || []).filter(o =>
-    o.status === 'Pending' && o.date && (Date.now() - new Date(o.date).getTime()) > 2 * 3600 * 1000).length
+    statusIs(o.status, ['Pending', 'Awaiting Payment']) && o.date &&
+    (Date.now() - new Date(o.date).getTime()) > 2 * 3600 * 1000).length
 
   // Paid, closed out, but never recorded as a sale. This is the one that
   // silently costs money: the goods have gone and the revenue is missing from
   // every report. Two orders sat like this for eleven days.
+  // The count comes from the database because this figure decides whether the
+  // owner goes looking for missing money, and the loaded array used to cap at
+  // 500 orders of 529 — so it quoted whatever fraction was in the window. The
+  // value is still summed from the loaded orders, which now hold every row.
   const unbooked = (waOrders || []).filter(o =>
-    (o.status === 'Paid' || o.status === 'Completed') && !o.saleReceiptNo)
+    statusIs(o.status, ['Paid', 'Completed']) && !o.saleReceiptNo)
+  const unbookedCount = typeof counts?.unbooked === 'number' ? counts.unbooked : unbooked.length
   const unbookedValue = unbooked.reduce((a, o) => a + (Number(o.total) || 0), 0)
 
   return (
@@ -45,15 +53,15 @@ function SystemHealth({ health, waOrders }) {
         detail={smsCount == null ? 'checking…' : `${smsCount} message${smsCount === 1 ? '' : 's'}`} />
       <HealthRow ok={stuck === 0} warn={stuck > 0} label="Orders paid but still Pending"
         detail={stuck === 0 ? 'none' : `${stuck} over 2h — check Orders`} />
-      <HealthRow ok={unbooked.length === 0} warn={unbooked.length > 0} label="Paid orders missing from sales"
-        detail={unbooked.length === 0 ? 'none'
-          : `${unbooked.length} · GHS ${unbookedValue.toFixed(2)} — press Process & Package`} />
+      <HealthRow ok={unbookedCount === 0} warn={unbookedCount > 0} label="Paid orders missing from sales"
+        detail={unbookedCount === 0 ? 'none'
+          : `${unbookedCount} · GHS ${unbookedValue.toFixed(2)} — press Process & Package`} />
     </div>
   )
 }
 
 export default function Dashboard() {
-  const { sales, expenses, products, user, waOrders } = useStore()
+  const { sales, expenses, products, user, waOrders, counts } = useStore()
 
   // Automation health. Everything below runs unattended — scheduled reports,
   // payment confirmations, delivery messages — and when one breaks it breaks
@@ -74,6 +82,13 @@ export default function Dashboard() {
   const weekRev = weekSales.reduce((a, s) => a + s.total, 0)
   const monthRev = monthSales.reduce((a, s) => a + s.total, 0)
   const allRev = allSales.reduce((a, s) => a + s.total, 0)
+  // Every sale is loaded now, so this is the real lifetime figure. It read
+  // GHS 255,153 against an actual GHS 526,690 while the table was capped at
+  // the newest 500 rows — the arithmetic was right and the books were half
+  // missing. If a page of the fetch ever fails the total is marked partial
+  // rather than presented as fact.
+  const salesPartial = isTruncated('sales')
+  const mark = (v) => (salesPartial ? `~${money(v)}` : money(v))
   const todayProfit = todaySales.reduce((a, s) => a + s.profit, 0)
   const monthProfit = monthSales.reduce((a, s) => a + s.profit, 0)
   const todayExp = expenses.filter(e => isoDate(e.date) === t).reduce((a, e) => a + e.amount, 0)
@@ -111,7 +126,7 @@ export default function Dashboard() {
           { label: "Today", value: money(todayRev), sub: todaySales.length + ' sales', feature: true },
           { label: "This Week", value: money(weekRev), sub: weekSales.length + ' sales', feature: false },
           { label: "This Month", value: money(monthRev), sub: monthSales.length + ' sales', feature: false },
-          { label: "All Time", value: money(allRev), sub: allSales.length + ' total', feature: false },
+          { label: "All Time", value: mark(allRev), sub: allSales.length + ' total', feature: false },
         ].map((c, i) => (
           <div key={i} className={`rounded-2xl p-5 ${c.feature ? 'bg-[#0e7c86] text-white' : 'bg-white border border-gray-200/70 text-gray-900'}`}>
               <div className={`text-xs font-medium ${c.feature ? 'text-white/70' : 'text-gray-400'}`}>{c.label}</div>
@@ -136,7 +151,7 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <SystemHealth health={health} waOrders={waOrders} />
+      <SystemHealth health={health} waOrders={waOrders} counts={counts} />
 
       {/* Payment Split */}
       <div className="bg-white rounded-2xl p-5 border border-gray-200/70 mb-5">

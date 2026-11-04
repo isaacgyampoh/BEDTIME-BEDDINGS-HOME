@@ -1,5 +1,5 @@
 import { suite } from './harness.mjs'
-import { orderCounts, countWhere, figure, ORDER_STATES, AWAITING_PAYMENT } from '../src/lib/counts.js'
+import { orderCounts, countWhere, figure, ORDER_STATES, AWAITING_PAYMENT, anyStatus, statusIs, unbookedPaid, tableCount } from '../src/lib/counts.js'
 const t = suite('POS: figures counted in the database, not in memory')
 
 // A stand-in for the Supabase client that records what was asked and answers
@@ -15,12 +15,29 @@ const fakeSb = (rows, { failOn = null } = {}) => {
         select(_cols, opts) { state.opts = opts; return api },
         in(col, vals) { state.filters.push(['in', col, vals]); return api },
         is(col, val) { state.filters.push(['is', col, val]); return api },
+        // The real client's or() takes PostgREST's filter grammar as a string.
+        // Parsing it here is what makes the test prove the string the app
+        // actually sends, rather than a convenient object.
+        or(expr) { state.filters.push(['or', null, expr]); state.or = expr; return api },
         then(resolve) {
           calls.push(state)
           if (failOn && failOn(state)) return resolve({ count: null, error: { message: 'boom' } })
           let out = rows
           for (const [kind, col, val] of state.filters) {
-            out = kind === 'in' ? out.filter(r => val.includes(r[col])) : out.filter(r => r[col] === val)
+            if (kind === 'in') out = out.filter(r => val.includes(r[col]))
+            else if (kind === 'is') out = out.filter(r => r[col] === val)
+            else if (kind === 'or') {
+              // e.g. "status.ilike.Paid,status.ilike.Completed" — ilike with
+              // no wildcard is a case-insensitive equality test.
+              const terms = String(val).split(',').map(term => {
+                const [c, op, ...rest] = term.split('.')
+                return { c, op, v: rest.join('.') }
+              })
+              out = out.filter(r => terms.some(({ c, op, v }) =>
+                op === 'ilike'
+                  ? String(r[c] ?? '').toLowerCase() === v.toLowerCase()
+                  : String(r[c] ?? '') === v))
+            }
           }
           return resolve({ count: out.length, error: null })
         },
@@ -89,3 +106,59 @@ const ORDERS = [
 // ── the definitions live in one place ─────────────────────────────────────
 t.eq('pending covers both wordings', ORDER_STATES.pending.statuses.join(','), 'Pending,Awaiting Payment')
 t.eq('awaiting payment uses the same rule as the reminder job', AWAITING_PAYMENT.join(','), 'Pending,Awaiting Payment')
+
+
+// ── the row no filter could see ──────────────────────────────────────────────
+// Production holds 193 orders spelled 'Cancelled' and one spelled 'cancelled'.
+// Every comparison in the app used ===, so that order was absent from the
+// Cancelled list and from the counts: the four status figures summed to 527
+// while the table held 528. Counting in the database fixed where the figure
+// came from; it did not fix a count that cannot match its own data.
+{
+  const MIXED = [
+    ...Array.from({ length: 193 }, () => ({ status: 'Cancelled', paid_at: null })),
+    { status: 'cancelled', paid_at: null },
+    ...Array.from({ length: 100 }, () => ({ status: 'Pending', paid_at: null })),
+    ...Array.from({ length: 50 },  () => ({ status: 'Paid', paid_at: '2026-11-03' })),
+    ...Array.from({ length: 185 }, () => ({ status: 'Completed', paid_at: '2026-10-30' })),
+  ]
+  const sb = fakeSb(MIXED)
+  const c = await orderCounts(sb)
+  t.eq('a lowercase status is still a cancelled order', c.cancelled, 194)
+  t.eq('pending unaffected', c.pending, 100)
+  t.eq('paid unaffected', c.paid, 50)
+  t.eq('completed unaffected', c.completed, 185)
+  t.eq('and the total is the whole table', c.total, MIXED.length)
+  // The real test of a set of figures: they add up to the table.
+  t.eq('the status figures account for every order, with none counted twice',
+    c.pending + c.paid + c.completed + c.cancelled, c.total)
+}
+
+// The filter string itself, because this is what goes over the wire.
+t.eq('one status', anyStatus(['Paid']), 'status.ilike.Paid')
+t.eq('two, comma separated', anyStatus(['Pending', 'Awaiting Payment']),
+  'status.ilike.Pending,status.ilike.Awaiting Payment')
+t.ok('a comma inside a value is escaped, not treated as a separator', anyStatus(['a,b']).includes('a\\,b'))
+
+// statusIs is the in-memory half of the same rule, so an array filtered in the
+// browser and a count made in the database cannot disagree about a row.
+t.ok('lowercase matches', statusIs('cancelled', ['Cancelled']))
+t.ok('surrounding space does not change the status', statusIs('  Paid  ', ['Paid']))
+t.ok('different statuses still differ', !statusIs('Paid', ['Cancelled']))
+t.ok('a missing status matches nothing', !statusIs(null, ['Pending']))
+t.ok('nor an empty one', !statusIs('', ['Pending']))
+
+// ── paid orders never booked as a sale ───────────────────────────────────────
+// GHS 20,593 across 50 orders in production at the time of writing. The
+// dashboard read this from an array capped at 500 rows of 529, so it quoted a
+// fraction of it.
+{
+  const rows = [
+    ...Array.from({ length: 50 }, () => ({ status: 'Paid', sale_receipt_no: null })),
+    ...Array.from({ length: 185 }, (_, i) => ({ status: 'Completed', sale_receipt_no: 'RCP' + i })),
+    ...Array.from({ length: 100 }, () => ({ status: 'Pending', sale_receipt_no: null })),
+  ]
+  t.eq('paid and completed orders with no sale row', await unbookedPaid(fakeSb(rows)), 50)
+  t.eq('a bare table total', await tableCount(fakeSb(rows), 'whatsapp_orders'), 335)
+  t.eq('and no client means not known, not zero', await unbookedPaid(null), null)
+}

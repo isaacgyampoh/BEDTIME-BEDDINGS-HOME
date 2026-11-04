@@ -116,6 +116,26 @@ app.whenReady().then(async () => {
     `[...document.querySelectorAll('button')].some(b => /^(Pay|Continue to Payment)/i.test(b.innerText.trim()) && !b.disabled)`)
   ok('and cannot be paid', !payable2)
 
+  // ── 4b. a cancelled order whose status is spelled in lower case ──────────
+  // Production holds one order with status 'cancelled'. The page blocked
+  // payment with `status === 'Cancelled'`, so this order stayed payable: a
+  // customer following an old link could have paid for goods the shop had
+  // already cancelled, and the money would have arrived against a dead order.
+  order = { ...ORDER, status: 'cancelled' }
+  text = await openPay()
+  ok('a lower-case cancelled order is recognised as cancelled', /cancel/i.test(text), text.slice(0, 200))
+  const payable3 = await w.webContents.executeJavaScript(
+    `[...document.querySelectorAll('button')].some(b => /^(Pay|Continue to Payment)/i.test(b.innerText.trim()) && !b.disabled)`)
+  ok('and it cannot be paid either', !payable3)
+
+  // The same for a lower-case 'paid', which would otherwise take a second
+  // payment for an order already settled.
+  order = { ...ORDER, status: 'paid', paid_at: '2026-11-01T10:05:00Z' }
+  text = await openPay()
+  const payable4 = await w.webContents.executeJavaScript(
+    `[...document.querySelectorAll('button')].some(b => /^(Pay|Continue to Payment)/i.test(b.innerText.trim()) && !b.disabled)`)
+  ok('a lower-case paid order is not offered for payment again', !payable4, text.slice(0, 160))
+
   // ── 5. correcting the delivery details ───────────────────────────────────
   order = { ...ORDER }
   await openPay()

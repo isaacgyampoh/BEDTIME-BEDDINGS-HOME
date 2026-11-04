@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { getSupabase, rpcOrNull, FUNCTIONS_URL, SUPABASE_URL } from '../lib/supabase'
 import { SHOP } from '../lib/utils'
 import { LogoMark } from '../components/Logo'
+import { statusIs } from '../lib/counts'
 
 const money = v => 'GHS ' + Number(v || 0).toFixed(2)
 
@@ -71,8 +72,8 @@ export default function InvoicePay() {
       const sb = getSupabase()
       ;({ data: fresh } = await sb.from('whatsapp_orders').select('status').eq('id', orderId).single())
     }
-    if (fresh?.status === 'Cancelled') { setError('This order has been cancelled. Please contact the shop.'); return }
-    if (fresh?.status === 'Paid' || fresh?.status === 'Completed') { setError('This order has already been paid.'); await loadOrder(); return }
+    if (statusIs(fresh?.status, ['Cancelled'])) { setError('This order has been cancelled. Please contact the shop.'); return }
+    if (statusIs(fresh?.status, ['Paid', 'Completed'])) { setError('This order has already been paid.'); await loadOrder(); return }
 
     if (!name.trim()) { setError('Please enter your name'); return }
     if (!phone.trim() || phone.trim().length < 9) { setError('Please enter a valid phone number'); return }
@@ -133,7 +134,7 @@ export default function InvoicePay() {
           if (!o) {
             ;({ data: o } = await sb.from('whatsapp_orders').select('customer_phone,customer_name,order_no,total,status,paid_at').eq('id', orderId).single())
           }
-          const confirmed = o && (o.status === 'Paid' || o.status === 'Completed' || o.paid_at)
+          const confirmed = o && (statusIs(o.status, ['Paid', 'Completed']) || o.paid_at)
           if (confirmed && o?.customer_phone) {
             const name = o.customer_name ? ` ${o.customer_name}` : ''
             const msg = `Hi${name}! Thank you for completing your payment.\n\nOrder ID: ${o.order_no}\nAmount: GHS ${Number(o.total).toFixed(2)}\n\nYour order will be packaged and our delivery team will contact you to arrange delivery and let you know the delivery fee to your location.\n\nThank you for shopping with BEDTIME BEDDINGS & HOME!`
@@ -150,8 +151,8 @@ export default function InvoicePay() {
     }
   }, [])
 
-  const isPaid = order?.status === 'Paid' || order?.status === 'Completed' || order?.paid_at
-  const isCancelled = order?.status === 'Cancelled'
+  const isPaid = statusIs(order?.status, ['Paid', 'Completed']) || order?.paid_at
+  const isCancelled = statusIs(order?.status, ['Cancelled'])
   const hasDelivery = order?.address && order.address.length > 3
 
   // Processing fee: 1.95% added silently to Paystack charge

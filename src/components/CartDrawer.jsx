@@ -8,6 +8,7 @@ import Modal from './Modal'
 import NumField from './NumField'
 import toast from 'react-hot-toast'
 import { askConfirm } from './PromptDialog'
+import { statusIs } from '../lib/counts'
 
 
 export default function CartDrawer({ open, onClose, onReceipt }) {
@@ -333,7 +334,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
         if (pollRef.current) clearInterval(pollRef.current)
         pollRef.current = setInterval(async () => {
           const { data } = await sb.from('whatsapp_orders').select('status').eq('ussd_code', uc).limit(1)
-          if (data?.[0]?.status === 'Paid' || data?.[0]?.status === 'Completed') {
+          if (statusIs(data?.[0]?.status, ['Paid', 'Completed'])) {
             clearInterval(pollRef.current)
             const saleData = await recordSale('Momo')
             if (saleData) { toast.success('Payment confirmed! ' + saleData.receiptNo); finishSale(saleData) }
@@ -368,7 +369,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       if (pollRef.current) clearInterval(pollRef.current)
       pollRef.current = setInterval(async () => {
         const { data } = await sb.from('whatsapp_orders').select('status').eq('ussd_code', uc).limit(1)
-        if (data?.[0]?.status === 'Paid' || data?.[0]?.status === 'Completed') {
+        if (statusIs(data?.[0]?.status, ['Paid', 'Completed'])) {
           clearInterval(pollRef.current)
           if (autoCloseRef.current) clearTimeout(autoCloseRef.current)
           toast.success('Payment confirmed — order is Paid')

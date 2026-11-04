@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { getSupabase, rpcOrNull } from '../lib/supabase'
 import {  } from '../lib/utils'
 import { LogoFlat } from '../components/Logo'
+import { statusIs } from '../lib/counts'
 
 export default function DeliveryConfirm() {
   const [order, setOrder] = useState(null)
@@ -40,7 +41,7 @@ export default function DeliveryConfirm() {
     })
     if (!viaFn) {
       const sb = getSupabase()
-      const paid = order?.status === 'Paid' || order?.status === 'Completed' || !!order?.paid_at
+      const paid = statusIs(order?.status, ['Paid', 'Completed']) || !!order?.paid_at
       const { error } = await sb.from('whatsapp_orders').update({
         delivery_status: 'Delivered',
         delivery_guy: deliveryGuy.trim(),

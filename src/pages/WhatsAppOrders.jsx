@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { figure } from '../lib/counts'
+import { figure, statusIs } from '../lib/counts'
 import { chaseSummary, isAwaitingPayment } from '../lib/orderReminders'
 import { useStore } from '../hooks/useStore'
 import { getSupabase, callFunction } from '../lib/supabase'
@@ -50,13 +50,13 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
   // Each was an honest count of a different, moving window. See lib/counts.js.
   useEffect(() => { refreshCounts() }, [refreshCounts])
 
-  const pending = figure(counts.pending, waOrders.filter(o => o.status === 'Pending' || o.status === 'Awaiting Payment').length)
-  const paid = figure(counts.paid, waOrders.filter(o => o.status === 'Paid').length)
-  const completed = figure(counts.completed, waOrders.filter(o => o.status === 'Completed').length)
+  const pending = figure(counts.pending, waOrders.filter(o => statusIs(o.status, ['Pending', 'Awaiting Payment'])).length)
+  const paid = figure(counts.paid, waOrders.filter(o => statusIs(o.status, ['Paid'])).length)
+  const completed = figure(counts.completed, waOrders.filter(o => statusIs(o.status, ['Completed'])).length)
   const awaiting = figure(counts.awaiting, waOrders.filter(isAwaitingPayment).length)
   const awaitingCount = awaiting.value ?? 0
 
-  const filtered = waFilter === 'all' ? waOrders : waOrders.filter(o => o.status === waFilter)
+  const filtered = waFilter === 'all' ? waOrders : waOrders.filter(o => statusIs(o.status, [waFilter]))
   const bySource = srcFilter === 'all' ? filtered
     : srcFilter === 'needs-address' ? filtered.filter(o => o.source === 'whatsapp' && !o.address)
     : srcFilter === 'awaiting-payment' ? filtered.filter(isAwaitingPayment)
@@ -107,7 +107,7 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
     // appeared in the reports. complete_wa_order is idempotent now, so
     // packaging twice returns the same receipt instead of double-counting.
     let sale = null
-    if (order.status === 'Paid' || order.status === 'Completed') {
+    if (statusIs(order.status, ['Paid', 'Completed'])) {
       const { data, error } = await sb.rpc('complete_wa_order', {
         p_order_id: id, p_processed_by: user?.name || '',
       })
@@ -520,7 +520,7 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
             )}
 
             {/* Actions */}
-            {o.status === 'Pending' && (
+            {statusIs(o.status, ['Pending', 'Awaiting Payment']) && (
               <div className="space-y-2 pt-2">
                 <button onClick={() => resendInvoice(o)} className="w-full h-12 bg-[#25d366] text-white rounded-xl text-sm font-bold active:scale-[.98] transition">Resend Invoice</button>
                 <div className="flex gap-2">
@@ -534,7 +534,7 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
               </div>
             )}
 
-            {(o.status === 'Paid' || o.status === 'Completed') && (
+            {statusIs(o.status, ['Paid', 'Completed']) && (
               <div className="space-y-2 pt-2">
 
                 {/* Step 1: Process & Package */}
@@ -587,7 +587,7 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
               </div>
             )}
 
-            {o.status === 'Cancelled' && (
+            {statusIs(o.status, ['Cancelled']) && (
               <div className="pt-2">
                 <div className="w-full py-3 bg-gray-50 text-gray-400 rounded-xl text-sm font-medium text-center border border-gray-100">Order cancelled</div>
               </div>

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { getSupabase, endStaffSession } from '../lib/supabase'
-import { orderCounts } from '../lib/counts'
+import { orderCounts, unbookedPaid, tableCount } from '../lib/counts'
 import { num } from '../lib/utils'
 import { sanitizeCart } from '../lib/cartSafety'
 
@@ -46,6 +46,67 @@ const q = async (sb, table, opts = {}) => {
     return data || []
   } catch (e) { console.warn(`[store] ${table} query threw:`, e); failedTables.add(table); return [] }
 }
+
+/**
+ * Every row in a table, fetched a page at a time.
+ *
+ * WHY THIS REPLACED A `limit`
+ * The money figures were computed from arrays that had been capped: sales at
+ * 500 rows of 1,137. Ordered newest-first, that window reached back only to
+ * 6 October 2026 while the shop's first sale was 15 August — so "All Time
+ * revenue" on the front page read GHS 255,153 against an actual GHS 526,690,
+ * and a report run for August or September came back empty. The arithmetic was
+ * never wrong; it was given half the books.
+ *
+ * Paging the whole table costs about 140 KB gzipped for 1,137 sales — less
+ * than one product photo — because only the needed columns are selected and
+ * the response compresses well.
+ *
+ * CEIL is a safety stop, not a limit anyone should reach: at this shop's rate
+ * it is roughly twenty years of trading. If it is ever hit the table is
+ * reported as truncated rather than quietly short, so a screen can say the
+ * figure is partial instead of presenting it as fact.
+ */
+const PAGE = 1000
+const CEIL = 25000
+const truncatedTables = new Set()
+
+const qAll = async (sb, table, opts = {}) => {
+  const rows = []
+  truncatedTables.delete(table)
+  for (let from = 0; from < CEIL; from += PAGE) {
+    let query = sb.from(table).select(opts.select || '*')
+    if (opts.order) query = query.order(opts.order, { ascending: opts.asc ?? false })
+    // A stable tiebreak: two sales recorded in the same millisecond must not
+    // be able to swap places between pages, or one is fetched twice and the
+    // other never. Ordering by date alone made that possible.
+    query = query.order('id', { ascending: false })
+    try {
+      const { data, error } = await query.range(from, from + PAGE - 1)
+      if (error) {
+        console.warn(`[store] ${table} page ${from} failed:`, error.message)
+        failedTables.add(table)
+        // Pages already fetched are real rows, but the set is incomplete.
+        if (rows.length) truncatedTables.add(table)
+        return rows
+      }
+      const page = data || []
+      rows.push(...page)
+      if (page.length < PAGE) return rows
+    } catch (e) {
+      console.warn(`[store] ${table} page ${from} threw:`, e)
+      failedTables.add(table)
+      if (rows.length) truncatedTables.add(table)
+      return rows
+    }
+  }
+  console.warn(`[store] ${table} hit the ${CEIL}-row ceiling; figures are partial`)
+  truncatedTables.add(table)
+  return rows
+}
+
+/** Which tables came back incomplete, so a screen can mark its totals. */
+export const isTruncated = (table) => truncatedTables.has(table)
 
 export const useStore = create((set, get) => ({
   products: [], bundles: [], sales: [], staff: [], expenses: [],
@@ -108,10 +169,22 @@ export const useStore = create((set, get) => ({
   // Shop on/off switch (shared with the e-commerce site via store_settings)
   // Figures counted in the database. Null means "not known" — never 0, which
   // would read as a quiet day's trading when a query had simply failed.
-  counts: { pending: null, paid: null, completed: null, cancelled: null, awaiting: null, total: null },
+  counts: {
+    pending: null, paid: null, completed: null, cancelled: null, awaiting: null, total: null,
+    // Totals the rest of the app shows as bare numbers. Counted in the
+    // database so they do not depend on what finished loading.
+    customers: null, sales: null, products: null, unbooked: null,
+  },
   refreshCounts: async () => {
     const sb = getSupabase(); if (!sb) return
-    set({ counts: await orderCounts(sb) })
+    const [orders, customers, sales, products, unbooked] = await Promise.all([
+      orderCounts(sb),
+      tableCount(sb, 'customers'),
+      tableCount(sb, 'sales'),
+      tableCount(sb, 'products'),
+      unbookedPaid(sb),
+    ])
+    set({ counts: { ...orders, customers, sales, products, unbooked } })
   },
 
   shopOpen: true,
@@ -206,7 +279,7 @@ export const useStore = create((set, get) => ({
         q(sb, 'products', { select: 'id,name,category,cost_price,price,wholesale_price,wholesale_min_qty,quantity,image,group_tag,description', order: 'name', asc: true }),
         q(sb, 'staff_safe', { select: 'id,name,role,active' }),
         q(sb, 'bundles', { select: 'id,name,products,bundle_price,active' }),
-        q(sb, 'promos', { select: 'id,name,start_date,end_date,items,active', limit: 50 }),
+        qAll(sb, 'promos', { select: 'id,name,start_date,end_date,items,active', order: 'created_at' }),
       ])
 
       // Products are the one list the till cannot work without. An empty list
@@ -244,14 +317,14 @@ export const useStore = create((set, get) => ({
     const sb = getSupabase(); if (!sb) return
     try {
       const [saleData, expData, custData, waData, refData, invData, stData, adjData] = await Promise.all([
-        q(sb, 'sales', { select: 'id,receipt_no,date,items,subtotal,discount,total,profit,payment,split_cash,split_momo,customer,type,cashier,voided', order: 'date', limit: 500 }),
-        q(sb, 'expenses', { select: 'id,date,category,description,amount', order: 'date', limit: 200 }),
-        q(sb, 'customers', { select: 'id,phone,visit_count,total_spent,last_visit', order: 'total_spent', limit: 500 }),
-        q(sb, 'whatsapp_orders', { select: 'id,order_no,date,customer_name,customer_phone,items,subtotal,delivery_fee,total,status,ussd_code,paystack_ref,address,notes,paid_at,source,details_filled,tracking_no,delivery_status,delivery_guy,sale_receipt_no', order: 'date', limit: 500 }),
-        q(sb, 'refunds', { order: 'date', limit: 100 }),
-        q(sb, 'invoices', { order: 'date', limit: 100 }),
-        q(sb, 'stock_takes', { order: 'date', limit: 50 }),
-        q(sb, 'stock_adjustments', { select: 'id,date,product_id,product_name,qty,reason,notes,adjusted_by', order: 'date', limit: 200 }),
+        qAll(sb, 'sales', { select: 'id,receipt_no,date,items,subtotal,discount,total,profit,payment,split_cash,split_momo,customer,type,cashier,voided', order: 'date' }),
+        qAll(sb, 'expenses', { select: 'id,date,category,description,amount', order: 'date' }),
+        qAll(sb, 'customers', { select: 'id,phone,visit_count,total_spent,last_visit', order: 'total_spent' }),
+        qAll(sb, 'whatsapp_orders', { select: 'id,order_no,date,customer_name,customer_phone,items,subtotal,delivery_fee,total,status,ussd_code,paystack_ref,address,notes,paid_at,source,details_filled,tracking_no,delivery_status,delivery_guy,sale_receipt_no', order: 'date' }),
+        qAll(sb, 'refunds', { order: 'date' }),
+        qAll(sb, 'invoices', { order: 'date' }),
+        qAll(sb, 'stock_takes', { order: 'date' }),
+        qAll(sb, 'stock_adjustments', { select: 'id,date,product_id,product_name,qty,reason,notes,adjusted_by', order: 'date' }),
       ])
       set({
         sales: saleData.map(mapSale),
@@ -264,21 +337,25 @@ export const useStore = create((set, get) => ({
         stockAdjustments: adjData.map(mapStockAdj),
         _secondaryLoaded: true,
       })
+      // Headline figures are counted in the database, not derived from the
+      // arrays above, so every screen has them without waiting on its own
+      // request — and so a screen can tell a real count from a partial one.
+      get().refreshCounts()
     } catch (e) { console.warn('Secondary load:', e) }
   },
 
   refreshProducts: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'products', { order: 'name', asc: true }); set({ products: d.map(mapProduct) }) },
-  refreshSales: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'sales', { order: 'date', limit: 500 }); set({ sales: d.map(mapSale) }) },
-  refreshWAOrders: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'whatsapp_orders', { order: 'date', limit: 500 }); set({ waOrders: d.map(mapWAOrder) }) },
+  refreshSales: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'sales', { select: 'id,receipt_no,date,items,subtotal,discount,total,profit,payment,split_cash,split_momo,customer,type,cashier,voided', order: 'date' }); set({ sales: d.map(mapSale) }) },
+  refreshWAOrders: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'whatsapp_orders', { select: 'id,order_no,date,customer_name,customer_phone,items,subtotal,delivery_fee,total,status,ussd_code,paystack_ref,address,notes,paid_at,source,details_filled,tracking_no,delivery_status,delivery_guy,sale_receipt_no', order: 'date' }); set({ waOrders: d.map(mapWAOrder) }) },
   refreshStaff: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'staff_safe', { select: 'id,name,role,active' }); set({ staff: d.map(mapStaff) }) },
   refreshBundles: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'bundles'); set({ bundles: d.map(mapBundle) }) },
-  refreshExpenses: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'expenses', { order: 'date', limit: 200 }); set({ expenses: d.map(mapExpense) }) },
-  refreshCustomers: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'customers', { order: 'total_spent', limit: 500 }); set({ customers: d.map(mapCustomer) }) },
-  refreshRefunds: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'refunds', { order: 'date', limit: 100 }); set({ refunds: d.map(mapRefund) }) },
-  refreshPromos: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'promos', { order: 'created_at', limit: 50 }); set({ promos: d.map(mapPromo) }) },
-  refreshInvoices: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'invoices', { order: 'date', limit: 100 }); set({ invoices: d.map(mapInvoice) }) },
-  refreshStockTakes: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'stock_takes', { order: 'date', limit: 50 }); set({ stockTakes: d.map(mapStockTake) }) },
-  refreshStockAdjustments: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'stock_adjustments', { order: 'date', limit: 200 }); set({ stockAdjustments: d.map(mapStockAdj) }) },
+  refreshExpenses: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'expenses', { select: 'id,date,category,description,amount', order: 'date' }); set({ expenses: d.map(mapExpense) }) },
+  refreshCustomers: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'customers', { select: 'id,phone,visit_count,total_spent,last_visit', order: 'total_spent' }); set({ customers: d.map(mapCustomer) }) },
+  refreshRefunds: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'refunds', { order: 'date' }); set({ refunds: d.map(mapRefund) }) },
+  refreshPromos: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'promos', { select: 'id,name,start_date,end_date,items,active', order: 'created_at' }); set({ promos: d.map(mapPromo) }) },
+  refreshInvoices: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'invoices', { order: 'date' }); set({ invoices: d.map(mapInvoice) }) },
+  refreshStockTakes: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'stock_takes', { order: 'date' }); set({ stockTakes: d.map(mapStockTake) }) },
+  refreshStockAdjustments: async () => { const sb = getSupabase(); if (!sb) return; const d = await qAll(sb, 'stock_adjustments', { select: 'id,date,product_id,product_name,qty,reason,notes,adjusted_by', order: 'date' }); set({ stockAdjustments: d.map(mapStockAdj) }) },
 
   deductStock: (cartItems) => {
     // Build a delta map first, then produce fresh product objects. Mutating the

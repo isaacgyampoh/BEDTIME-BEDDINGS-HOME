@@ -1,4 +1,5 @@
 import { PAPER, getPaperWidth } from './printer'
+import { statusIs } from './counts'
 
 /**
  * Delivery label / packing sticker.
@@ -102,7 +103,7 @@ export function deliveryLabelHTML(order, { qr = '', deliverUrl = '', paper = get
 
   const track = order.trackingNo || order.orderNo || ''
   const items = Array.isArray(order.items) ? order.items : []
-  const paid = order.status === 'Paid' || order.status === 'Completed' || !!order.paidAt
+  const paid = statusIs(order.status, ['Paid', 'Completed']) || !!order.paidAt
   const date = order.date
     ? new Date(order.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : ''

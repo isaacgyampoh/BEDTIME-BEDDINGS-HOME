@@ -1,16 +1,23 @@
 import { useState } from 'react'
 import { useStore } from '../hooks/useStore'
 import { money, fmtDate } from '../lib/utils'
+import { figure } from '../lib/counts'
 
 export default function CustomersPage() {
-  const { customers } = useStore()
+  const { customers, counts } = useStore()
   const [query, setQuery] = useState('')
   const filtered = customers.filter(c => (c.phone || '').includes(query))
+
+  // Counted in the database. This read `customers.length` against a list
+  // capped at 500 rows of 982, ordered by total_spent — so the headline said
+  // 500 and every customer who had spent under GHS 350 was missing from the
+  // table below as well.
+  const total = figure(counts.customers, customers.length)
 
   return (
     <div >
       <h1 className="text-[22px] md:text-[26px] font-bold mb-6">Customers</h1>
-      <div className="bg-gray-800 rounded-2xl p-5 text-white mb-6"><small className="text-sm opacity-80">Total Customers</small><strong className="block text-[22px] md:text-[26px] font-bold mt-2">{customers.length}</strong></div>
+      <div className="bg-gray-800 rounded-2xl p-5 text-white mb-6"><small className="text-sm opacity-80">Total Customers</small><strong className="block text-[22px] md:text-[26px] font-bold mt-2">{total.value == null ? '—' : `${total.exact ? '' : '~'}${total.value}`}</strong></div>
       <div className="bg-white rounded-2xl p-6 shadow-md">
         <input className="w-full h-13 px-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-base mb-5" placeholder="Search..." value={query} onChange={e => setQuery(e.target.value)} />
         <div className="overflow-x-auto">
