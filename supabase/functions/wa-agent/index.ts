@@ -28,10 +28,34 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 
 const sb = () => createClient(SUPABASE_URL, SUPABASE_KEY)
 
-// Serve a resized product image (smaller = sends faster on WhatsApp).
+/**
+ * The product photo to send a customer on WhatsApp.
+ *
+ * This used to rewrite every URL to Supabase's image-transform endpoint
+ * unconditionally. Both web apps were gated behind a flag on 27 October 2026,
+ * when transforms started returning
+ *     {"statusCode":"403","error":"FeatureNotEnabled"}
+ * and every photo broke — but this function was missed, because it is in an
+ * Edge Function rather than the bundles, so nobody saw a blank image here.
+ *
+ * Transformations are billable and chargeable per origin transformation, and
+ * the organisation is over its allowance (553 of 100 at the time of writing).
+ * They are also working again as of 4 November 2026: a request now returns
+ * 200 with `x-transformations: width:200,resizing_type:fit,quality:50` and
+ * `cf-cache-status: MISS`, so this path spends money every time it runs on an
+ * image that is not already cached. That makes it the only BEDTIME code left
+ * that can add to that bill.
+ *
+ * WhatsApp re-compresses what it is sent, so the original is no worse for the
+ * customer, only larger to upload. Set WA_IMAGE_TRANSFORMS=on to turn the
+ * resizing back on deliberately.
+ */
+const WA_TRANSFORMS_ON = (Deno.env.get('WA_IMAGE_TRANSFORMS') || '') === 'on'
+
 function thumbUrl(url: string) {
   if (!url) return url
   if (url.includes('/storage/v1/object/public/')) {
+    if (!WA_TRANSFORMS_ON) return url
     return url.replace('/object/public/', '/render/image/public/') + '?width=800&quality=75&resize=contain'
   }
   return url
