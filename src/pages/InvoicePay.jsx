@@ -3,6 +3,7 @@ import { getSupabase, rpcOrNull, FUNCTIONS_URL, SUPABASE_URL } from '../lib/supa
 import { SHOP } from '../lib/utils'
 import { LogoMark } from '../components/Logo'
 import { statusIs } from '../lib/counts'
+import { normalisePhone } from '../lib/phone'
 
 const money = v => 'GHS ' + Number(v || 0).toFixed(2)
 
@@ -56,7 +57,7 @@ export default function InvoicePay() {
       const sb = getSupabase()
       await sb.from('whatsapp_orders').update({
         customer_name: name.trim(),
-        customer_phone: phone.trim(),
+        customer_phone: normalisePhone(phone),
         address: addr,
         notes: notes.trim()
       }).eq('id', orderId)

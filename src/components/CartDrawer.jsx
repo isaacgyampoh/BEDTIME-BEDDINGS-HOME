@@ -9,6 +9,7 @@ import NumField from './NumField'
 import toast from 'react-hot-toast'
 import { askConfirm } from './PromptDialog'
 import { statusIs } from '../lib/counts'
+import { normalisePhone } from '../lib/phone'
 
 
 export default function CartDrawer({ open, onClose, onReceipt }) {
@@ -232,7 +233,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       // (once, at receipt time) — prevents double deduction by deduct_order_stock.
       const { data: inserted, error: insErr } = await sb.from('whatsapp_orders').insert({
         order_no: ref, date: new Date().toISOString(),
-        customer_name: phone.trim(), customer_phone: phone.trim(),
+        customer_name: normalisePhone(phone), customer_phone: normalisePhone(phone),
         items: JSON.stringify(items), subtotal: total, total: amount,
         notes: isSplit ? `Split: Cash ${money(num(splitCash))}, MoMo ${money(amount)} (direct prompt)` : 'POS direct prompt',
         status: 'Pending', paystack_ref: ref, source: 'walkin', details_filled: false, stock_deducted: true,
@@ -283,7 +284,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       // so one customer's payment landed on the other's order.
       const { data: created, error: insErr } = await sb.from('whatsapp_orders').insert({
         order_no: orderNo, date: new Date().toISOString(),
-        customer_name: phone.trim(), customer_phone: phone.trim(),
+        customer_name: normalisePhone(phone), customer_phone: normalisePhone(phone),
         items: JSON.stringify(items), subtotal: total, total: amount,
         notes: isSplit ? `Split: Cash ${money(num(splitCash))}, USSD ${money(amount)}` : (isWhatsApp ? 'WhatsApp order' : 'POS USSD Payment'),
         status: 'Pending', paystack_ref: orderNo, source: isWhatsApp ? 'whatsapp' : 'walkin', details_filled: false,

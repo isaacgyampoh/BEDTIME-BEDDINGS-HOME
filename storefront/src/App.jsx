@@ -5,6 +5,7 @@ import { voiceSupported } from './lib/speech'
 import { priceCart } from './lib/pricing'
 import { buildPromoMap, discountPct, promoHeading as headingFor, promoEndsAt as endsAtFor, promoFirst, orderPromoFirst, promoSavings, promoIds } from './lib/promo'
 import { money, thumb, SHOP, PAYMENTS_ENABLED, EDGE_URL } from './lib/utils'
+import { normalisePhone, phoneKey } from './lib/phone'
 
 const WA = SHOP.whatsapp
 const I = {
@@ -449,7 +450,7 @@ export default function App() {
     // trg_assign_ussd_code trigger do it atomically; the old client-side
     // "max + 1" handed two simultaneous checkouts the same code, so one
     // customer's payment could land on the other customer's order.
-    const payload = { order_no: orderNo, customer_name: name, customer_phone: phone,
+    const payload = { order_no: orderNo, customer_name: name, customer_phone: normalisePhone(phone),
       items: JSON.stringify(items), subtotal: ct, total: ct,
       address: addr || null, notes: orderNotes }
     let inserted = null
@@ -495,7 +496,7 @@ export default function App() {
     // ilike %q%, so a single character matched every order in the table.
     let rows = await rpcOrNull('public_order_track', { p_query: q })
     if (!rows) {
-      const { data } = await supabase.from('whatsapp_orders').select('order_no,status,total,customer_name,tracking_no,delivery_status,delivery_guy,delivered_at,date').or(`customer_phone.ilike.%${q}%,order_no.ilike.%${q}%`).order('date', { ascending: false }).limit(20)
+      const { data } = await supabase.from('whatsapp_orders').select('order_no,status,total,customer_name,tracking_no,delivery_status,delivery_guy,delivered_at,date').or(`customer_phone.ilike.%${phoneKey(q) || q}%,order_no.ilike.%${q}%`).order('date', { ascending: false }).limit(20)
       rows = data
     }
     setTrackResult(rows || []); setTracking(false)

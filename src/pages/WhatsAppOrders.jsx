@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 import { askText, askConfirm } from '../components/PromptDialog'
 import { printDocument, lastPrintError } from '../lib/printer'
 import { deliveryLabelHTML, qrDataUri } from '../lib/deliveryLabel'
+import { normalisePhone } from '../lib/phone'
 
 
 /** A headline number, marked with ~ when it is not a database count. */
@@ -204,7 +205,7 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
     const sb = getSupabase()
     await sb.from('whatsapp_orders').update({
       customer_name: editName.trim(),
-      customer_phone: editPhone.trim(),
+      customer_phone: normalisePhone(editPhone),
       address: editAddress.trim(),
       notes: editNotes.trim() || null,
     }).eq('id', selected.id)
