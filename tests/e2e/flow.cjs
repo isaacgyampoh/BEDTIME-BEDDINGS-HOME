@@ -28,9 +28,14 @@ async function intercept(dbg, net) {
     // Answer on a later tick. Fulfilling a POST inside the requestPaused
     // handler itself crashes Electron 32 (SIGSEGV) — reproduced on the MoMo
     // order insert; deferring it does not.
-    const reply = async (obj, code = 200) => { await sleep(30); return dbg.sendCommand('Fetch.fulfillRequest', {
+    // Extra headers matter for anything the client reads off the response
+    // rather than out of the body — a PostgREST exact count arrives as
+    // Content-Range, so a stub without it reports no count at all.
+    const reply = async (obj, code = 200, extraHeaders) => { await sleep(30); return dbg.sendCommand('Fetch.fulfillRequest', {
       requestId, responseCode: code,
-      responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
+      responseHeaders: [{ name: 'Content-Type', value: 'application/json' }, { name: 'Access-Control-Allow-Origin', value: '*' },
+        { name: 'Access-Control-Expose-Headers', value: 'content-range, content-length' },
+        ...Object.entries(extraHeaders || {}).map(([name, value]) => ({ name, value: String(value) }))],
       body: Buffer.from(JSON.stringify(obj)).toString('base64'),
     }).catch(() => {}) }
 
@@ -39,7 +44,8 @@ async function intercept(dbg, net) {
     const scripted = net.script ? net.script({ method: m, path, query, body, url }) : undefined
     if (scripted !== undefined) {
       if (m !== 'GET') net.writes.push({ method: m, path, query, body, at: Date.now() })
-      if (scripted && scripted.__status) return reply(scripted.body || {}, scripted.__status)
+      if (scripted && scripted.__status) return reply(scripted.body || {}, scripted.__status, scripted.__headers)
+      if (scripted && scripted.__headers) return reply(scripted.body ?? scripted, 200, scripted.__headers)
       return reply(scripted)
     }
 

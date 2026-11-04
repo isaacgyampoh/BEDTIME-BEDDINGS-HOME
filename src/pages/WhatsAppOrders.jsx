@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { figure } from '../lib/counts'
 import { chaseSummary, isAwaitingPayment } from '../lib/orderReminders'
 import { useStore } from '../hooks/useStore'
 import { getSupabase, callFunction } from '../lib/supabase'
@@ -9,8 +10,15 @@ import { askText, askConfirm } from '../components/PromptDialog'
 import { printDocument, lastPrintError } from '../lib/printer'
 import { deliveryLabelHTML, qrDataUri } from '../lib/deliveryLabel'
 
+
+/** A headline number, marked with ~ when it is not a database count. */
+function Figure({ of }) {
+  if (of.value === null) return <span className="opacity-50">--</span>
+  return <>{of.exact ? '' : '~'}{of.value}</>
+}
+
 export default function WhatsAppOrders({ onPrintReceipt }) {
-  const { waOrders, waFilter, setWAFilter, refreshWAOrders, user, setLoading, loadAll, beginTx, endTx } = useStore()
+  const { waOrders, waFilter, setWAFilter, refreshWAOrders, user, setLoading, loadAll, beginTx, endTx, counts, refreshCounts} = useStore()
   const [search, setSearch] = useState('')
 
   // Auto-reconcile: check recent pending orders against NaloPay and confirm any
@@ -36,10 +44,17 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
   const [editAddress, setEditAddress] = useState('')
   const [editNotes, setEditNotes] = useState('')
 
-  const pending = waOrders.filter(o => o.status === 'Pending').length
-  const paid = waOrders.filter(o => o.status === 'Paid').length
-  const completed = waOrders.filter(o => o.status === 'Completed').length
-  const awaitingCount = waOrders.filter(isAwaitingPayment).length
+  // Counted in the database. These used to be filters over `waOrders`, which
+  // holds only the newest N orders — 200 on the initial load, 500 after a
+  // refresh — so the same figure read 53, then 42, then 23 across restarts.
+  // Each was an honest count of a different, moving window. See lib/counts.js.
+  useEffect(() => { refreshCounts() }, [refreshCounts])
+
+  const pending = figure(counts.pending, waOrders.filter(o => o.status === 'Pending' || o.status === 'Awaiting Payment').length)
+  const paid = figure(counts.paid, waOrders.filter(o => o.status === 'Paid').length)
+  const completed = figure(counts.completed, waOrders.filter(o => o.status === 'Completed').length)
+  const awaiting = figure(counts.awaiting, waOrders.filter(isAwaitingPayment).length)
+  const awaitingCount = awaiting.value ?? 0
 
   const filtered = waFilter === 'all' ? waOrders : waOrders.filter(o => o.status === waFilter)
   const bySource = srcFilter === 'all' ? filtered
@@ -258,13 +273,13 @@ export default function WhatsAppOrders({ onPrintReceipt }) {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 mb-5">
         <div className="bg-gray-100 rounded-2xl p-4 text-gray-900">
-          <div className="text-xs font-medium opacity-60">Pending</div><div className="text-[22px] font-bold mt-0.5">{pending}</div>
+          <div className="text-xs font-medium opacity-60">Pending</div><div className="text-[22px] font-bold mt-0.5"><Figure of={pending} /></div>
         </div>
         <div className="bg-gray-900 rounded-2xl p-4 text-white">
-          <div className="text-xs font-medium opacity-70">Paid</div><div className="text-[22px] font-bold mt-0.5">{paid}</div>
+          <div className="text-xs font-medium opacity-70">Paid</div><div className="text-[22px] font-bold mt-0.5"><Figure of={paid} /></div>
         </div>
         <div className="bg-gray-900 rounded-2xl p-4 text-white">
-          <div className="text-xs font-medium opacity-70">Completed</div><div className="text-[22px] font-bold mt-0.5">{completed}</div>
+          <div className="text-xs font-medium opacity-70">Completed</div><div className="text-[22px] font-bold mt-0.5"><Figure of={completed} /></div>
         </div>
       </div>
 

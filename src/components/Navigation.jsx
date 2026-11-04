@@ -100,7 +100,7 @@ export default function Navigation({ onOpenCart }) {
   const [printerOpen, setPrinterOpen] = useState(false)
   const [installOpen, setInstallOpen] = useState(false)
   const showInstall = canInstallDesktop()
-  const { page, setPage, user, isAdmin, logout, waOrders, cart, darkMode, toggleDark, shopOpen, shopSettingLoaded, fetchShopOpen, setShopOpen } = useStore()
+  const { page, setPage, user, isAdmin, logout, waOrders, cart, darkMode, toggleDark, shopOpen, shopSettingLoaded, fetchShopOpen, setShopOpen, counts} = useStore()
   useEffect(() => { if (ECOMMERCE_ENABLED && isAdmin) fetchShopOpen() }, [isAdmin])
   useEffect(() => { document.documentElement.style.setProperty('--sidebar-w', (pinned ? 236 : 68) + 'px') }, [pinned])
   const toggleShop = async () => {
@@ -128,7 +128,11 @@ export default function Navigation({ onOpenCart }) {
     if (w) toast.success('Customer screen opened')
     else toast.error('Could not open — check the second display is connected and popups are allowed')
   }
-  const wa = waOrders.filter(o => o.status === 'Pending' || o.status === 'Paid').length
+  // Counted in the database, not from `waOrders`, which holds only the newest
+  // 500 orders — the badge used to drift with the window the same way the
+  // headline figures did. See lib/counts.js.
+  const wa = (counts.pending ?? 0) + (counts.paid ?? 0)
+    || waOrders.filter(o => o.status === 'Pending' || o.status === 'Paid').length
   const cc = cart.reduce((a, c) => a + c.qty, 0)
   const go = (p) => {
     const allItems = [...NAV_GROUPS.flatMap(g => g.items), ...MOB]

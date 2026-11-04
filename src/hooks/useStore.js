@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { getSupabase, endStaffSession } from '../lib/supabase'
+import { orderCounts } from '../lib/counts'
 import { num } from '../lib/utils'
 import { sanitizeCart } from '../lib/cartSafety'
 
@@ -105,6 +106,14 @@ export const useStore = create((set, get) => ({
   },
 
   // Shop on/off switch (shared with the e-commerce site via store_settings)
+  // Figures counted in the database. Null means "not known" — never 0, which
+  // would read as a quiet day's trading when a query had simply failed.
+  counts: { pending: null, paid: null, completed: null, cancelled: null, awaiting: null, total: null },
+  refreshCounts: async () => {
+    const sb = getSupabase(); if (!sb) return
+    set({ counts: await orderCounts(sb) })
+  },
+
   shopOpen: true,
   shopSettingLoaded: false,
   // What a customer reads on the closed page. The shop front has always shown
@@ -235,14 +244,14 @@ export const useStore = create((set, get) => ({
     const sb = getSupabase(); if (!sb) return
     try {
       const [saleData, expData, custData, waData, refData, invData, stData, adjData] = await Promise.all([
-        q(sb, 'sales', { select: 'id,receipt_no,date,items,subtotal,discount,total,profit,payment,split_cash,split_momo,customer,type,cashier,voided', order: 'date', limit: 150 }),
-        q(sb, 'expenses', { select: 'id,date,category,description,amount', order: 'date', limit: 100 }),
-        q(sb, 'customers', { select: 'id,phone,visit_count,total_spent,last_visit', order: 'total_spent', limit: 300 }),
-        q(sb, 'whatsapp_orders', { select: 'id,order_no,date,customer_name,customer_phone,items,subtotal,delivery_fee,total,status,ussd_code,paystack_ref,address,notes,paid_at,source,details_filled,tracking_no,delivery_status,delivery_guy,sale_receipt_no', order: 'date', limit: 200 }),
-        q(sb, 'refunds', { order: 'date', limit: 50 }),
-        q(sb, 'invoices', { order: 'date', limit: 50 }),
-        q(sb, 'stock_takes', { order: 'date', limit: 20 }),
-        q(sb, 'stock_adjustments', { select: 'id,date,product_id,product_name,qty,reason,notes,adjusted_by', order: 'date', limit: 100 }),
+        q(sb, 'sales', { select: 'id,receipt_no,date,items,subtotal,discount,total,profit,payment,split_cash,split_momo,customer,type,cashier,voided', order: 'date', limit: 500 }),
+        q(sb, 'expenses', { select: 'id,date,category,description,amount', order: 'date', limit: 200 }),
+        q(sb, 'customers', { select: 'id,phone,visit_count,total_spent,last_visit', order: 'total_spent', limit: 500 }),
+        q(sb, 'whatsapp_orders', { select: 'id,order_no,date,customer_name,customer_phone,items,subtotal,delivery_fee,total,status,ussd_code,paystack_ref,address,notes,paid_at,source,details_filled,tracking_no,delivery_status,delivery_guy,sale_receipt_no', order: 'date', limit: 500 }),
+        q(sb, 'refunds', { order: 'date', limit: 100 }),
+        q(sb, 'invoices', { order: 'date', limit: 100 }),
+        q(sb, 'stock_takes', { order: 'date', limit: 50 }),
+        q(sb, 'stock_adjustments', { select: 'id,date,product_id,product_name,qty,reason,notes,adjusted_by', order: 'date', limit: 200 }),
       ])
       set({
         sales: saleData.map(mapSale),
@@ -259,7 +268,7 @@ export const useStore = create((set, get) => ({
   },
 
   refreshProducts: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'products', { order: 'name', asc: true }); set({ products: d.map(mapProduct) }) },
-  refreshSales: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'sales', { order: 'date', limit: 300 }); set({ sales: d.map(mapSale) }) },
+  refreshSales: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'sales', { order: 'date', limit: 500 }); set({ sales: d.map(mapSale) }) },
   refreshWAOrders: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'whatsapp_orders', { order: 'date', limit: 500 }); set({ waOrders: d.map(mapWAOrder) }) },
   refreshStaff: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'staff_safe', { select: 'id,name,role,active' }); set({ staff: d.map(mapStaff) }) },
   refreshBundles: async () => { const sb = getSupabase(); if (!sb) return; const d = await q(sb, 'bundles'); set({ bundles: d.map(mapBundle) }) },
