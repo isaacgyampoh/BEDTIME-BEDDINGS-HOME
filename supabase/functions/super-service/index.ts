@@ -1,6 +1,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { dueReminder, isChaseable, reminderMessage, stepsFrom } from '../_shared/reminders.js'
+import { statusIs, isPaid, isCancelled, anyStatus } from '../_shared/status.js'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevlnp.supabase.co'
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
@@ -330,12 +331,12 @@ serve(async (req) => {
       const { data: orders, error: orderError } = await supabase.from('whatsapp_orders').select('id,order_no,total,status,customer_name,customer_phone,ussd_code,source,delivery_status,tracking_no').eq('ussd_code', parseInt(orderCode)).order('date', { ascending: false }).limit(1)
       const order = orders?.[0] || null; console.log('Order lookup result:', order ? order.order_no : 'NULL', 'error:', orderError?.message || 'none')
       if (!order) return ussdEnd(`Order ${orderCode} not found.\nCall 059 908 4552`)
-      if (order.status === 'Paid' || order.status === 'Completed') {
-        const d = order.delivery_status || (order.status === 'Completed' ? 'Being processed' : 'Paid - being processed')
+      if (isPaid(order)) {
+        const d = order.delivery_status || (statusIs(order.status, ['Completed']) ? 'Being processed' : 'Paid - being processed')
         const tn = order.tracking_no ? `\nTracking: ${order.tracking_no}` : ''
         return ussdEnd(`Order ${order.order_no}\nGHS ${Number(order.total).toFixed(2)} - PAID\n\nStatus: ${d}${tn}\n\nQueries: 059 908 4552\nThank you!`)
       }
-      if (order.status === 'Cancelled') return ussdEnd(`Order ${order.order_no} cancelled.\nCall: 059 908 4552`)
+      if (isCancelled(order)) return ussdEnd(`Order ${order.order_no} cancelled.\nCall: 059 908 4552`)
       const total = Number(order.total).toFixed(2)
       if (userData === '1') {
         // USSD dial-to-pay stays on NaloPay for now: Moolre requires OTP (TP14)
@@ -392,7 +393,7 @@ serve(async (req) => {
         // is what lets a payment land even if the ref column was never written.
         if (!order && ref) { const { data: o4 } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name,status,source,ussd_code').eq('order_no', ref).limit(1); order = o4?.[0] }
         if (!order) { console.error('NaloPay callback: no matching order for ref=' + ref); return new Response(JSON.stringify({ success: true, note: 'order not found' }), { headers: { 'Content-Type': 'application/json' } }) }
-        if (order.status === 'Paid' || order.status === 'Completed') { return new Response(JSON.stringify({ success: true, note: 'already paid' }), { headers: { 'Content-Type': 'application/json' } }) }
+        if (isPaid(order)) { return new Response(JSON.stringify({ success: true, note: 'already paid' }), { headers: { 'Content-Type': 'application/json' } }) }
         // Walk-in orders are handed over in-shop, so payment = fully done -> Completed.
         // Web/WhatsApp orders await packaging -> Paid.
         const isWalkin = (order.source === 'walkin') || (!order.source && order.order_no.startsWith('POS-'))
@@ -536,10 +537,10 @@ serve(async (req) => {
         if (!ord) {
           return new Response(JSON.stringify({ success: false, error: 'Order not found' }), { status: 404, headers: CORS })
         }
-        if (ord.status === 'Cancelled') {
+        if (isCancelled(ord)) {
           return new Response(JSON.stringify({ success: false, error: 'This order has been cancelled' }), { status: 409, headers: CORS })
         }
-        if (ord.status === 'Paid' || ord.status === 'Completed' || ord.paid_at) {
+        if (isPaid(ord)) {
           return new Response(JSON.stringify({ success: false, error: 'This order has already been paid' }), { status: 409, headers: CORS })
         }
         // Compared in pesewas so a float cannot drift the two apart.
@@ -692,7 +693,7 @@ serve(async (req) => {
       const ADMIN_PHONES = (Deno.env.get('ADMIN_SMS_PHONES') || '0548124978').split(',').map((p: string) => p.trim()).filter(Boolean); const fmt = (n: number) => 'GHS ' + Number(n || 0).toFixed(2); const dateStr = (d: Date) => d.toISOString().slice(0, 10)
       const getSales = async (from: string, to: string) => { const { data } = await supabase.from('sales').select('*').gte('date', from + 'T00:00:00').lte('date', to + 'T23:59:59').eq('voided', false); const s = data || []; return { revenue: s.reduce((a: number, x: any) => a + Number(x.total || 0), 0), profit: s.reduce((a: number, x: any) => a + Number(x.profit || 0), 0), cash: s.filter((x: any) => x.payment === 'Cash').reduce((a: number, x: any) => a + Number(x.total || 0), 0), momo: s.filter((x: any) => x.payment === 'Momo' || x.payment === 'Paystack').reduce((a: number, x: any) => a + Number(x.total || 0), 0), split: s.filter((x: any) => x.payment === 'Split').reduce((a: number, x: any) => a + Number(x.total || 0), 0), count: s.length, sales: s } }
       const getExpenses = async (from: string, to: string) => { const { data } = await supabase.from('expenses').select('*').gte('date', from + 'T00:00:00').lte('date', to + 'T23:59:59'); const e = data || []; return { total: e.reduce((a: number, x: any) => a + Number(x.amount || 0), 0), count: e.length } }
-      const getWAOrders = async (from: string, to: string) => { const { data } = await supabase.from('whatsapp_orders').select('status,total').gte('date', from + 'T00:00:00').lte('date', to + 'T23:59:59'); const o = data || []; return { total: o.length, pending: o.filter((x: any) => x.status === 'Pending').length, paid: o.filter((x: any) => x.status === 'Paid').length, completed: o.filter((x: any) => x.status === 'Completed').length, cancelled: o.filter((x: any) => x.status === 'Cancelled').length, revenue: o.filter((x: any) => x.status === 'Paid' || x.status === 'Completed').reduce((a: number, x: any) => a + Number(x.total || 0), 0) } }
+      const getWAOrders = async (from: string, to: string) => { const { data } = await supabase.from('whatsapp_orders').select('status,total').gte('date', from + 'T00:00:00').lte('date', to + 'T23:59:59'); const o = data || []; return { total: o.length, pending: o.filter((x: any) => statusIs(x.status, ['Pending', 'Awaiting Payment'])).length, paid: o.filter((x: any) => statusIs(x.status, ['Paid'])).length, completed: o.filter((x: any) => statusIs(x.status, ['Completed'])).length, cancelled: o.filter((x: any) => statusIs(x.status, ['Cancelled'])).length, revenue: o.filter((x: any) => statusIs(x.status, ['Paid', 'Completed'])).reduce((a: number, x: any) => a + Number(x.total || 0), 0) } }
       const getLowStock = async () => { const { data } = await supabase.from('products').select('name,quantity').lte('quantity', 5).order('quantity', { ascending: true }).limit(10); return data || [] }
       const getTopSellers = (sales: any[]) => { const map: Record<string, { qty: number, rev: number }> = {}; for (const s of sales) { const items = typeof s.items === 'string' ? JSON.parse(s.items) : (s.items || []); for (const it of items) { const n = it.name || 'Unknown'; if (!map[n]) map[n] = { qty: 0, rev: 0 }; map[n].qty += Number(it.qty || 1); map[n].rev += Number(it.price || 0) * Number(it.qty || 1) } }; return Object.entries(map).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5) }
       let message = ''; const today = dateStr(new Date())
@@ -878,7 +879,7 @@ serve(async (req) => {
       const { data: rows } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name,status,source,ussd_code').eq('paystack_ref', ref).limit(1)
       const order = rows?.[0]
       if (!order) { console.error('Moolre callback: no order for ref ' + ref); return new Response(JSON.stringify({ success: true, note: 'order not found' }), { headers: { 'Content-Type': 'application/json' } }) }
-      if (order.status === 'Paid' || order.status === 'Completed') return new Response(JSON.stringify({ success: true, note: 'already paid' }), { headers: { 'Content-Type': 'application/json' } })
+      if (isPaid(order)) return new Response(JSON.stringify({ success: true, note: 'already paid' }), { headers: { 'Content-Type': 'application/json' } })
 
       const isWalkinM = (order.source === 'walkin') || (!order.source && order.order_no.startsWith('POS-'))
       await supabase.from('whatsapp_orders').update({ status: isWalkinM ? 'Completed' : 'Paid', paid_at: new Date().toISOString() }).eq('id', order.id)
