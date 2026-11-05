@@ -14,18 +14,19 @@ The brief says the old project's hostname "reportedly stopped resolving, and an
 earlier investigation did not find a usable backup". Both were true on 26
 October. They are not true now — the project was restored, and it is live:
 
-| | |
-|---|---|
-| products | 680 |
-| sales | 910 |
-| customers | 773 |
-| web orders | 173 |
-| expenses / promos / bundles | 5 / 4 / 4 |
-| product photos | serving from Storage |
-| both websites and the POS | answering |
+Re-counted directly against production on 5 November 2026, which is also why
+these differ from the figures written here on 26 October — the shop has been
+trading:
 
-Checked again at the start of this work with `scripts/healthcheck.sh`:
-*"680 products on sale. The shop is open."*
+| | 26 Oct | 5 Nov |
+|---|---|---|
+| products | 680 | **625** |
+| sales | 910 | **1,137** |
+| customers | 773 | **982** |
+| web orders | 173 | **532** |
+| expenses / promos / bundles | 5 / 4 / 4 | 5 / 1 / 4 |
+| product photos | serving | **1,076 objects, 300.1 MB** |
+| both websites and the POS | answering | answering |
 
 This changes the migration completely, and for the better. We are no longer
 reconstructing a schema and hoping; we can take a real `pg_dump` of a live
@@ -74,30 +75,81 @@ these are the parts in use:
 |---|---|
 | PostgreSQL | 22 tables, 46 migrations |
 | PostgREST | **the entire API** — 68 table calls, 11 stored procedures |
-| Storage | every product photo, bucket `product-images` |
+| Storage | 1,076 objects, 300.1 MB, bucket `product-images` — **movable to R2 instead**, see below |
 | Edge Functions | 6 functions, 2,341 lines: payments, SMS, WhatsApp, USSD, voice |
-| pg_cron + pg_net | 17 scheduled jobs |
+| pg_cron + pg_net | **7** scheduled jobs (migration 018 consolidated them) |
 | Realtime | 4 subscriptions |
 | Auth | **not used** — staff sign in with a PIN checked in the database |
 
 Auth being unused is good news: there are no auth users to migrate, which is
 usually the hardest part of leaving a managed Supabase.
 
-### Two things that will break silently if missed
+### Two things that would have broken silently — and where they now stand
 
-Both are handled by `migrate-from-managed.sh`, and both were found by reading
-the repository rather than by running anything:
+Both were found by reading the repository. Re-checking them against production
+today, one has already been fixed and the other no longer needs fixing at all.
 
-1. **14 scheduled jobs call the Edge Functions by absolute URL.** They contain
-   `https://wqkgfvmvuljzexhevlnp.supabase.co/functions/v1/...` in the job
-   command itself. Move the database without rewriting them and the daily SMS
-   report and the mobile-money reconciler keep calling the *old* project — from
-   the new server, quietly, forever.
+1. **The scheduled jobs no longer carry an absolute URL.** They did, and moving
+   the database without rewriting them would have left the new server calling
+   the *old* project forever. Migration 018 replaced that: all seven jobs are
+   now `SELECT private.call_edge('/sms-reports?type=morning')` and the base URL
+   comes from one row in `private.app_config`. So the cutover is **one UPDATE**,
+   not fourteen job commands rewritten.
 
-2. **Every product photo is an absolute URL in `products.image`.** All 680 rows
-   point at the old project's Storage. Copying the files across is not enough;
-   the rows have to be repointed, and the script refuses to continue if even
-   one reference is left behind.
+   The seven, as scheduled:
+
+   | job | when | calls |
+   |---|---|---|
+   | `sms-morning` | 07:00 daily | `/sms-reports?type=morning` |
+   | `sms-midday` | 13:00 daily | `/sms-reports?type=midday` |
+   | `sms-evening` | 20:00 daily | `/sms-reports?type=evening` |
+   | `sms-lowstock` | 09:00 daily | `/sms-reports?type=lowstock` |
+   | `sms-weekly` | 20:00 Saturdays | `/sms-reports?type=weekly` |
+   | `sms-monthly` | 20:00 on the 28th | `/sms-reports?type=monthly` |
+   | `payment-reminder` | every hour at :15 | `/super-service?action=remind` |
+
+   They reach the Edge Functions over `pg_net`, so the server needs **outbound**
+   HTTPS. Nothing needs to reach the database from outside for them to run.
+
+2. **The product photos no longer need to move to the server.** Every photo is
+   an absolute Supabase URL, and not only on `products.image`: 879 storage
+   paths are referenced, of which **277 are on the item snapshots kept with
+   past receipts, orders and bundles**. Repointing rows would mean rewriting
+   historical records, and rolling back would mean rewriting them again.
+
+   `src/lib/imageHost.js` solves this without touching a single row — the host
+   is chosen on the way to the `<img>` tag. Which means the photos can go to
+   **Cloudflare R2** (see `r2/`, 220 MB of 10 GB free, no egress charge)
+   instead of onto the VPS. That takes the largest and most error-prone part
+   out of this migration, keeps 300 MB of images off a 100 GB disk, and serves
+   them from Cloudflare's edge rather than from a single server in Germany to
+   customers in Accra.
+
+   If you would rather keep everything on one machine, the Storage container is
+   still in the stack and `migrate-from-managed.sh` still moves the bucket. R2
+   is the better answer for a shop whose customers are all in one city a long
+   way from the server.
+
+### One credential that a dump will carry with it
+
+`private.app_config` holds `service_key` — a service-role key, inside the
+database, because `pg_net` needs it to authenticate to the Edge Functions. It
+is not reachable from outside (the `private` schema is not exposed through
+PostgREST; a request for it returns 404, checked today).
+
+But a `pg_dump` includes it. Restore that dump onto the new server and the new
+database holds the **old project's service-role key**, which stays valid until
+it is rotated. `migrate-from-managed.sh` must clear that row and have you
+re-insert the new project's key, and the old one should be rotated afterwards
+regardless. This is the one secret that moving the database moves with it.
+
+### Extensions the schema needs
+
+Verified against the migrations: `pg_cron`, `pg_net`, `pgcrypto`, `uuid-ossp`.
+All four are in the official `supabase/postgres` image; `pg_cron` and `pg_net`
+additionally need `shared_preload_libraries`, which
+`docker-compose.override.yml` already sets. Nothing here needs an extension
+that self-hosting cannot provide.
 
 ---
 
@@ -151,8 +203,12 @@ sudo crontab -e            # 0 2 * * * /opt/supabase/backup.sh >> /var/log/bedti
 
 ### Moving the photos
 
-`migrate-from-managed.sh` repoints the rows; the files still have to be copied.
-From a machine with both keys:
+**Preferred: don't move them here at all — see `r2/`.** 220 MB of referenced
+photos into Cloudflare R2, free, no egress charge, served from the edge rather
+than from Germany, and switched with one environment variable because
+`src/lib/imageHost.js` never changes what is stored.
+
+If they must live on the VPS instead:
 
 ```bash
 # managed -> local -> self-hosted, bucket product-images
@@ -162,40 +218,3 @@ From a machine with both keys:
 Until this is done the shop will show broken images, which is why it must
 happen **before** cutover, not after.
 
-### Cutover
-
-The two front ends already read `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_ANON_KEY`, so switching is configuration, not code:
-
-1. Set both in Cloudflare Pages for `bedtime-shop` and `bedtime-admin`.
-2. `npm run deploy` — the gates run first.
-3. `./scripts/healthcheck.sh` must say the shop is open, with 680 products.
-4. Sign in on the POS, ring up a test sale, void it.
-5. Watch for 48 hours before cancelling anything.
-
-### Rolling back
-
-Remove the two environment variables in Cloudflare Pages and redeploy. Both
-apps fall back to the managed project, which is still running and still holds
-the data, because nothing in this process writes to it. That is the whole
-rollback — which is why the managed project must not be cancelled until the new
-one has carried real trade for a while.
-
----
-
-## What is needed from you
-
-1. **Which Supabase plan is the project on?** Free, or Pro at $25? This decides
-   whether the migration saves money or costs it. Nothing else here is worth
-   doing until that is answered.
-2. **A server.** No Contabo VPS exists that I can see — no credentials, no SSH
-   host entries, no mention anywhere in the repository. If one has been bought,
-   I need its address and a key to reach it. If not, Cloud VPS 4 is the one
-   that fits.
-3. **Database access for the dump.** `migrate-from-managed.sh` needs the
-   managed project's connection string. I am currently blocked from reaching
-   your production database from this session at all — the sandbox refuses it —
-   so either that permission changes, or you run the script.
-
-Nothing in this folder runs by itself, nothing has been deployed, and the live
-shop has not been touched.
