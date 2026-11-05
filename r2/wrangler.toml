@@ -1,0 +1,22 @@
+# The image Worker. Contains NO secrets: the R2 binding is granted by the
+# platform, and UPLOAD_SECRET is set with `wrangler secret put` so it never
+# appears in this file or in git.
+#
+#   npx wrangler deploy --config r2/wrangler.toml
+#   npx wrangler secret put UPLOAD_SECRET --config r2/wrangler.toml
+#
+name = "bedtime-images"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+# Created with:  npx wrangler r2 bucket create bedtime-images
+# R2's free allowance is 10 GB of storage and 1,000,000 class-B operations a
+# month. The 879 files BEDTIME actually references come to 220 MB, which is
+# 2.2% of it, and reads are served from Cloudflare's cache rather than R2 for
+# anything already seen.
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "bedtime-images"
+
+[vars]
+ALLOWED_ORIGINS = "https://bedtimehome.com,https://www.bedtimehome.com,https://admin.bedtimehome.com"

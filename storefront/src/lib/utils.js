@@ -1,3 +1,4 @@
+import { imageUrl } from './imageHost.js'
 export const money = v => 'GHS ' + Number(v || 0).toFixed(2)
 
 // No online payment yet for this brand. When false, checkout places the order
@@ -28,7 +29,9 @@ export const thumb = (url, w = 600) => {
   // the resizing back on if the feature is ever enabled again; until then a
   // photo that loads beats a smaller one that does not.
   if (url.includes('/storage/v1/object/public/')) {
-    if (!TRANSFORMS_ON) return url
+    // imageUrl() decides the host: Supabase as now, or the R2 Worker when
+    // VITE_IMAGE_HOST is set. The stored URL is never changed.
+    if (!TRANSFORMS_ON) return imageUrl(url)
     const width = w || 600
     return url.replace('/object/public/', '/render/image/public/') + `?width=${width}&quality=70&resize=contain`
   }
