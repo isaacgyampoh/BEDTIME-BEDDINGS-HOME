@@ -37,7 +37,13 @@ t.ok('the recipient can be changed without a code change (env var)',
 
 t.ok(`the new number is exempt from the SMS cap (${last9(NEW)})`, exempt.has(last9(NEW)),
   [...exempt].join(', ') || 'nothing is exempt')
-t.ok('the old line stays exempt — it still gets the per-order alerts', exempt.has('599084552'))
+// The old line is to receive nothing at all: "0548124978. only this line".
+// Its row in sms_exempt_numbers is inert — that table waives the per-number
+// SMS cap, it does not route anything — so it is left alone rather than
+// removed by a migration for no behavioural gain. What matters is that no
+// code sends there any more.
+t.eq('nothing sends to the old line any more',
+  [reports, service].filter(f => /0599084552|059 908 4552/.test(f.replace(/^\s*(\/\/|\*).*$/gm, ''))).length, 0)
 
 // The provider wants 233XXXXXXXXX; the code converts, so the number is written
 // the way it is dialled locally. Both must agree or every report 404s.

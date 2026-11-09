@@ -100,20 +100,33 @@ t.ok('58mm narrows the body', narrow.includes('width:48mm'))
   const { join } = await import('node:path')
   const walk = (dir, out = []) => {
     for (const name of readdirSync(dir)) {
-      if (name === 'node_modules' || name === 'dist') continue
+      if (name === 'node_modules' || name === 'dist' || name === '.git') continue
+      if (name === 'package-lock.json') continue
       const p = join(dir, name)
       if (statSync(p).isDirectory()) walk(p, out)
-      else if (/\.(js|jsx|ts|tsx)$/.test(name)) out.push(p)
+      // HTML and JSON too. The first version of this test checked only
+      // JavaScript, which is exactly how three live occurrences in
+      // storefront/index.html survived the change: a meta description that
+      // Google prints, the schema.org telephone behind the business listing,
+      // and a tel: link a customer could tap. A guard that does not look
+      // where the thing hides is not a guard.
+      else if (/\.(js|jsx|ts|tsx|html|json|webmanifest)$/.test(name)) out.push(p)
     }
     return out
   }
-  const files = ['src', 'storefront/src', 'supabase/functions'].flatMap(r => {
+  const files = ['src', 'storefront', 'supabase/functions', 'desktop'].flatMap(r => {
     try { return walk(r) } catch { return [] }
   })
+  // The two entry documents, which live at a root rather than in a folder.
+  for (const f of ['index.html', 'storefront/index.html']) {
+    try { statSync(f); files.push(f) } catch {}
+  }
+  const seen = new Set()
+  const scanned = files.filter(f => !seen.has(f) && seen.add(f))
 
   // The old line, in any spelling, must not be reachable as a value.
   const stale = []
-  for (const f of files) {
+  for (const f of scanned) {
     readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
       if (!/0599084552|059\s*908\s*4552|233599084552/.test(line)) return
       const t = line.trim()
@@ -125,14 +138,21 @@ t.ok('58mm narrows the body', narrow.includes('width:48mm'))
 
   // The new one appears only where it is DEFINED, never copied into a message.
   const defs = []
-  for (const f of files) {
+  for (const f of scanned) {
     readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
       if (!/0548124978|054\s*812\s*4978|233548124978/.test(line)) return
       const t = line.trim()
       if (t.startsWith('//') || t.startsWith('*')) return
       // A definition reads the environment or declares the constant.
       const isDef = /Deno\.env\.get|phone:|phoneDial:|whatsapp:|OWNER_PHONE|ADMIN_PHONES|SHOP_PHONE|const PHONE/.test(line)
-      if (!isDef) defs.push(`${f}:${i + 1}`)
+      // The entry documents are the one place the number is written out: they
+      // are served before any script runs, so they cannot read a constant.
+      // The meta description Google prints, the schema.org telephone behind
+      // the business listing, and the tel: link in the pre-JavaScript content
+      // all have to carry it literally. They are still covered by the
+      // old-number check above, which is what actually matters.
+      const isEntryDoc = /(^|\/)index\.html$/.test(f)
+      if (!isDef && !isEntryDoc) defs.push(`${f}:${i + 1}`)
     })
   }
   t.eq('the new number is never copied into a message body', defs.join(', '), '')
