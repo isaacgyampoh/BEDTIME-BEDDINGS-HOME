@@ -40,10 +40,12 @@ export const thumb = (url, w = 600) => {
 }
 export const SHOP = {
   name: 'BEDTIME BEDDINGS & HOME',
-  phone: '059 908 4552',
+  // Changed on 9 November 2026 from 059 908 4552.
+  phone: '054 812 4978',
+  phoneDial: '0548124978',
 
   address: '',
   mapsUrl: '',
-  whatsapp: '233599084552',
+  whatsapp: '233548124978',
   domain: '',
 }

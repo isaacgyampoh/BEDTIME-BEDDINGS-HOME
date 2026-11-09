@@ -61,7 +61,13 @@ export const thumb = (url, w) => {
 export const SHOP = {
   name: 'BEDTIME BEDDINGS & HOME',
   tagline: '',
-  phone: '059 908 4552',
+  // The shop's line, changed on 9 November 2026 from 059 908 4552. This is
+  // the only place it is written in this app; anything that needs it reads
+  // SHOP.phone, because it had been copied into four other files and moving
+  // it meant finding them all.
+  phone: '054 812 4978',
+  // The same number without spaces, for tel: links and for sending.
+  phoneDial: '0548124978',
   address: 'McCarthy Hills Junction, Accra',
   addressFull: '',
   mapsUrl: 'https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6',

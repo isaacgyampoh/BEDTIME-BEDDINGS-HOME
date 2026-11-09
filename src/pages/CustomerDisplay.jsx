@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getSupabase } from '../lib/supabase'
-import { money, thumb } from '../lib/utils'
+import { SHOP, money, thumb } from '../lib/utils'
 import { Logo, LogoFlat } from '../components/Logo'
 
 const EMPTY = { items: [], count: 0, subtotal: 0, total: 0, status: 'shopping', receiptNo: null }
@@ -11,7 +11,7 @@ const IDLE_PANELS = [
   { k: 'pay', title: 'Pay your way', sub: 'Cash  ·  Mobile Money (USSD)' },
   { k: 'hours', title: 'Open daily', sub: 'Mon – Sat  ·  8:00am – 7:00pm' },
   { k: 'location', title: 'Find us', sub: 'McCarthy Hills Junction, Accra' },
-  { k: 'contact', title: 'Talk to us', sub: '059 908 4552' },
+  { k: 'contact', title: 'Talk to us', sub: SHOP.phone },
 ]
 
 export default function CustomerDisplay() {

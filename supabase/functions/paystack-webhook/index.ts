@@ -6,9 +6,12 @@ import { planFor, settleFields } from '../_shared/payments.js'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const PAYSTACK_SECRET_KEY = Deno.env.get('PAYSTACK_SECRET_KEY') || ''
-// Where payment alerts go. It was the shop's old number, written into the
-// code in four places, so moving it meant a deploy.
-const ADMIN_PHONES = Deno.env.get('ADMIN_PHONES') || '0548124978'
+// Where payment alerts go. It was the shop's old number, written into the code
+// in four places, so moving it meant a deploy. The same variable name every
+// other function uses, so one secret covers all of them.
+const ADMIN_PHONES = Deno.env.get('ADMIN_SMS_PHONES') || '0548124978'
+// The number a customer is told to ring.
+const SHOP_PHONE = Deno.env.get('SHOP_PHONE') || '054 812 4978'
 
 /**
  * Paystack signs every webhook with HMAC-SHA512 of the raw body, keyed on the

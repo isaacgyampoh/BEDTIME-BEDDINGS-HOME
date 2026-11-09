@@ -11,10 +11,12 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevl
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const OPENAI_KEY = Deno.env.get('OPENAI_API_KEY') || ''
 const WASENDER_KEY = Deno.env.get('WASENDER_API_KEY') || ''
-const OWNER_PHONE = Deno.env.get('OWNER_PHONE') || '233599084552'  // owner alerts
+const OWNER_PHONE = Deno.env.get('OWNER_PHONE') || '233548124978'  // owner alerts
 
 const SHOP = 'BEDTIME BEDDINGS & HOME'
-const SHOP_PHONE = '059 908 4552'
+// Changed on 9 November 2026 from 059 908 4552. From the environment, so
+// the next change needs no deploy.
+const SHOP_PHONE = Deno.env.get('SHOP_PHONE') || '054 812 4978'
 const USSD_PREFIX = '*920*141*'   // NaloPay USSD; order code appended
 
 // Shop location (fill in real values). If SHOP_LAT/LNG are set, the agent sends

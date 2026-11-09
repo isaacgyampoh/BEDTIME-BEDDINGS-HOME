@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { readStored, sanitizeHeld } from '../lib/cartSafety'
 import { useStore } from '../hooks/useStore'
 import { getSupabase, callFunction } from '../lib/supabase'
-import { money, num, PAYMENTS_ENABLED } from '../lib/utils'
+import { SHOP, money, num, PAYMENTS_ENABLED } from '../lib/utils'
 import { broadcastDisplay } from '../hooks/useCustomerDisplay'
 import Modal from './Modal'
 import NumField from './NumField'
@@ -357,7 +357,7 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
       // delivery-details link so the customer can fill their address (no payment link).
       if (isWhatsApp) {
         const detailsLink = `${window.location.origin}/#/details/${orderNo}`
-        const payMsg = `Hello! Your BEDTIME BEDDINGS & HOME order is ${money(amount)}.\n\nTo PAY, simply dial:\n*920*141*${uc}#\n\nEnter your MoMo PIN to approve. Thank you!\nBEDTIME BEDDINGS & HOME · 059 908 4552`
+        const payMsg = `Hello! Your BEDTIME BEDDINGS & HOME order is ${money(amount)}.\n\nTo PAY, simply dial:\n*920*141*${uc}#\n\nEnter your MoMo PIN to approve. Thank you!\nBEDTIME BEDDINGS & HOME · ${SHOP.phone}`
         const addrMsg = `Hi, please when you're done with the payment, just tap the link below to fill in your delivery details so we can deliver to you. Thank you.\n\n${detailsLink}`
         setWaCtx({ phone: phone.trim(), payMsg, addrMsg, link: detailsLink, code: `*920*141*${uc}#` })
       } else {

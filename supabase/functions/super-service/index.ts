@@ -12,6 +12,23 @@ const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') || ''
 const MNOTIFY_API_KEY = Deno.env.get('MNOTIFY_KEY') || ''
 const MNOTIFY_SENDER_ID = 'BEDTIMEHOME'
 const SHOP = 'BEDTIME BEDDINGS & HOME'
+/**
+ * Where the shop's own SMS go, and the number customers are told to ring.
+ *
+ * Both were written into this file by hand: '0599084552' as a local const in
+ * four separate handlers plus two inline calls, and '${SHOP_PHONE}' in
+ * seventeen message bodies. So changing the shop's line meant finding every
+ * copy and deploying. They come from the environment now, with the current
+ * line as the default, so the next change is `supabase secrets set` and no
+ * code edit at all.
+ *
+ * ADMIN_SMS_PHONES is the destination — every alert about a sale, a payment or a
+ * daily report. SHOP_PHONE is what appears inside a message to a customer.
+ * They are separate because they are allowed to differ: the line the shop
+ * publishes is not necessarily the one the owner wants woken up by.
+ */
+const ADMIN_PHONES = Deno.env.get('ADMIN_SMS_PHONES') || '0548124978'
+const SHOP_PHONE = Deno.env.get('SHOP_PHONE') || '054 812 4978'
 
 // SECURITY: never inline live payment credentials as fallbacks — this file is
 // in version control. Set these as Supabase function secrets:
@@ -123,9 +140,13 @@ const CORS = {
   'Content-Type': 'application/json',
 }
 
-async function sendSMS(to: string, message: string, kind = 'generic') {
+async function sendSMS(to: string | string[], message: string, kind = 'generic') {
   if (!MNOTIFY_API_KEY) return
-  const recipients = to.split(',').map(r => r.trim())
+  // A string or a list, because the report handler kept its own array of the
+  // same name and only one of the two call sites remembered to join it. One
+  // of them was a block away from becoming a TypeError on the daily report.
+  const recipients = (Array.isArray(to) ? to : String(to || '').split(','))
+    .map(r => String(r).trim()).filter(Boolean)
   for (const recipient of recipients) {
     const phone = recipient.replace(/\s+/g, '').replace(/^0/, '233')
 
@@ -280,23 +301,22 @@ serve(async (req) => {
       if (body.event !== 'charge.success') return new Response(JSON.stringify({ received: true }), { headers: { 'Content-Type': 'application/json' } })
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
       const pd = body.data; const meta = pd.metadata || {}; const ref = pd.reference || ''
-      const ADMIN_PHONES = '0599084552'
       if (meta.source === 'ussd' && meta.order_id) {
         const { data: paidOrder } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('id', meta.order_id).single()
         await supabase.from('whatsapp_orders').update({ status: 'Paid', paystack_ref: ref, paid_at: pd.paid_at || new Date().toISOString(), customer_phone: meta.customer_phone || pd.customer?.phone || '' }).eq('id', meta.order_id)
         try { await supabase.rpc('deduct_order_stock', { p_order_id: meta.order_id }) } catch {}
         const orderNo = meta.order_no || paidOrder?.order_no || ''; const amount = (pd.amount/100).toFixed(2); const custPhone = meta.customer_phone || paidOrder?.customer_phone || pd.customer?.phone || ''
         try { await sendSMS(ADMIN_PHONES, `Payment received. ${orderNo} GHS ${amount}. Process ASAP.`) } catch {}
-        if (custPhone) { try { await sendSMS(custPhone, `Hi ${paidOrder?.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${orderNo}\n\nYour order will be processed and delivered shortly.\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`) } catch {} }
+        if (custPhone) { try { await sendSMS(custPhone, `Hi ${paidOrder?.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${orderNo}\n\nYour order will be processed and delivered shortly.\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} }
         return new Response(JSON.stringify({ success: true, type: 'ussd' }), { headers: { 'Content-Type': 'application/json' } })
       }
       if (ref.startsWith('USSD-')) {
         const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single()
-        if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: pd.paid_at || new Date().toISOString() }).eq('id', o.id); try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch {} const amount = (pd.amount/100).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`) } catch {} }; return new Response(JSON.stringify({ success: true, type: 'ussd-ref' }), { headers: { 'Content-Type': 'application/json' } }) }
+        if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: pd.paid_at || new Date().toISOString() }).eq('id', o.id); try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch {} const amount = (pd.amount/100).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} }; return new Response(JSON.stringify({ success: true, type: 'ussd-ref' }), { headers: { 'Content-Type': 'application/json' } }) }
       }
       if (ref) {
         const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single()
-        if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: pd.paid_at || new Date().toISOString() }).eq('id', o.id); try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch {} const amount = (pd.amount/100).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`) } catch {} }; return new Response(JSON.stringify({ success: true, type: 'ref' }), { headers: { 'Content-Type': 'application/json' } }) }
+        if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: pd.paid_at || new Date().toISOString() }).eq('id', o.id); try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch {} const amount = (pd.amount/100).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} }; return new Response(JSON.stringify({ success: true, type: 'ref' }), { headers: { 'Content-Type': 'application/json' } }) }
       }
       const { data: products } = await supabase.from('products').select('*'); const rawItems = meta.items || []; let subtotal = 0
       const items = rawItems.map((it: any) => { let price = Number(it.price) || 0; const name = it.name || it.product || ''; const qty = Number(it.qty) || Number(it.quantity) || 1; if (!price && name && products) { const m = products.find((p: any) => p.name.toLowerCase() === name.toLowerCase()); if (m) price = Number(m.price) || 0 }; const lt = price * qty; subtotal += lt; return { name, qty, price, lineTotal: lt } })
@@ -330,13 +350,13 @@ serve(async (req) => {
       console.log('Looking up order with ussd_code:', orderCode, 'parsed as:', parseInt(orderCode))
       const { data: orders, error: orderError } = await supabase.from('whatsapp_orders').select('id,order_no,total,status,customer_name,customer_phone,ussd_code,source,delivery_status,tracking_no').eq('ussd_code', parseInt(orderCode)).order('date', { ascending: false }).limit(1)
       const order = orders?.[0] || null; console.log('Order lookup result:', order ? order.order_no : 'NULL', 'error:', orderError?.message || 'none')
-      if (!order) return ussdEnd(`Order ${orderCode} not found.\nCall 059 908 4552`)
+      if (!order) return ussdEnd(`Order ${orderCode} not found.\nCall ${SHOP_PHONE}`)
       if (isPaid(order)) {
         const d = order.delivery_status || (statusIs(order.status, ['Completed']) ? 'Being processed' : 'Paid - being processed')
         const tn = order.tracking_no ? `\nTracking: ${order.tracking_no}` : ''
-        return ussdEnd(`Order ${order.order_no}\nGHS ${Number(order.total).toFixed(2)} - PAID\n\nStatus: ${d}${tn}\n\nQueries: 059 908 4552\nThank you!`)
+        return ussdEnd(`Order ${order.order_no}\nGHS ${Number(order.total).toFixed(2)} - PAID\n\nStatus: ${d}${tn}\n\nQueries: ${SHOP_PHONE}\nThank you!`)
       }
-      if (isCancelled(order)) return ussdEnd(`Order ${order.order_no} cancelled.\nCall: 059 908 4552`)
+      if (isCancelled(order)) return ussdEnd(`Order ${order.order_no} cancelled.\nCall: ${SHOP_PHONE}`)
       const total = Number(order.total).toFixed(2)
       if (userData === '1') {
         // USSD dial-to-pay stays on NaloPay for now: Moolre requires OTP (TP14)
@@ -352,9 +372,9 @@ serve(async (req) => {
           const updateFields: Record<string, any> = { paystack_ref: ref, customer_phone: phone }; if (result.orderId) updateFields.nalopay_order_id = result.orderId
           await supabase.from('whatsapp_orders').update(updateFields).eq('id', order.id)
           if (sessionId) await supabase.from('ussd_sessions').delete().eq('session_id', sessionId)
-          if (result.success) { try { await sendSMS(phone, `Hi ${order.customer_name || 'Customer'}, thank you for your order from BEDTIME BEDDINGS & HOME.\n\nOrder: ${order.order_no}\nTotal: GHS ${total}\n\nApprove the MoMo prompt on your phone with your PIN.\n\n059 908 4552`) } catch {}; return ussdEnd(`Approve the prompt on your phone to pay GHS ${total}. Thank you!`) }
-          console.error('NaloPay error:', result.error, JSON.stringify(result.raw)); return ussdEnd(`Payment error.\nDial *920*141*${orderCode}# to retry.\nCall 059 908 4552`)
-        } catch (e) { console.error('NaloPay exception:', e); if (sessionId) await supabase.from('ussd_sessions').delete().eq('session_id', sessionId); return ussdEnd(`Payment error.\nDial *920*141*${orderCode}# to retry.\nCall 059 908 4552`) }
+          if (result.success) { try { await sendSMS(phone, `Hi ${order.customer_name || 'Customer'}, thank you for your order from BEDTIME BEDDINGS & HOME.\n\nOrder: ${order.order_no}\nTotal: GHS ${total}\n\nApprove the MoMo prompt on your phone with your PIN.\n\n${SHOP_PHONE}`) } catch {}; return ussdEnd(`Approve the prompt on your phone to pay GHS ${total}. Thank you!`) }
+          console.error('NaloPay error:', result.error, JSON.stringify(result.raw)); return ussdEnd(`Payment error.\nDial *920*141*${orderCode}# to retry.\nCall ${SHOP_PHONE}`)
+        } catch (e) { console.error('NaloPay exception:', e); if (sessionId) await supabase.from('ussd_sessions').delete().eq('session_id', sessionId); return ussdEnd(`Payment error.\nDial *920*141*${orderCode}# to retry.\nCall ${SHOP_PHONE}`) }
       }
       if (userData === '2') { if (sessionId) await supabase.from('ussd_sessions').delete().eq('session_id', sessionId); return ussdEnd(`Cancelled.\nDial *920*141*${orderCode}# anytime.`) }
       const name = order.customer_name && order.customer_name !== order.customer_phone ? `\n${order.customer_name}` : ''; return ussdCon(`${SHOP}${name}\nOrder: ${order.order_no}\n\nTotal: GHS ${total}\n\n1. Pay Now\n2. Cancel`)
@@ -376,7 +396,6 @@ serve(async (req) => {
       console.log('NALOPAY CALLBACK PARSED:', JSON.stringify(body))
 
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-      const ADMIN_PHONES = '0599084552'
       const d = body.data || body
       const ref = d.reference || d.client_reference || d.transaction_reference || body.reference || ''
       const naloOrderId = d.order_id || body.order_id || ''
@@ -406,7 +425,7 @@ serve(async (req) => {
         // Web/WhatsApp (delivery): notify admins to process + confirm to customer.
         if (!isWalkin) {
           try { await sendSMS(ADMIN_PHONES, `Online Payment! ${order.order_no} GHS ${amount}. ${order.customer_name || ''} ${order.customer_phone || ''}. Process & deliver ASAP.`) } catch {}
-          if (order.customer_phone) { try { await sendSMS(order.customer_phone, `Hi ${firstName}, we have received your payment of GHS ${amount}.\n\nOrder: ${order.order_no}\n\nWe are preparing your order and will contact you shortly.\n\nCheck your order anytime: dial *920*141*${order.ussd_code}#\nCall us: 059 908 4552\n\nBEDTIME BEDDINGS & HOME`) } catch {} }
+          if (order.customer_phone) { try { await sendSMS(order.customer_phone, `Hi ${firstName}, we have received your payment of GHS ${amount}.\n\nOrder: ${order.order_no}\n\nWe are preparing your order and will contact you shortly.\n\nCheck your order anytime: dial *920*141*${order.ussd_code}#\nCall us: ${SHOP_PHONE}\n\nBEDTIME BEDDINGS & HOME`) } catch {} }
         }
       } else {
         console.log('NaloPay callback ignored: status=' + status)
@@ -429,9 +448,9 @@ serve(async (req) => {
         console.error('Rejected unauthenticated hubtel-callback')
         return new Response(JSON.stringify({ error: 'unauthorised' }), { status: 401, headers: CORS })
       }
-      const body = await req.json(); const supabase = createClient(SUPABASE_URL, SUPABASE_KEY); const ADMIN_PHONES = '0599084552'
+      const body = await req.json(); const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
       const ref = body.ClientReference || body.Data?.ClientReference || ''; const status = body.ResponseCode || body.Data?.ResponseCode || ''
-      if (status === '0000' && ref) { const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single(); if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: new Date().toISOString() }).eq('id', o.id); const amount = Number(o.total).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n059 908 4552`) } catch {} } } }
+      if (status === '0000' && ref) { const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single(); if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: new Date().toISOString() }).eq('id', o.id); const amount = Number(o.total).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} } } }
       return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } })
     }
 
@@ -483,8 +502,8 @@ serve(async (req) => {
             confirmed++; results.push(`${o.order_no}: ${st} -> ${isWalkin ? 'Completed' : 'Paid'}`)
             const amount = Number(o.total).toFixed(2); const firstName = (o.customer_name || 'Customer').split(' ')[0]
             if (!isWalkin) {
-              try { await sendSMS('0599084552', `Online Payment! ${o.order_no} GHS ${amount}. Process & deliver ASAP.`) } catch {}
-              if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${firstName}, we have received your payment of GHS ${amount}.\n\nOrder: ${o.order_no}\n\nWe are preparing your order and will contact you shortly.\n\nCheck your order anytime: dial *920*141*${o.ussd_code}#\nCall us: 059 908 4552\n\nBEDTIME BEDDINGS & HOME`) } catch {} }
+              try { await sendSMS(ADMIN_PHONES, `Online Payment! ${o.order_no} GHS ${amount}. Process & deliver ASAP.`) } catch {}
+              if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${firstName}, we have received your payment of GHS ${amount}.\n\nOrder: ${o.order_no}\n\nWe are preparing your order and will contact you shortly.\n\nCheck your order anytime: dial *920*141*${o.ussd_code}#\nCall us: ${SHOP_PHONE}\n\nBEDTIME BEDDINGS & HOME`) } catch {} }
             }
           } else { results.push(`${o.order_no}: ${st || 'PENDING'} (raw: ${JSON.stringify(rawStatus)})`) }
         } catch (e) { results.push(`${o.order_no}: ERR ${(e as Error).message}`) }
@@ -690,7 +709,7 @@ serve(async (req) => {
 
     if (action === 'report') {
       const reportUrl = new URL(req.url); const type = reportUrl.searchParams.get('type') || ''; const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-      const ADMIN_PHONES = (Deno.env.get('ADMIN_SMS_PHONES') || '0548124978').split(',').map((p: string) => p.trim()).filter(Boolean); const fmt = (n: number) => 'GHS ' + Number(n || 0).toFixed(2); const dateStr = (d: Date) => d.toISOString().slice(0, 10)
+      const fmt = (n: number) => 'GHS ' + Number(n || 0).toFixed(2); const dateStr = (d: Date) => d.toISOString().slice(0, 10)
       const getSales = async (from: string, to: string) => { const { data } = await supabase.from('sales').select('*').gte('date', from + 'T00:00:00').lte('date', to + 'T23:59:59').eq('voided', false); const s = data || []; return { revenue: s.reduce((a: number, x: any) => a + Number(x.total || 0), 0), profit: s.reduce((a: number, x: any) => a + Number(x.profit || 0), 0), cash: s.filter((x: any) => x.payment === 'Cash').reduce((a: number, x: any) => a + Number(x.total || 0), 0), momo: s.filter((x: any) => x.payment === 'Momo' || x.payment === 'Paystack').reduce((a: number, x: any) => a + Number(x.total || 0), 0), split: s.filter((x: any) => x.payment === 'Split').reduce((a: number, x: any) => a + Number(x.total || 0), 0), count: s.length, sales: s } }
       const getExpenses = async (from: string, to: string) => { const { data } = await supabase.from('expenses').select('*').gte('date', from + 'T00:00:00').lte('date', to + 'T23:59:59'); const e = data || []; return { total: e.reduce((a: number, x: any) => a + Number(x.amount || 0), 0), count: e.length } }
       const getWAOrders = async (from: string, to: string) => { const { data } = await supabase.from('whatsapp_orders').select('status,total').gte('date', from + 'T00:00:00').lte('date', to + 'T23:59:59'); const o = data || []; return { total: o.length, pending: o.filter((x: any) => statusIs(x.status, ['Pending', 'Awaiting Payment'])).length, paid: o.filter((x: any) => statusIs(x.status, ['Paid'])).length, completed: o.filter((x: any) => statusIs(x.status, ['Completed'])).length, cancelled: o.filter((x: any) => statusIs(x.status, ['Cancelled'])).length, revenue: o.filter((x: any) => statusIs(x.status, ['Paid', 'Completed'])).reduce((a: number, x: any) => a + Number(x.total || 0), 0) } }
@@ -704,7 +723,7 @@ serve(async (req) => {
       else if (type === 'monthly') { const now = new Date(); const firstDay = new Date(now.getFullYear(), now.getMonth() - 1, 1); const lastDay = new Date(now.getFullYear(), now.getMonth(), 0); const from = dateStr(firstDay), to = dateStr(lastDay); const monthName = firstDay.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); const sales = await getSales(from, to); const expenses = await getExpenses(from, to); const wa = await getWAOrders(from, to); message = `BEDTIME BEDDINGS & HOME\nMONTHLY\n${monthName}\n\nRevenue: ${fmt(sales.revenue)}\nSales: ${sales.count}\nProfit: ${fmt(sales.profit)}\nExpenses: ${fmt(expenses.total)}\nNet: ${fmt(sales.profit - expenses.total)}\n\nOrders: ${wa.total}\nPaid: ${wa.paid}\nRevenue: ${fmt(wa.revenue)}\n\n- BEDTIME BEDDINGS & HOME POS` }
       else if (type === 'test') { message = `BEDTIME BEDDINGS & HOME SMS Active!\n- daily\n- today\n- evening\n- weekly\n- monthly\n\n- BEDTIME BEDDINGS & HOME POS` }
       else { return new Response(JSON.stringify({ status: 'ok', usage: '?action=report&type=daily|today|evening|weekly|monthly|test' }), { headers: CORS }) }
-      await sendSMS(ADMIN_PHONES.join(','), message); return new Response(JSON.stringify({ status: 'sent', type, recipients: ADMIN_PHONES, messageLength: message.length }), { headers: CORS })
+      await sendSMS(ADMIN_PHONES, message); return new Response(JSON.stringify({ status: 'sent', type, recipients: ADMIN_PHONES, messageLength: message.length }), { headers: CORS })
     }
 
     if (action === 'remind') {
@@ -762,13 +781,13 @@ serve(async (req) => {
       const isPOS = order.order_no.startsWith('POS-') || order.order_no.startsWith('WA-')
       let msg = ''
       if (isPOS) {
-        msg = `Thank you for shopping with us, ${firstName}!\n\nYour payment of GHS ${amount} has been received.\n\nWe appreciate your patronage.\n\nBEDTIME BEDDINGS & HOME\nMcCarthy Hills Junction, Accra\n059 908 4552\nwww.bedtimehome.com`
+        msg = `Thank you for shopping with us, ${firstName}!\n\nYour payment of GHS ${amount} has been received.\n\nWe appreciate your patronage.\n\nBEDTIME BEDDINGS & HOME\nMcCarthy Hills Junction, Accra\n${SHOP_PHONE}\nwww.bedtimehome.com`
       } else {
-        msg = `Hi ${firstName}, thank you for your purchase of GHS ${amount}!\n\nOrder: ${order.order_no}\n\nYour order has been confirmed and is being processed. Our delivery team will contact you shortly.\n\nTrack your order: bedtimehome.com/#/track\n\nBEDTIME BEDDINGS & HOME\n059 908 4552\nwww.bedtimehome.com`
+        msg = `Hi ${firstName}, thank you for your purchase of GHS ${amount}!\n\nOrder: ${order.order_no}\n\nYour order has been confirmed and is being processed. Our delivery team will contact you shortly.\n\nTrack your order: bedtimehome.com/#/track\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}\nwww.bedtimehome.com`
       }
       await sendSMS(order.customer_phone, msg)
       // Also notify admins
-      await sendSMS('0599084552', `Resent confirmation for ${order.order_no} GHS ${amount} to ${order.customer_phone}`)
+      await sendSMS(ADMIN_PHONES, `Resent confirmation for ${order.order_no} GHS ${amount} to ${order.customer_phone}`)
       return new Response(JSON.stringify({ success: true, order: order.order_no, phone: order.customer_phone, message: 'SMS resent' }), { headers: CORS })
     }
 
@@ -869,7 +888,6 @@ serve(async (req) => {
       console.log('MOOLRE CALLBACK RAW:', rawBody.substring(0, 500))
       try { body = JSON.parse(rawBody) } catch { try { body = Object.fromEntries(new URLSearchParams(rawBody)) } catch {} }
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
-      const ADMIN_PHONES = '0599084552'
       const d = body.data || body
       const ok = String(body.status) === '1' || body.code === 'P01' || String(d.txstatus) === '1'
       const ref = d.externalref || body.externalref || d.reference || body.reference || ''
@@ -886,7 +904,7 @@ serve(async (req) => {
       try { await supabase.rpc('deduct_order_stock', { p_order_id: order.id }) } catch {}
       const amount = Number(order.total).toFixed(2); const firstName = (order.customer_name || 'Customer').split(' ')[0]
       try { await sendSMS(ADMIN_PHONES, `Payment received (Moolre). ${order.order_no} GHS ${amount}. ${order.customer_phone || ''}`) } catch {}
-      if (order.customer_phone) { try { await sendSMS(order.customer_phone, `Thank you for shopping with us, ${firstName}!\n\nYour payment of GHS ${amount} has been received.\n\nBEDTIME BEDDINGS & HOME\nMcCarthy Hills Junction, Accra\n059 908 4552`) } catch {} }
+      if (order.customer_phone) { try { await sendSMS(order.customer_phone, `Thank you for shopping with us, ${firstName}!\n\nYour payment of GHS ${amount} has been received.\n\nBEDTIME BEDDINGS & HOME\nMcCarthy Hills Junction, Accra\n${SHOP_PHONE}`) } catch {} }
       console.log('Moolre payment confirmed:', order.order_no)
       return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } })
     }
@@ -952,11 +970,11 @@ serve(async (req) => {
       const first = (o.customer_name || 'there').split(' ')[0]
       let msg = ''
       if (stage === 'packaged') {
-        msg = `Hi ${first}, your order ${o.order_no} is packed and ready.\n\nWe will contact you shortly to arrange delivery.\n\n${SHOP}\n059 908 4552`
+        msg = `Hi ${first}, your order ${o.order_no} is packed and ready.\n\nWe will contact you shortly to arrange delivery.\n\n${SHOP}\n${SHOP_PHONE}`
       } else if (stage === 'dispatched') {
-        msg = `Hi ${first}, your order ${o.order_no} is on its way${o.delivery_guy ? ' with ' + o.delivery_guy : ''}.\n\nPlease keep your phone nearby.\n\n${SHOP}\n059 908 4552`
+        msg = `Hi ${first}, your order ${o.order_no} is on its way${o.delivery_guy ? ' with ' + o.delivery_guy : ''}.\n\nPlease keep your phone nearby.\n\n${SHOP}\n${SHOP_PHONE}`
       } else if (stage === 'delivered') {
-        msg = `Hi ${first}, your order ${o.order_no} has been delivered.\n\nThank you for shopping with us — we hope to see you again soon!\n\n${SHOP}\n059 908 4552`
+        msg = `Hi ${first}, your order ${o.order_no} has been delivered.\n\nThank you for shopping with us — we hope to see you again soon!\n\n${SHOP}\n${SHOP_PHONE}`
       } else {
         return new Response(JSON.stringify({ success: false, error: 'Unknown stage' }), { headers: CORS })
       }

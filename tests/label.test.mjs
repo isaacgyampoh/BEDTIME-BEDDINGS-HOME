@@ -51,7 +51,7 @@ t.eq('empty text yields no svg', L.barcodeSVG(''), '')
 t.ok('svg is pure black', !/fill="(?!#000)/.test(L.barcodeSVG('X1')))
 
 // ── Label content
-const shop = { name: 'BEDTIME BEDDINGS & HOME', phone: '059 908 4552' }
+const shop = { name: 'BEDTIME BEDDINGS & HOME', phone: '054 812 4978' }
 const order = { orderNo: 'WEB-ABC123', trackingNo: 'TRK-9001', customerName: 'ama mensah',
   customerPhone: '0244000000', address: '12 Palm St, Adenta', total: 250,
   date: '2026-09-03T10:00:00Z',
@@ -89,3 +89,51 @@ t.ok('feeds past the cutter', cod.includes('class="feed"'))
 const narrow = L.deliveryLabelHTML(order, { paper: '58', shop })
 t.ok('58mm retargets the page', narrow.includes('size:58mm auto'))
 t.ok('58mm narrows the body', narrow.includes('width:48mm'))
+
+// ── the shop's number lives in one place ─────────────────────────────────────
+// It had been copied into SHOP.phone plus four other files in the POS, two in
+// the shop front, and seventeen message bodies inside the Edge Functions, so
+// changing the shop's line on 9 November 2026 meant finding every copy. This
+// fails if a new copy appears.
+{
+  const { readFileSync, readdirSync, statSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const walk = (dir, out = []) => {
+    for (const name of readdirSync(dir)) {
+      if (name === 'node_modules' || name === 'dist') continue
+      const p = join(dir, name)
+      if (statSync(p).isDirectory()) walk(p, out)
+      else if (/\.(js|jsx|ts|tsx)$/.test(name)) out.push(p)
+    }
+    return out
+  }
+  const files = ['src', 'storefront/src', 'supabase/functions'].flatMap(r => {
+    try { return walk(r) } catch { return [] }
+  })
+
+  // The old line, in any spelling, must not be reachable as a value.
+  const stale = []
+  for (const f of files) {
+    readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      if (!/0599084552|059\s*908\s*4552|233599084552/.test(line)) return
+      const t = line.trim()
+      if (t.startsWith('//') || t.startsWith('*')) return   // explaining the change
+      stale.push(`${f}:${i + 1}`)
+    })
+  }
+  t.eq('the old shop number is not left anywhere', stale.join(', '), '')
+
+  // The new one appears only where it is DEFINED, never copied into a message.
+  const defs = []
+  for (const f of files) {
+    readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+      if (!/0548124978|054\s*812\s*4978|233548124978/.test(line)) return
+      const t = line.trim()
+      if (t.startsWith('//') || t.startsWith('*')) return
+      // A definition reads the environment or declares the constant.
+      const isDef = /Deno\.env\.get|phone:|phoneDial:|whatsapp:|OWNER_PHONE|ADMIN_PHONES|SHOP_PHONE|const PHONE/.test(line)
+      if (!isDef) defs.push(`${f}:${i + 1}`)
+    })
+  }
+  t.eq('the new number is never copied into a message body', defs.join(', '), '')
+}
