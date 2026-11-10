@@ -57,8 +57,20 @@ redact () { sed -E 's#postgres(ql)?://[^[:space:]]*#postgresql://***REDACTED***#
 # ── 1. find the credential ────────────────────────────────────────────────
 DB_URL=""
 if command -v security >/dev/null 2>&1; then
-  DB_URL="$(security find-generic-password -a "$USER" -s bedtime-db -w 2>/dev/null || true)"
-  [ -n "$DB_URL" ] && say "Using the connection string from the macOS Keychain (bedtime-db)."
+  # enter-db-credential.sh stores it base64'd, because `security -i`'s parser
+  # truncates a value containing a single quote (81 chars became 28 when
+  # tested). Decode if it decodes to a URI; otherwise treat it as plain text,
+  # for an item somebody stored by hand.
+  raw="$(security find-generic-password -a "$USER" -s bedtime-db -w 2>/dev/null || true)"
+  if [ -n "$raw" ]; then
+    decoded="$(printf '%s' "$raw" | base64 -d 2>/dev/null || true)"
+    case "$decoded" in
+      postgres://*|postgresql://*) DB_URL="$decoded" ;;
+      *)                           DB_URL="$raw" ;;
+    esac
+    unset raw decoded
+    say "Using the connection string from the macOS Keychain (bedtime-db)."
+  fi
 fi
 if [ -z "$DB_URL" ] && [ -f "$HOME/.bedtime/db.url" ]; then
   perm="$(stat -f '%Lp' "$HOME/.bedtime/db.url" 2>/dev/null || stat -c '%a' "$HOME/.bedtime/db.url")"
