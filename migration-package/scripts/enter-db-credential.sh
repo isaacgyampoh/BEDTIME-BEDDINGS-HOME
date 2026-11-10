@@ -31,13 +31,26 @@ ACCOUNT="${USER}"
 command -v osascript >/dev/null || { echo "osascript not found — this needs macOS."; exit 2; }
 command -v security  >/dev/null || { echo "security not found — this needs macOS."; exit 2; }
 
-PROMPT='BEDTIME — Supabase database connection URI
+PROMPT='BEDTIME — database connection URI
 
-Supabase dashboard → Project Settings → Database →
-Connection string → URI.   Paste it below.
+WHERE TO GET IT
+  Supabase dashboard -> your project
+  -> Project Settings -> Database
+  -> Connection string -> the URI tab
+  -> Copy
 
-It goes straight into your login Keychain. It is never
-shown, never logged, and never written to a file.'
+  If it shows [YOUR-PASSWORD] instead of a real
+  password, click "Reset database password" on that
+  same page first. Nothing in your running shop uses
+  that password, so resetting it is safe.
+
+  This is NOT a sbp_ access token. It is the database
+  password, and it looks like:
+  postgresql://postgres.xxxx:PASSWORD@aws-0-REGION...
+
+Paste it below. It goes straight into your login
+Keychain: never shown, never logged, never written to
+a file, never sent anywhere.'
 
 # `display dialog` writes "text returned:<value>" to stdout. Both the
 # AppleScript and the extraction stay inside this pipeline so the value is

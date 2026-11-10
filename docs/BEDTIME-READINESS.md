@@ -42,6 +42,11 @@ production rows. Not mocks.
 | 18 | Credential dialog refuses bad input | **PASS** wrong shape, placeholder, empty, cancelled |
 | 19 | Restore refuses to overwrite or target a remote | **PASS** |
 | 20 | No secret in any tracked file | **PASS** one token, `role=anon`, public by design |
+| 21 | All 7 report types execute over HTTP under real Deno | **PASS** 200 each, `sent: false`, 0 SMS |
+| 22 | An unknown report type is refused | **PASS** HTTP 400, was a silent 200 |
+| 23 | The payment-reminder job executes over HTTP | **PASS** 3 sent, 1 skipped, marks written |
+| 24 | Reminders are idempotent across runs | **PASS** second run sent 0, skipped 4 |
+| 25 | Repository recoverable without the remote | **PASS** bundle clones, 17 hashes identical, 825 tests pass in the copy |
 
 ### What execution found that compiling could not
 
@@ -95,15 +100,27 @@ different credential, for a different API, which this sandbox refuses anyway.
 
 ### 2. Edge Function deploys
 
-Six functions, all parsing, five carrying undeployed changes. Deploys are
-refused here. **Until they are deployed your daily reports still go to the old
-number and three of them still send nothing.**
+Six functions. They are no longer "verified by parsing": Deno installs from
+npm (`npm install deno@2.9.6`) — the curl-piped installer is refused here, the
+npm package is not — so `sms-reports` and `super-service` now run under the
+real runtime, with the real `@supabase/*` client from esm.sh, answering HTTP
+against production-derived rows served by
+`migration-package/scripts/postgrest-shim.mjs`.
 
-### 3. Remote publishing
+What remains blocked is only the **deploy**. **Until that happens your daily
+reports still go to the old number, three of the six still send nothing, and
+the reminder still skips lower-case orders.**
 
-`git push` is refused by this environment. Read access works, so this is not
-GitHub authorisation. **13 commits are local only**, and `.gitignore` excludes
-`*.dump` and `.bedtime/`.
+### 3. Remote publishing — mitigated
+
+`git push` is still refused and read access works, so this is a sandbox
+restriction rather than GitHub authorisation. An independently recoverable
+copy now exists at `~/bedtime-preservation`: a bundle of every commit, branch
+and tag, with a SHA-256 and restore notes, both mode 600.
+
+Tested rather than trusted — cloned into a fresh directory, all 17 new commit
+hashes identical, tracked tree identical, and **the restored copy passes all
+825 tests**. No dump, password, token or customer record is in it.
 
 ## Not tested, and honestly so
 
@@ -113,10 +130,11 @@ server or a bucket that does not exist. Returns and refunds have 0 rows in
 production and no e2e coverage; the functions exist but have never run in
 anger.
 
-Deno could not be installed (external code is refused here), so the five other
-functions are verified by parse plus their Node-loadable `_shared` modules.
-`sms-reports` is the one verified by execution, because its builders were
-extracted for exactly that purpose. The same could be done for the others.
+Deno now installs from npm, so `sms-reports` and `super-service` are verified
+by execution over HTTP. `paystack-webhook`, `wa-agent`, `whatsapp-bot` and
+`ussd-handler` are verified by `deno check` plus their Node-loadable `_shared`
+modules, not by execution — the same shim could serve them, and that is the
+obvious next increment.
 
 ## Figures, which move
 
