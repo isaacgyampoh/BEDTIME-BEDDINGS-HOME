@@ -87,7 +87,14 @@ export function dueReminder(order, now = Date.now(), steps = DEFAULT_STEPS) {
 export function isChaseable(order) {
   if (!order) return false
   if (order.paid_at) return false
-  if (!['Pending', 'Awaiting Payment'].includes(String(order.status || ''))) return false
+  // Case-insensitive, because production holds statuses spelled both ways.
+  // Fixing only the database query was not enough: the lower-case order was
+  // then selected and skipped here instead, which is how this third instance
+  // of the same bug surfaced — by running the job and watching the skip
+  // count go up by exactly the one order the query had just started
+  // including.
+  const st = String(order.status || '').trim().toLowerCase()
+  if (st !== 'pending' && st !== 'awaiting payment') return false
   return !!String(order.customer_phone || '').trim()
 }
 
@@ -99,11 +106,24 @@ export function isChaseable(order) {
  * on the page that already shows their items and takes payment. The USSD code
  * stays as a second option when there is one.
  */
+/** A code a customer can actually dial, from the integer the order stores. */
+export function ussdDial(code) {
+  const raw = String(code == null ? '' : code).trim()
+  if (!raw) return ''
+  if (raw.includes('*') || raw.includes('#')) return `\nOr dial ${raw} to pay by mobile money.`
+  return `\nOr dial *920*141*${raw}# to pay by mobile money.`
+}
+
 export function reminderMessage({ order, tag, payUrl, shopName = 'BEDTIME Home', isFinal = false }) {
   const first = String(order.customer_name || 'there').trim().split(/\s+/)[0] || 'there'
   const amount = `GHS ${Number(order.total || 0).toFixed(2)}`
   const ref = order.order_no ? ` ${order.order_no}` : ''
-  const dial = order.ussd_code ? `\nOr dial ${order.ussd_code} to pay by mobile money.` : ''
+  // whatsapp_orders.ussd_code is an INTEGER — a short code, not a dial
+  // string. This read `Or dial ${order.ussd_code}`, which told the customer
+  // to dial a bare number like 1001. Nothing happens when they do. The rest
+  // of the system dials *920*141*<code>#, so this does too. A value that
+  // already looks like a full code is left alone.
+  const dial = ussdDial(order.ussd_code)
 
   const opening = isFinal
     ? `Hi ${first}, last reminder: your ${shopName} order${ref} (${amount}) is still unpaid and will be cancelled soon.`

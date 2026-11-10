@@ -733,9 +733,27 @@ serve(async (req) => {
       // quarter of checkout times heard nothing for over an hour.
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY); const now = Date.now()
       const steps = stepsFrom(Deno.env.get('REMINDER_MINUTES'))
-      const { data: unpaid } = await supabase.from('whatsapp_orders')
-        .select('id,order_no,customer_name,customer_phone,total,ussd_code,date,notes,status,paid_at')
-        .in('status', ['Pending', 'Awaiting Payment'])
+      // anyStatus(), not .in(): production holds a 'cancelled' spelled in lower
+      // case, and an order spelled 'pending' would be invisible to an exact
+      // match — never chased, unpaid forever. Measured against a seeded
+      // staging database: the exact filter selected 8 of 9 orders.
+      //
+      // Ordered and paged explicitly because PostgREST caps a response at
+      // 1,000 rows on Supabase. With no limit and no order, a shop with more
+      // than that many unpaid orders would chase an arbitrary, silently
+      // partial subset.
+      const unpaid = []
+      for (let from = 0; from < 10000; from += 1000) {
+        const { data: page, error: pageErr } = await supabase.from('whatsapp_orders')
+          .select('id,order_no,customer_name,customer_phone,total,ussd_code,date,notes,status,paid_at')
+          .or(anyStatus(['Pending', 'Awaiting Payment']))
+          .order('date', { ascending: true })
+          .range(from, from + 999)
+        if (pageErr) { console.error('remind: page', from, 'failed:', pageErr.message); break }
+        if (!page || !page.length) break
+        unpaid.push(...page)
+        if (page.length < 1000) break
+      }
       if (!unpaid?.length) return new Response(JSON.stringify({ status: 'no_pending_orders' }), { headers: CORS })
 
       let sent = 0, skipped = 0, failed = 0

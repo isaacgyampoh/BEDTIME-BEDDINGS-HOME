@@ -107,3 +107,56 @@ const order = (over = {}) => ({
   t.ok('an unparseable date', !dueReminder(order({ date: 'not a date' }), at(10)))
   t.ok('a date in the future', !dueReminder(order({ date: new Date(at(99)).toISOString() }), at(10)))
 }
+
+// ── three instances of one bug, found by running the job ─────────────────────
+// The payment-reminder job was executed against a staging database seeded
+// with orders spanning every reminder tier. Fixing the database filter alone
+// was not enough, and the way that showed was the skip count going up by
+// exactly the one order the query had just started including.
+{
+  const { ussdDial, isChaseable } = await import('../supabase/functions/_shared/reminders.js')
+
+  // 1. isChaseable compared the status with ===, so an order spelled
+  //    'pending' was never chased and sat unpaid forever.
+  const base = { paid_at: null, customer_phone: '0548124974', notes: '' }
+  t.ok('a lower-case pending order is chased', isChaseable({ ...base, status: 'pending' }))
+  t.ok('as is a capitalised one', isChaseable({ ...base, status: 'Pending' }))
+  t.ok('and Awaiting Payment in any case', isChaseable({ ...base, status: 'awaiting payment' }))
+  t.ok('surrounding space does not change it', isChaseable({ ...base, status: '  Pending  ' }))
+  t.ok('a cancelled order is not chased', !isChaseable({ ...base, status: 'cancelled' }))
+  t.ok('nor a completed one', !isChaseable({ ...base, status: 'Completed' }))
+  t.ok('nor one already paid', !isChaseable({ ...base, status: 'Pending', paid_at: '2026-11-10' }))
+  t.ok('nor one with no phone number', !isChaseable({ ...base, status: 'Pending', customer_phone: '' }))
+
+  // 2. whatsapp_orders.ussd_code is an INTEGER. The message said
+  //    "Or dial 1001 to pay", and nothing happens when a customer dials that.
+  //    The rest of the system dials *920*141*<code>#.
+  t.eq('an integer code becomes a dialable one',
+    ussdDial(1001), '\nOr dial *920*141*1001# to pay by mobile money.')
+  t.eq('a numeric string too',
+    ussdDial('1001'), '\nOr dial *920*141*1001# to pay by mobile money.')
+  t.eq('a code that is already a full dial string is left alone',
+    ussdDial('*713*123#'), '\nOr dial *713*123# to pay by mobile money.')
+  t.eq('no code means no dial line at all', ussdDial(null), '')
+  t.eq('nor for an empty one', ussdDial(''), '')
+  t.eq('nor for undefined', ussdDial(undefined), '')
+}
+
+// The whole message, for the case that was broken end to end: an order with
+// an integer USSD code, spelled in lower case, ninety minutes old.
+{
+  const { reminderMessage, dueReminder, isChaseable } = await import('../supabase/functions/_shared/reminders.js')
+  const order = { order_no: 'TEST-LOWER', customer_name: 'Lower Case', customer_phone: '0548124974',
+                  total: 800, ussd_code: 1008, status: 'pending', paid_at: null, notes: '',
+                  date: new Date(Date.now() - 90 * 60000).toISOString() }
+  t.ok('it is chaseable', isChaseable(order))
+  const due = dueReminder(order, Date.now())
+  t.eq('ninety minutes earns the third reminder', due.tag, 'R3')
+  t.eq('and the two it skipped are marked, not sent', due.superseded.join(','), 'R1,R2')
+  const msg = reminderMessage({ order, tag: due.tag, payUrl: 'https://bedtimehome.com/#/pay/x' })
+  t.ok('the message carries a payment link', /https:\/\/bedtimehome\.com\/#\/pay\/x/.test(msg))
+  t.ok('and a dialable code', /\*920\*141\*1008#/.test(msg))
+  t.ok('and never a bare integer instruction', !/dial 1008 to pay/.test(msg))
+  t.ok('it names the customer', /Lower Case|Lower/.test(msg))
+  t.ok('and the amount', /GHS 800\.00/.test(msg))
+}
