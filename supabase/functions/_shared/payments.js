@@ -79,6 +79,10 @@ export function alreadyApplied(order, ref) {
  * a duplicate that must be reported rather than papered over, because
  * choosing one of them would settle an arbitrary order.
  */
+/**
+ * @param {{ ref?: string, paidMinor?: number, matches?: any[], order?: any }} input
+ * @returns {{ action: string, reason?: string, order?: string, orders?: string[], owed?: number, paid?: number }}
+ */
 export function planFor({ ref, paidMinor, matches = [], order = null }) {
   if (matches.length > 1) {
     return { action: 'conflict', reason: `${matches.length} orders carry the reference ${ref}`, orders: matches.map(o => o.order_no || o.id) }

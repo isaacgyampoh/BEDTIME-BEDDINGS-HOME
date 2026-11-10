@@ -15,6 +15,8 @@ server report BLOCKED and say what is missing.
 | `scripts/backup-production.sh` | A complete privileged `pg_dump`, with secure credential entry. |
 | `scripts/restore-and-reconcile.sh` | Restores a dump into an isolated database and reconciles it. |
 | `scripts/reconcile.mjs` | The reconciliation itself. Read-only on both sides. |
+| `scripts/enter-db-credential.sh` | Native macOS dialog -> login Keychain. Nothing echoed, nothing in argv, nothing on disk. |
+| `scripts/postgrest-shim.mjs` | Serves the slice of PostgREST the Edge Functions use, from a local PostgreSQL — so a function runs under real Deno against real rows instead of being called verified because it parsed. |
 
 Bedtime-specific things stay here. Nothing in this directory belongs in the
 shared platform, and no secret is in any of these files.

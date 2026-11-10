@@ -96,8 +96,11 @@ serve(async (req) => {
 
     // A USSD payment names its order in the metadata; everything else is
     // found by reference.
-    let matches = []
-    let target = null
+    // Typed, because `let matches = []` infers never[] and then rejects the
+    // rows assigned to it. Harmless in JavaScript; a type error under
+    // `deno check`, and mine.
+    let matches: any[] = []
+    let target: any = null
     if (metadata.source === 'ussd' && metadata.order_id) {
       const { data } = await supabase.from('whatsapp_orders')
         .select('id,order_no,total,status,paid_at,paystack_ref,customer_phone,customer_name')
