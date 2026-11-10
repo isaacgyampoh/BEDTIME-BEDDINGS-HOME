@@ -53,8 +53,19 @@ const lastReply = new Map<string, number>()
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+  // A body that is not JSON can never succeed, so it must not be answered
+  // with a 500: a webhook sender reads 5xx as "try again" and will redeliver
+  // the same unparseable request indefinitely. 400 ends it.
+  let body: any
   try {
-    const body = await req.json()
+    body = await req.json()
+  } catch {
+    console.warn('whatsapp-bot: body was not JSON; refusing without a retry')
+    return new Response(JSON.stringify({ error: 'body must be JSON' }),
+      { headers: CORS, status: 400 })
+  }
+
+  try {
 
     // Payment confirmation
     if (body.action === 'send_confirmation' && body.chatId && body.message) {
@@ -131,7 +142,11 @@ serve(async (req) => {
     if (reply) await sendText(from, reply)
     return new Response(JSON.stringify({ ok: true }), { headers: CORS })
   } catch (e) {
-    console.error('ERROR:', e.message)
-    return new Response(JSON.stringify({ error: e.message }), { headers: CORS, status: 500 })
+    // The message goes to the log, not to the caller: a parser or database
+    // error quoted back over a public webhook describes the inside of the
+    // system to whoever asked.
+    console.error('whatsapp-bot ERROR:', e instanceof Error ? e.message : e)
+    return new Response(JSON.stringify({ error: 'could not handle that message' }),
+      { headers: CORS, status: 500 })
   }
 })

@@ -16,3 +16,6 @@ desktop/release
 # Privileged database dumps and the connection string. Never committed.
 .bedtime/
 *.dump
+
+# Deno, installed from npm by exec-functions.sh
+migration-package/scripts/.deno/
