@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # Rebuild the shop's database on any PostgreSQL, from nothing.
 #
-#   ./restore/restore.sh "postgres://user:pass@host/db"              schema only
-#   ./restore/restore.sh "postgres://user:pass@host/db" --with-fixes  + 042/045/046
+#   ./restore/restore.sh "postgres://user:pass@host/db"
+#
+# This reproduces PRODUCTION: every migration that has actually been applied
+# to the live project, which as of 10 November 2026 is everything except 043,
+# 044 and 047. Those three are still pending — they move the business tables
+# behind a staff session and would blank every admin screen until the
+# staff-login function is deployed, so a restore must NOT include them.
+#
+#   --pending   additionally apply 043, 044 and 047 (not production's state)
 #
 # The migrations are applied one file at a time, in order, exactly as they were
 # written. An earlier version of this script concatenated them into one file;
@@ -14,7 +21,7 @@
 # connection string.
 set -uo pipefail
 URL="${1:-}"
-[ -n "$URL" ] || { echo "usage: $0 <DATABASE_URL> [--with-fixes]"; exit 1; }
+[ -n "$URL" ] || { echo "usage: $0 <DATABASE_URL> [--pending]"; exit 1; }
 command -v psql >/dev/null || { echo "psql is not on PATH"; exit 1; }
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -35,7 +42,19 @@ perl -0pi -e 's/CREATE EXTENSION IF NOT EXISTS\s+"?(pg_cron|pg_net)"?[^;]*;/DO \
 
 echo "== 2/3  the schema, one migration at a time"
 fail=0; ran=0
-for f in $(ls "$work"/0*.sql | sort | grep -vE '04[2-7]_'); do
+# WHY THE DEFAULT CHANGED
+# This used to exclude 042 through 047 and hide 042/045/046 behind
+# --with-fixes. Production has 042, 045, 046 and 048, so the default restore
+# produced a database that did not match it — and specifically a pre-045 one,
+# where staff.pin is still NOT NULL. In that database verify_pin's conversion
+# path raises on its own UPDATE (it sets pin = NULL), so a cashier with an
+# unhashed PIN cannot sign in with the correct PIN, and admin_save_staff
+# cannot add anyone. A disaster-recovery script whose default output cannot
+# be logged into is not a recovery script. Found by rebuilding, loading the
+# real rows, and signing in.
+SKIP='04[347]_'
+[ "${2:-}" = "--pending" ] && SKIP='^$'
+for f in $(ls "$work"/0*.sql | sort | grep -vE "$SKIP"); do
   n=$(basename "$f")
   if out=$(psql "$URL" -v ON_ERROR_STOP=1 -q -f "$f" 2>&1); then
     ran=$((ran+1))
@@ -47,18 +66,11 @@ done
 echo "   $ran applied, $fail failed"
 [ "$fail" -eq 0 ] || { echo "   stopping: the schema is incomplete"; exit 1; }
 
-if [ "${2:-}" = "--with-fixes" ]; then
-  echo "== 3/3  the fixes that were never applied to the old project"
-  # 043 and 044 are deliberately NOT here: they move the business tables behind
-  # a staff session and blank every admin screen until staff-login is live.
-  # supabase/pending/README.md explains the order.
-  if out=$(psql "$URL" -v ON_ERROR_STOP=1 -q -f "$root/supabase/pending/apply-now.sql" 2>&1); then
-    echo "   042, 045 and 046 applied"
-  else
-    echo "   FAILED: $(echo "$out" | grep -m1 ERROR | cut -c1-100)"; exit 1
-  fi
+echo "== 3/3  what was NOT applied, on purpose"
+if [ "${2:-}" = "--pending" ]; then
+  echo "   043, 044 and 047 WERE applied (--pending): this is not production's state"
 else
-  echo "== 3/3  fixes skipped (pass --with-fixes for 042, 045 and 046)"
+  echo "   043, 044 and 047 skipped — production does not have them either"
 fi
 
 echo
