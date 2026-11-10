@@ -34,8 +34,9 @@ production rows. Not mocks.
 | 11 | PIN sign-in against the hash | **PASS** |
 | 12 | Lockout after 10 failures | **PASS** refuses even a correct PIN while locked |
 | 13 | All six scheduled SMS reports build | **PASS** 6 of 6, from real data, 0 SMS sent |
+| 13b | The seventh job, payment-reminder, executes | **PASS** 9 of 9 orders selected, 5 due, 0 SMS sent |
 | 14 | Reports are addressed to 0548124978 | **PASS** |
-| 15 | Unit suite | **PASS** 803 assertions |
+| 15 | Unit suite | **PASS** 825 assertions |
 | 16 | e2e suites | **PASS** 203 assertions, real Chromium |
 | 17 | Deployment runner, every step | **RUN** 3 pass, 11 report BLOCKED with the reason |
 | 18 | Credential dialog refuses bad input | **PASS** wrong shape, placeholder, empty, cancelled |
@@ -43,6 +44,17 @@ production rows. Not mocks.
 | 20 | No secret in any tracked file | **PASS** one token, `role=anon`, public by design |
 
 ### What execution found that compiling could not
+
+**The payment reminder skipped an order three different ways.** The query
+used an exact-match `.in('status', …)`, so an order spelled `pending` was
+never chased — 8 of 9 selected. Fixing that was not enough: `isChaseable()`
+compared with `===` too, so the order was then selected and skipped instead.
+The skip count going up by exactly the newly-included order is what revealed
+it. And the message said *"Or dial 1001 to pay"* — `ussd_code` is an integer,
+and nothing happens when a customer dials a bare short code; the rest of the
+system dials `*920*141*<code>#`. The query also had no limit or ordering
+against PostgREST's 1,000-row cap, so a busy shop would chase a silently
+partial subset.
 
 **Three of six scheduled SMS reports were sending nothing.** `midday`,
 `lowstock` and `monthly` are scheduled by migration 018; the function handled
