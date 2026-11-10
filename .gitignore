@@ -12,3 +12,7 @@ storefront/dist
 .env.local
 desktop/node_modules
 desktop/release
+
+# Privileged database dumps and the connection string. Never committed.
+.bedtime/
+*.dump

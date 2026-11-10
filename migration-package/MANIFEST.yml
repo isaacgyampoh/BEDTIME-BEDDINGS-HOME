@@ -1,0 +1,138 @@
+# ===========================================================================
+# Bedtime — project manifest for the central self-hosted platform.
+#
+# Declarative on purpose: the deployment runner reads this and nothing else
+# about Bedtime. Onboarding the next business means writing one of these, not
+# editing any script.
+#
+# NOTHING SECRET LIVES HERE. Secrets come from the environment or from a
+# 0600 file the owner creates; see scripts/backup-production.sh.
+# ===========================================================================
+
+project:
+  name: bedtime                      # -> database `bedtime`, roles `bedtime_*`
+  display_name: BEDTIME BEDDINGS & HOME
+  api_domain: api.bedtimehome.com    # no DNS record is created by any script here
+  public_sites:
+    - bedtimehome.com
+    - www.bedtimehome.com
+    - admin.bedtimehome.com
+  timezone: UTC                      # the shop trades in Accra; GMT+0 all year
+
+# Which platform services to run. Each costs memory, so each is justified.
+services:
+  postgrest: true                    # this IS the API — 68 table calls, 11 RPCs
+  storage:   true                    # 1,089 objects today; moving to R2, see media
+  functions: true                    # 6 Edge Functions
+  realtime:  true                    # 6 subscriptions across the two apps
+  auth:      false                   # NO GoTrue. Staff sign in with a 4-digit
+                                     # PIN checked by verify_pin (bcrypt).
+                                     # Zero calls to supabase.auth for sign-in.
+                                     # Running it would cost ~256 MB for nothing.
+
+database:
+  extensions: [pgcrypto, uuid-ossp, pg_cron, pg_net]
+  migrations_dir: supabase/migrations
+  # Applied in filename order. These three are deliberately NOT applied: they
+  # move the business tables behind a staff session and blank every admin
+  # screen until staff-login is deployed and proven.
+  hold_back: ["043_", "044_", "047_"]
+  # Staged, financially significant, require explicit approval each time.
+  needs_approval:
+    - supabase/pending/049_one_spelling_per_customer.sql
+    - supabase/pending/050_one_order_per_payment.sql
+
+# Row counts are NOT migration targets — the shop trades continuously and
+# these are stale the moment they are written. They are here so a restore that
+# produces wildly fewer rows is noticed.
+reference_counts:
+  measured_at: 2026-11-10
+  products: 631
+  sales: 1283
+  customers: 1106
+  whatsapp_orders: 607
+  product_price_history: 134
+  note: >
+    An earlier brief gave 659/400/348/40 as a recovery target. Restoring to
+    those would have destroyed 883 sales, 758 customers and 567 orders. Treat
+    any figure in a brief as historical, and re-measure.
+
+media:
+  source_bucket: product-images      # Supabase Storage
+  target: cloudflare-r2
+  target_bucket: bedtime-images      # isolated namespace, Bedtime only
+  worker_dir: r2
+  # Referenced paths are NOT only products.image: 282 of 890 live on the item
+  # snapshots kept with past receipts, orders and bundles. So the stored URL is
+  # never rewritten; the host is chosen at render time by src/lib/imageHost.js.
+  switch_env: VITE_IMAGE_HOST
+  rollback: unset VITE_IMAGE_HOST and redeploy
+
+functions:
+  dir: supabase/functions
+  deployed_elsewhere: true           # currently on Supabase; five carry undeployed changes
+  list:
+    - name: super-service
+      purpose: payments, SMS reports, USSD, staff-login, payment reminders
+      scheduled: true
+    - name: paystack-webhook
+      purpose: payment notifications
+      scheduled: false
+    - name: sms-reports
+      purpose: daily/weekly/monthly SMS reports
+      scheduled: true
+    - name: wa-agent
+      purpose: WhatsApp ordering agent
+      scheduled: false
+    - name: whatsapp-bot
+      purpose: WhatsApp webhook
+      scheduled: false
+    - name: ussd-handler
+      purpose: USSD order lookup and payment
+      scheduled: false
+  secrets_required:
+    # NAMES ONLY. Values are set with `supabase secrets set` or the platform's
+    # per-app .env, never committed and never printed.
+    - ADMIN_SMS_PHONES               # defaults to 0548124978 in code
+    - SHOP_PHONE                     # defaults to 054 812 4978 in code
+    - PAYSTACK_SECRET_KEY
+    - PAYMENT_CALLBACK_SECRET
+    - MNOTIFY_KEY
+    - NALOPAY_MERCHANT_ID
+    - NALOPAY_API_KEY
+    - NALOPAY_AUTH_HEADER
+    - MOOLRE_API_USER
+    - MOOLRE_API_KEY
+    - MOOLRE_API_PUBKEY
+    - MOOLRE_ACCOUNT_NUMBER
+    - WASENDER_API_KEY
+    - OPENAI_API_KEY
+
+scheduled_jobs:
+  # All seven go through private.call_edge(), which reads the base URL from one
+  # row in private.app_config. Moving hosts is one UPDATE, not seven rewrites.
+  - { name: sms-morning,      cron: "0 7 * * *",   path: "/sms-reports?type=morning" }
+  - { name: sms-midday,       cron: "0 13 * * *",  path: "/sms-reports?type=midday" }
+  - { name: sms-evening,      cron: "0 20 * * *",  path: "/sms-reports?type=evening" }
+  - { name: sms-lowstock,     cron: "0 9 * * *",   path: "/sms-reports?type=lowstock" }
+  - { name: sms-weekly,       cron: "0 20 * * 6",  path: "/sms-reports?type=weekly" }
+  - { name: sms-monthly,      cron: "0 20 28 * *", path: "/sms-reports?type=monthly" }
+  - { name: payment-reminder, cron: "15 * * * *",  path: "/super-service?action=remind" }
+  requires: outbound HTTPS from the server. Nothing inbound.
+
+health:
+  script: scripts/healthcheck.sh
+  checks: [three hostnames answer, database answers, product count sane, a real photo returns image/*]
+
+acceptance:
+  unit: npm test                     # 751 assertions
+  e2e: [test:pos, test:shop, test:buying, test:promos, test:upload, test:shopswitch, test:recovery, test:counts]
+  reconcile: migration-package/scripts/reconcile.mjs
+
+cutover:
+  plan: docs/BEDTIME-CUTOVER-CHECKLIST.md
+  rollback: docs/BEDTIME-BACKUP-RECOVERY.md
+  # The shop took 146 sales and 75 orders during one working session, so a
+  # first snapshot is stale within a day. A final delta sync is mandatory.
+  requires_delta_sync: true
+  quiet_window_utc: "04:00-05:00"    # sales cluster in the afternoon
