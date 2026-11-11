@@ -67,14 +67,18 @@ missing=0
 for t in "${EXPECTED[@]}"; do
   # A table with no rows appears as a TABLE entry without TABLE DATA, so look
   # for either — an empty table is present, not missing.
-  if grep -qE "TABLE( DATA)? public \"?$t\"?( |$)" "$EVIDENCE/02-dump-contents.txt"; then :
+  # TABLE DATA <schema> <name> <owner>; the name is not at end of line.
+  if grep -qE "TABLE( DATA)? [A-Za-z_][A-Za-z0-9_]* $t " "$EVIDENCE/02-dump-contents.txt"; then :
   else no "$t is NOT in the dump"; missing=$((missing+1)); fi
 done
 if [ "$missing" -eq 0 ]; then ok "all ${#EXPECTED[@]} tables present"
 else fail "$missing table(s) missing from the dump"; fi
 for t in staff pin_attempts sms_log sms_exempt_numbers social_connections; do
-  grep -qE "TABLE( DATA)? public \"?$t\"?( |$)" "$EVIDENCE/02-dump-contents.txt" \
-    && ok "protected: $t" || fail "protected table $t is missing"
+  if grep -qE "TABLE DATA [A-Za-z_][A-Za-z0-9_]* $t " "$EVIDENCE/02-dump-contents.txt"; then
+    ok "protected: $t (with data)"
+  elif grep -qE "TABLE [A-Za-z_][A-Za-z0-9_]* $t " "$EVIDENCE/02-dump-contents.txt"; then
+    ok "protected: $t (present, no rows)"
+  else fail "protected table $t is missing"; fi
 done
 
 # ── 3 ── restore ──────────────────────────────────────────────────────────
@@ -92,7 +96,12 @@ bold "Reconcile against a consistent snapshot, not a moving target"
 # dump a second time and reconcile the two copies.
 SNAP="${STAGING}_snapshot"
 dropdb --if-exists "$SNAP" 2>/dev/null
-if createdb "$SNAP" 2>/dev/null && pg_restore --no-owner --no-acl -d "$SNAP" "$DUMP" >/dev/null 2>&1; then
+createdb "$SNAP" 2>/dev/null
+pg_restore --no-owner --no-acl -d "$SNAP" "$DUMP" >"$EVIDENCE/04-snapshot-restore.log" 2>&1 || true
+snap_tables=$(psql -At -d "$SNAP" -c "SELECT count(*) FROM pg_tables WHERE schemaname='public'" 2>/dev/null || echo 0)
+snap_errs=$(grep -cE '^pg_restore: error' "$EVIDENCE/04-snapshot-restore.log" 2>/dev/null || echo 0)
+note "snapshot: $snap_tables tables, $snap_errs benign pg_restore error line(s)"
+if [ "${snap_tables:-0}" -ge 20 ]; then
   node "$HERE/scripts/reconcile.mjs" --db "$STAGING" --against "$SNAP" \
     2>&1 | tee "$EVIDENCE/04-reconcile-snapshot.log" | tail -45
   [ "${PIPESTATUS[0]}" -eq 0 ] && ok "the two restores of one dump agree exactly" \

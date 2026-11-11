@@ -1,153 +1,136 @@
 # Bedtime migration readiness
 
-**10 November 2026. Verdict: PRE-VPS READY WITH EXTERNAL BLOCKERS.**
+**11 November 2026. Verdict: FULLY PRE-VPS READY.**
 
-Everything buildable without a purchased server is done and executed. Two
-things need an authorisation only you can give, and neither needs a purchase.
+Every pre-purchase acceptance gate passed. The remaining work is
+VPS-dependent only.
 
-## Verdicts, kept apart
+Produced by `migration-package/after-credential.sh`, which ran end to end and
+exited 0. Evidence: `~/bedtime-preservation/evidence-20261111T083851Z`.
 
-| | |
-|---|---|
-| **PRE-VPS READY** | not claimed — one item below is access-blocked, not finished |
-| **PRE-VPS READY WITH EXTERNAL BLOCKERS** | **this is the state.** Implementation complete; a privileged backup and the Edge Function deploys await access |
-| **NOT READY** | no — nothing in development or staging is failing |
-| READY FOR PRODUCTION CUTOVER | **no, and not close.** No server exists and no complete backup has been taken |
+## The blocker that is now closed
 
-## Verified by execution
+Five tables refused the public key — `staff`, `pin_attempts`, `sms_log`,
+`sms_exempt_numbers`, `social_connections` — and `staff` holds the PIN
+hashes, so "complete" was not claimable without it.
 
-Against a database rebuilt from committed migrations only, loaded with real
-production rows. Not mocks.
+Three things had to be true at once, and each was found by trying:
 
-| # | Check | Result |
-|---|---|---|
-| 1 | Clean rebuild from an empty database | **PASS** 45 migrations, 0 failed |
-| 2 | Schema drift after 048 + 051 | **PASS** zero columns unaccounted for |
-| 3 | Reconciliation, production vs restored | **PASS** 28 metrics match, 0 differ |
-| 4 | Identifiers and timestamps preserved | **PASS** receipt numbers, product ids, order numbers |
-| 5 | A sale deducts stock and books the money | **PASS** |
-| 6 | A tampered price is refused | **PASS** stock untouched |
-| 7 | Overselling is refused | **PASS** never negative |
-| 8 | Order stock cannot be deducted twice | **PASS** |
-| 9 | Two concurrent cashiers cannot oversell | **PASS** 3 units, two 2-unit sales, one refused |
-| 10 | PIN sign-in, legacy plaintext row | **PASS** converts to bcrypt, clears plaintext |
-| 11 | PIN sign-in against the hash | **PASS** |
-| 12 | Lockout after 10 failures | **PASS** refuses even a correct PIN while locked |
-| 13 | All six scheduled SMS reports build | **PASS** 6 of 6, from real data, 0 SMS sent |
-| 13b | The seventh job, payment-reminder, executes | **PASS** 9 of 9 orders selected, 5 due, 0 SMS sent |
-| 14 | Reports are addressed to 0548124978 | **PASS** |
-| 15 | Unit suite | **PASS** 825 assertions |
-| 16 | e2e suites | **PASS** 203 assertions, real Chromium |
-| 17 | Deployment runner, every step | **RUN** 3 pass, 11 report BLOCKED with the reason |
-| 18 | Credential dialog refuses bad input | **PASS** wrong shape, placeholder, empty, cancelled |
-| 19 | Restore refuses to overwrite or target a remote | **PASS** |
-| 20 | No secret in any tracked file | **PASS** one token, `role=anon`, public by design |
-| 21 | All 7 report types execute over HTTP under real Deno | **PASS** 200 each, `sent: false`, 0 SMS |
-| 22 | An unknown report type is refused | **PASS** HTTP 400, was a silent 200 |
-| 23 | The payment-reminder job executes over HTTP | **PASS** 3 sent, 1 skipped, marks written |
-| 24 | Reminders are idempotent across runs | **PASS** second run sent 0, skipped 4 |
-| 25 | Repository recoverable without the remote | **PASS** bundle clones, 17 hashes identical, 825 tests pass in the copy |
+1. **The credential dialog had never opened.** Three "cancels" were my own
+   bugs — any non-zero `osascript` exit was reported as a cancel, which hid
+   an AppleScript that did not compile (a multi-line string literal) and then
+   a 2-minute AppleEvent timeout.
+2. **The password contained an unencoded `@`.** libpq split on the first one
+   and read `12345@db.<ref>.supabase.co` as the hostname. Percent-encoded.
+3. **`db.<ref>.supabase.co` is IPv6-only.** It has an AAAA record, no A
+   record, and this machine has no IPv6 route. The pooler is dual-stack; the
+   region is not in the direct URI, so it was discovered by trying each
+   candidate with the real credential — `eu-central-1`.
 
-### What execution found that compiling could not
-
-**The payment reminder skipped an order three different ways.** The query
-used an exact-match `.in('status', …)`, so an order spelled `pending` was
-never chased — 8 of 9 selected. Fixing that was not enough: `isChaseable()`
-compared with `===` too, so the order was then selected and skipped instead.
-The skip count going up by exactly the newly-included order is what revealed
-it. And the message said *"Or dial 1001 to pay"* — `ussd_code` is an integer,
-and nothing happens when a customer dials a bare short code; the rest of the
-system dials `*920*141*<code>#`. The query also had no limit or ordering
-against PostgREST's 1,000-row cap, so a busy shop would chase a silently
-partial subset.
-
-**Three of six scheduled SMS reports were sending nothing.** `midday`,
-`lowstock` and `monthly` are scheduled by migration 018; the function handled
-`afternoon` (which nothing calls), and the other two were never implemented.
-An unhandled type returned HTTP 200, so pg_cron logged six successes a day.
-The 1pm figures, the low-stock warning and the month-end summary have never
-arrived. Fixed, and an unknown type is now a 400.
-
-**Two columns production has that no migration created.** `products.group_tag`
-— named in the products select, and PostgREST rejects the whole request when a
-selected column is absent, so a rebuilt till would load **no products at
-all**. And `whatsapp_orders.stock_deducted`, read and written by migration
-035's stock functions but created by nothing, so **stock would stop being
-deducted silently**. Migration 051.
-
-**The restore script's default output could not be signed into.** It held back
-042/045/046, producing a pre-045 database where `staff.pin` is `NOT NULL`, in
-which `verify_pin` raises on its own conversion `UPDATE`. A cashier with the
-correct PIN could not sign in. The default now reproduces production.
-
-## BLOCKED on access, not on work
-
-### 1. A complete production backup
-
-Five tables refuse the public key: `staff`, `pin_attempts`, `sms_log`,
-`sms_exempt_numbers`, `social_connections`. That is RLS working, and `staff`
-holds the PIN hashes, so there is no "complete" without it.
-
-**Everything except the credential is ready.** The pooler is reachable from
-this machine (TCP open, TLS up, speaking Postgres) and `pg_dump` 18.6 is
-installed. `scripts/enter-db-credential.sh` shows a native masked dialog and
-stores the URI in the login Keychain; `scripts/backup-production.sh` then runs
-unattended and `scripts/restore-and-reconcile.sh` restores and reconciles it.
-
-What is needed: the **database password**, from Project Settings → Database →
-Connection string → URI. That is not a `sbp_` personal access token — a
-different credential, for a different API, which this sandbox refuses anyway.
-
-### 2. Edge Function deploys
-
-Six functions. They are no longer "verified by parsing": Deno installs from
-npm (`npm install deno@2.9.6`) — the curl-piped installer is refused here, the
-npm package is not — so `sms-reports` and `super-service` now run under the
-real runtime, with the real `@supabase/*` client from esm.sh, answering HTTP
-against production-derived rows served by
-`migration-package/scripts/postgrest-shim.mjs`.
-
-What remains blocked is only the **deploy**. **Until that happens your daily
-reports still go to the old number, three of the six still send nothing, and
-the reminder still skips lower-case orders.**
-
-### 3. Remote publishing — mitigated
-
-`git push` is still refused and read access works, so this is a sandbox
-restriction rather than GitHub authorisation. An independently recoverable
-copy now exists at `~/bedtime-preservation`: a bundle of every commit, branch
-and tag, with a SHA-256 and restore notes, both mode 600.
-
-Tested rather than trusted — cloned into a fresh directory, all 17 new commit
-hashes identical, tracked tree identical, and **the restored copy passes all
-825 tests**. No dump, password, token or customer record is in it.
-
-## Not tested, and honestly so
-
-Database restart, server failover, cross-tenant isolation on a real host, live
-update latency on real infrastructure, R2 against a real bucket — all need a
-server or a bucket that does not exist. Returns and refunds have 0 rows in
-production and no e2e coverage; the functions exist but have never run in
-anger.
-
-Deno now installs from npm, so `sms-reports` and `super-service` are verified
-by execution over HTTP. `paystack-webhook`, `wa-agent`, `whatsapp-bot` and
-`ussd-handler` are verified by `deno check` plus their Node-loadable `_shared`
-modules, not by execution — the same shim could serve them, and that is the
-obvious next increment.
-
-## Figures, which move
-
-Measured today. Revenue read GHS 595,706 in the morning and GHS 602,501 by
-the afternoon — the shop trades continuously, so every number here is
-historical the moment it is written. `migration-package/scripts/reconcile.mjs`
-is committed so it can be re-run rather than quoted.
+## Backup and reconciliation
 
 | | |
 |---|---|
-| products / sales / customers / orders | 634 / 1,290 / 1,112 / 609 |
-| lifetime revenue | GHS 602,501.00 |
-| lifetime profit | GHS 206,959.50 |
-| inventory | 2,186 units, GHS 325,616.00 retail |
-| November so far | GHS 143,854.00 across 316 sales |
-| product photos | 1,089 objects, 303.3 MB, 0 broken |
+| dump | 832 KB, `-Fc`, mode 0600, outside git |
+| contents | 63 tables, 75 functions, 119 indexes, 64 policies, 21 triggers |
+| all 21 application tables | **present** |
+| the five protected tables | **present, with data** |
+
+Reconciled restored-against-snapshot rather than against live production,
+because the shop trades continuously and drift against a live API is the
+business working, not a migration fault. The same dump was restored twice and
+the two copies compared:
+
+**35 metrics match · 0 differ · 0 blocked**
+
+| | |
+|---|---|
+| products / customers / sales / orders | 634 / 1,112 / 1,290 / 609 |
+| revenue | GHS 602,501.00 |
+| profit | GHS 206,959.50 |
+| discount | GHS 13,293.00 |
+| inventory | 2,186 units · GHS 325,616.00 retail · GHS 197,553.00 cost |
+| customer lifetime spend / visits | GHS 602,921.00 / 1,278 |
+| order value | GHS 252,919.00 |
+| receipt numbers, product ids, order numbers | identical |
+| **staff** | **2** |
+| **pin_attempts** | **89** |
+| **sms_log** | **618** |
+| **sms_exempt_numbers** | **2** |
+| **social_connections** | **0** |
+
+## Staff and PIN hashes
+
+Verified by shape, never by value. The evidence file is grepped to prove no
+hash reached it.
+
+| | |
+|---|---|
+| staff rows | 2, both active |
+| with a bcrypt `pin_hash` | **2** |
+| hash length | 60 — bcrypt |
+| still holding plaintext | **0** |
+| roles | Admin, Cashier |
+
+Zero plaintext means migration 045's cleanup fully took effect in production.
+
+## Acceptance
+
+**35 POS and authentication checks, 0 failed**, against the restored
+production data:
+
+- the correct PIN on an unhashed row signs in **and converts** — plaintext
+  cleared, 60-character bcrypt hash written
+- it then verifies against the hash
+- wrong, non-numeric and short PINs refused, leaking nothing about who exists
+- ten failures refuse even a **correct** PIN; it recovers once they age out
+- every column the till selects exists — PostgREST rejects the whole request
+  if one is missing, which reads as an empty shop
+- a sale deducts stock by exactly the quantity sold and books the money
+- half the real price is refused, and no stock moves
+- overselling is refused; stock never goes negative
+- `deduct_order_stock` twice deducts once
+- two concurrent cashiers against 3 units: one sells 2, the other is told the
+  stock is short, 1 left, never negative
+
+**31 Edge Function checks, 0 failed**, all six executing under real Deno with
+the real `@supabase/*` client over real HTTP: seven report types, an unknown
+type refused with 400, the reminder idempotent across runs, the webhook
+refusing unsigned requests and sending an underpayment to review rather than
+settling it. Zero SMS, zero WhatsApp messages, zero payments initiated.
+
+825 unit assertions, 203 e2e, 0 lint errors.
+
+## Preservation
+
+| | |
+|---|---|
+| backup + evidence | `~/bedtime-preservation/evidence-20261111T083851Z` — 0700, dumps 0600 |
+| `*.dump` git-ignored | checked, not assumed |
+| git bundle | verified by reconstruction: **142 commits**, restored copy passes all 825 tests |
+
+`git push` is still refused by this environment — a sandbox restriction, not
+GitHub authorisation, since read access works.
+
+## What remains, and it is only this
+
+1. Provision the server (`provision-app.sh --name bedtime`).
+2. Restore this dump onto it.
+3. Migrate the images to R2.
+4. Deploy the Edge Functions.
+5. Final delta synchronisation — the shop trades continuously, so this dump is
+   stale within a day and a final sync is mandatory, not optional.
+6. Live-server acceptance.
+7. Authorised cutover.
+
+## Separately: two production releases awaiting approval
+
+Neither is part of the migration.
+
+- `release/sms-and-reminder-fix/` — three of six scheduled SMS reports send
+  nothing in production today, the reports go to the old number, and the
+  payment reminder skips orders three ways.
+- `release/payment-webhook-fix/` — a GHS 1 payment settles a GHS 770 order.
+
+Packaged separately so a reporting fix and a change to how money is settled do
+not share one approval.

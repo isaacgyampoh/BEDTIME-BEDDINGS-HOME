@@ -140,7 +140,8 @@ echo "  wrote $(du -h "$DUMP" | cut -f1)"
 # ── 4. what the dump actually contains ────────────────────────────────────
 say "What is in it"
 pg_restore -l "$DUMP" | awk '
-  /TABLE DATA/ { split($0, a, " "); print "    table: " a[length(a)] }
+  # TABLE DATA <schema> <name> <owner> — the name is the second-to-last field.
+  /TABLE DATA/ { n = split($0, a, " "); print "    " a[n-2] "." a[n-1] }
 ' | sort | head -30
 echo "    ---"
 printf '    %s\n' \
@@ -153,8 +154,15 @@ printf '    %s\n' \
 # ── 5. the five tables that were the whole point ──────────────────────────
 say "The tables the public key could not read"
 for t in staff pin_attempts sms_log sms_exempt_numbers social_connections; do
-  if pg_restore -l "$DUMP" | grep -q "TABLE DATA .* $t\$"; then
-    echo "    $t: PRESENT in the dump"
+  # `pg_restore -l` writes "TABLE DATA <schema> <name> <owner>", so the table
+  # name is NOT at end of line — the owner is. Anchoring on $ reported every
+  # protected table as missing from a dump that held all five.
+  # A table with no rows has a TABLE entry and no TABLE DATA entry, so accept
+  # either: empty is present, not missing.
+  if pg_restore -l "$DUMP" | grep -qE "TABLE( DATA)? [A-Za-z_][A-Za-z0-9_]* $t "; then
+    rows=$(pg_restore -l "$DUMP" | grep -cE "TABLE DATA [A-Za-z_][A-Za-z0-9_]* $t ")
+    if [ "$rows" -gt 0 ]; then echo "    $t: PRESENT with data"
+    else echo "    $t: PRESENT (no rows)"; fi
   else
     echo "    $t: MISSING — the dump is not complete"
   fi
