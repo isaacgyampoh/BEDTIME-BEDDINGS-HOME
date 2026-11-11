@@ -69,8 +69,29 @@ const server = createServer(async (req, res) => {
   }
   if (req.method === 'OPTIONS') return send(204, '')
 
+  // RPC. Without this, the webhook's create path 500s on
+  // generate_wa_order_no and the failure looks like a webhook fault rather
+  // than a missing piece of the shim.
+  const rpc = /^\/rest\/v1\/rpc\/([A-Za-z0-9_]+)$/.exec(url.pathname)
+  if (rpc) {
+    let args = {}
+    if (req.method !== 'GET') { let b = ''; for await (const c of req) b += c; try { args = JSON.parse(b || '{}') } catch {} }
+    const name = rpc[1]
+    try {
+      const params = Object.entries(args).map(([k, v]) =>
+        `${ident(k)} => ${v === null ? 'NULL' : typeof v === 'number' ? v : lit(v)}`).join(', ')
+      const out = execFileSync('psql', ['-t','-A','-d',DB,'-c',
+        `SELECT COALESCE(to_json(${ident(name)}(${params}))::text, 'null')`], { encoding:'utf8' }).trim()
+      return send(200, out || 'null')
+    } catch (e) {
+      // A function the staging schema does not define is the shim's gap, and
+      // saying so beats a bare 500.
+      return send(404, { message: `shim: rpc ${name} not available`, detail: String(e).slice(0, 160) })
+    }
+  }
+
   const m = /^\/rest\/v1\/([A-Za-z0-9_]+)$/.exec(url.pathname)
-  if (!m) return send(404, { message: 'shim: only /rest/v1/<table>', path: url.pathname })
+  if (!m) return send(404, { message: 'shim: only /rest/v1/<table> and /rest/v1/rpc/<fn>', path: url.pathname })
   const table = m[1]
   const params = [...url.searchParams.entries()]
 

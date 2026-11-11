@@ -62,6 +62,16 @@ ok "staging database: $DB"
 cleanup () { kill $SHIM_PID 2>/dev/null; pkill -f "deno run.*supabase/functions" 2>/dev/null; }
 trap cleanup EXIT
 
+bold "Seeding fixtures"
+# Self-contained on purpose: this used to rely on rows seeded by hand, so a
+# run against a freshly rebuilt staging database failed with HTTP 500s and
+# "second run sent None". A harness that needs manual setup is not rerunnable.
+if psql -q -v ON_ERROR_STOP=1 -d "$DB" -f "$HERE/fixtures.sql" 2>/dev/null; then
+  ok "7 fx-* fixtures in $DB (disposable; never real orders)"
+else
+  no "could not seed fixtures into $DB"; exit 1
+fi
+
 bold "Starting the PostgREST shim"
 node "$HERE/postgrest-shim.mjs" "$DB" "$PORT_SHIM" --allow-writes >/tmp/bedtime-shim.log 2>&1 &
 SHIM_PID=$!
@@ -112,7 +122,7 @@ else no "sms-reports did not start"; fail=$((fail+1)); fi
 
 bold "super-service — the payment reminder, twice"
 if run_fn super-service; then
-  psql -q -d "$DB" -c "UPDATE whatsapp_orders SET notes='' WHERE id LIKE 'synth-%';" 2>/dev/null
+  psql -q -d "$DB" -f "$HERE/fixtures.sql" 2>/dev/null
   a=$(curl -s -X POST "http://localhost:$PORT_FN/?action=remind" | python3 -c "import sys,json;print(json.load(sys.stdin).get('reminders'))" 2>/dev/null)
   b=$(curl -s -X POST "http://localhost:$PORT_FN/?action=remind" | python3 -c "import sys,json;print(json.load(sys.stdin).get('reminders'))" 2>/dev/null)
   ok "first run sent $a"
@@ -145,6 +155,7 @@ if run_fn whatsapp-bot; then
 else no "whatsapp-bot did not start"; fail=$((fail+1)); fi
 
 bold "paystack-webhook — signature, amount, idempotency"
+psql -q -d "$DB" -f "$HERE/fixtures.sql" 2>/dev/null
 if run_fn paystack-webhook; then
   PAYSTACK_SECRET_KEY="${PAYSTACK_SECRET_KEY:-sk_test_local_only}" FN_URL="http://localhost:$PORT_FN/" node "$HERE/hit-webhook.mjs" || fail=$((fail+1))
 else no "paystack-webhook did not start"; fail=$((fail+1)); fi

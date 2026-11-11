@@ -39,19 +39,19 @@ const charge = (ref, amountMinor) => ({
 })
 
 console.log('\nSIGNATURE')
-await post('no signature at all',            charge('ref-unpaid-1', 77000), { noSig: true, expect: 'refused' })
-await post('a wrong signature',              charge('ref-unpaid-1', 77000), { badSig: true, expect: 'refused' })
+await post('no signature at all',            charge('fx-ref-unpaid-1', 77000), { noSig: true, expect: 'refused' })
+await post('a wrong signature',              charge('fx-ref-unpaid-1', 77000), { badSig: true, expect: 'refused' })
 await post('an event that is not a charge',  { event: 'charge.failed', data: { reference: 'x' } }, { expect: 'received' })
 
 console.log('\nAMOUNT')
-await post('GHS 1 against a GHS 770 order',  charge('ref-unpaid-1', 100), { expect: 'review' })
-await post('GHS 769.99 — a pesewa short',    charge('ref-unpaid-1', 76999), { expect: 'review' })
-await post('a payment for a cancelled order',charge('ref-cancelled-3', 30000), { expect: 'review' })
-await post('an order already settled',       charge('ref-settled-2', 50000), { expect: 'duplicate' })
+await post('GHS 1 against a GHS 770 order',  charge('fx-ref-unpaid-1', 100), { expect: 'review' })
+await post('GHS 769.99 — a pesewa short',    charge('fx-ref-unpaid-1', 76999), { expect: 'review' })
+await post('a payment for a cancelled order',charge('fx-ref-cancelled-3', 30000), { expect: 'review' })
+await post('an order already settled',       charge('fx-ref-settled-2', 50000), { expect: 'duplicate' })
 
 console.log('\nTHE CORRECT AMOUNT, THEN THE SAME EVENT AGAIN')
-await post('GHS 770 exactly',                charge('ref-unpaid-1', 77000), { expect: 'settled' })
-await post('the identical event, redelivered',charge('ref-unpaid-1', 77000), { expect: 'duplicate' })
-await post('and again',                      charge('ref-unpaid-1', 77000), { expect: 'duplicate' })
+await post('GHS 770 exactly',                charge('fx-ref-unpaid-1', 77000), { expect: 'settled' })
+await post('the identical event, redelivered',charge('fx-ref-unpaid-1', 77000), { expect: 'duplicate' })
+await post('and again',                      charge('fx-ref-unpaid-1', 77000), { expect: 'duplicate' })
 
 if (failures) { console.error(`\n  ${failures} webhook case(s) did not behave as expected`); process.exit(1) }

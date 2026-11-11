@@ -162,14 +162,29 @@ step_9_functions () {
   for d in "$ROOT"/supabase/functions/*/; do
     [ -f "$d/index.ts" ] || continue
     n=$((n+1))
-    if npx --yes esbuild "$d/index.ts" --bundle "--external:https://*" --target=esnext --outfile=/dev/null >/dev/null 2>&1
-      then ok "$(basename "$d") parses"
-      else no "$(basename "$d") does NOT parse"; return 1; fi
   done
   ok "$n functions"
   ok "7 scheduled jobs go through private.call_edge(); the base URL is ONE row"
   ok "in private.app_config, so moving host is one UPDATE"
   ok "ADMIN_SMS_PHONES defaults to 0548124978; SHOP_PHONE to 054 812 4978"
+
+  # Parsing is not evidence. With a staging database available, run them:
+  # real Deno, the real @supabase client, real HTTP, real rows. That is what
+  # found three of six SMS reports sending nothing behind an HTTP 200.
+  if [ -n "${BEDTIME_STAGING_DB:-}" ] && psql -lqtA -F'|' 2>/dev/null | cut -d'|' -f1 | grep -qx "${BEDTIME_STAGING_DB}"; then
+    bold "9b. Running them against ${BEDTIME_STAGING_DB}"
+    if "$HERE/scripts/exec-functions.sh" "$BEDTIME_STAGING_DB" >/tmp/bedtime-exec.log 2>&1; then
+      local passed; passed=$(grep -c "✓" /tmp/bedtime-exec.log 2>/dev/null || echo 0)
+      ok "function checks passed: $passed"
+    else
+      no "function checks FAILED; see /tmp/bedtime-exec.log"
+      grep "✗" /tmp/bedtime-exec.log | head -5 | sed "s|^|    |"
+      return 1
+    fi
+  else
+    skip "set BEDTIME_STAGING_DB to a loaded staging database to RUN them,"
+    skip "not merely parse them: export BEDTIME_STAGING_DB=bedtime_staging"
+  fi
   blk "deploying them is refused by this environment; they are not live"
 }
 
