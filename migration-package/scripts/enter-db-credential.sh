@@ -55,10 +55,64 @@ a file, never sent anywhere.'
 # `display dialog` writes "text returned:<value>" to stdout. Both the
 # AppleScript and the extraction stay inside this pipeline so the value is
 # never assigned to a shell variable that could be echoed by a trace.
+#
+# WHY IT GOES THROUGH System Events, AND WHY IT ACTIVATES
+# A bare `osascript -e 'display dialog ...'` belongs to the osascript process,
+# which does not come to the front. With a browser frontmost the box opens
+# BEHIND it. This was cancelled three times before a self-test showed dialogs
+# display fine and the frontmost application was Opera — so it was most likely
+# never seen. Telling System Events to activate first puts it in front.
+#
+# A failure to display and a deliberate Cancel are also no longer the same
+# thing: the previous version turned any non-zero exit into "Cancelled", which
+# is why three attempts said the same unhelpful word.
 set +x
-if ! RAW="$(osascript -e "display dialog \"$PROMPT\" with title \"BEDTIME database credential\" default answer \"\" with hidden answer buttons {\"Cancel\",\"Store\"} default button \"Store\"" 2>/dev/null)"; then
-  echo "Cancelled. Nothing was stored."
-  exit 1
+# AppleScript string literals cannot span lines. $PROMPT is multi-line, so
+# interpolating it raw produced
+#     syntax error: Expected end of line, etc. but found identifier. (-2741)
+# and the dialog never appeared at all. The three "Cancelled" results before
+# this were that error, misreported, because the old code treated every
+# non-zero exit as a cancel.
+#
+# So the newlines become the two characters \n, which AppleScript does
+# understand inside a quoted string, and quotes and backslashes are escaped.
+PROMPT_AS="$(printf '%s' "$PROMPT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | awk 'BEGIN{ORS=""} {print (NR>1 ? "\\n" : "") $0}')"
+
+ERRFILE="$(mktemp -t bedtime-cred)"
+trap 'rm -f "$ERRFILE"' EXIT
+
+RAW="$(osascript 2>"$ERRFILE" <<APPLESCRIPT
+with timeout of 1800 seconds
+    tell application "System Events"
+        activate
+        display dialog "$PROMPT_AS" with title "BEDTIME database credential" default answer "" with hidden answer buttons {"Cancel", "Store"} default button "Store" with icon note
+    end tell
+end timeout
+APPLESCRIPT
+)"
+rc=$?
+
+if [ "$rc" -ne 0 ]; then
+  err="$(tr -d '\n' < "$ERRFILE")"
+  case "$err" in
+    *"User canceled"*|*"user canceled"*|*-128*)
+      echo "Cancelled. Nothing was stored."
+      echo "Run this again when you have the URI to hand."
+      exit 1 ;;
+    "")
+      echo "Cancelled. Nothing was stored."
+      exit 1 ;;
+    *)
+      echo "The dialog could not be shown:" >&2
+      echo "  $err" >&2
+      echo >&2
+      echo "If it mentions assistive access or automation permission, grant" >&2
+      echo "it to your terminal in System Settings -> Privacy & Security ->" >&2
+      echo "Automation, then run this again." >&2
+      echo "If it says AppleEvent timed out, the box was open and waiting:" >&2
+      echo "run this again and it will wait half an hour." >&2
+      exit 3 ;;
+  esac
 fi
 
 # Strip AppleScript's wrapper without printing anything.
