@@ -144,3 +144,78 @@ break it first.
   "everything in the repository" are separate and the default is the former.
 - **Reconciling credential *shape*** — row counts and hash presence, never
   values — so `staff` can be verified without ever selecting a PIN.
+
+---
+
+## Added after finishing Bedtime
+
+The three things that actually cost time at the end, so project three does not
+repeat them.
+
+### 9. Connecting to Supabase Postgres is three problems, not one
+
+All three had to be solved before a single byte could be dumped, and each was
+hidden by the one before it.
+
+**`db.<ref>.supabase.co` is IPv6-only.** Supabase retired IPv4 on direct
+connections. It has an AAAA record and no A record, so a machine without an
+IPv6 route cannot reach it at all:
+
+```sh
+dig +short A    db.<ref>.supabase.co     # empty
+dig +short AAAA db.<ref>.supabase.co     # 2a05:...
+```
+
+The pooler is dual-stack and is the path. It needs a **different username** —
+`postgres.<project-ref>`, not `postgres` — and a region in the hostname.
+
+**The region is not in the direct URI.** Discover it by trying each pooler
+host with the real credential: "Tenant or user not found" means the wrong
+region, an auth failure or a success means the right one. Bedtime is
+`eu-central-1`. `scripts/repair-db-url.sh` does this.
+
+**A password containing a reserved character breaks the URI.** `@` in the
+userinfo must be `%40`. Unencoded, libpq splits on the first `@`:
+
+```
+could not translate host name "12345@db.<ref>.supabase.co" to address
+```
+
+Percent-encode the password before use, and never print it to find out.
+
+### 10. A diagnostic that collapses failures is worse than none
+
+The credential dialog was "cancelled" three times. It had **never opened**.
+The script turned every non-zero `osascript` exit into `Cancelled`, which hid
+an AppleScript that did not compile and then a 2-minute AppleEvent timeout.
+Three rounds were spent asking the owner to do something impossible.
+
+For any dialog: distinguish `-128`/"User canceled" from everything else, print
+the real error, go through `System Events` with `activate` so it does not open
+behind a browser, and wrap it in `with timeout of 1800 seconds`.
+
+### 11. Verify the verification
+
+Three of the faults found at the end were in the checking, not the thing
+checked, and each would have reported a healthy system as broken or a broken
+one as healthy:
+
+| | |
+|---|---|
+| `pg_restore -l` writes `TABLE DATA <schema> <name> <owner>` | anchoring the table name at `$` reported all five protected tables MISSING from a dump that held every one |
+| `pg_restore` exits non-zero on any error, and a Supabase dump always errors about absent roles | chaining with `&&` failed a snapshot that had restored fine |
+| the webhook harness hardcoded one secret while the runner passed another | every request came back 401 and the suite still printed **"all checks passed"** |
+
+The last is the one to take seriously. **Make every harness fail on demand
+before trusting it.** Point it at a deliberately wrong secret, delete the
+guard it checks, reintroduce the constraint it tests — and watch it go red.
+A harness that cannot fail is not evidence.
+
+### 12. Reconcile against the backup, not against production
+
+A live shop's totals change while you work — Bedtime's revenue moved GHS 6,795
+in one afternoon. Comparing a restore with the live API shows drift that is
+the business trading, and it is indistinguishable from a migration fault.
+
+Restore the same dump twice and reconcile the two copies. That isolates the
+restore path, which is the thing under test.
