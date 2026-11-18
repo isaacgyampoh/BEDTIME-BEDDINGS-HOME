@@ -165,12 +165,12 @@ if printf 'add-generic-password -a %s -s %s -C note -D "base64 postgres URI" -w 
      "$ACCOUNT" "$SERVICE" "$(printf '%s' "$URI" | base64)" | security -i >/dev/null 2>&1; then
   unset URI
   echo "Stored in the login Keychain as '$SERVICE' for '$ACCOUNT'."
-  # Prove it is retrievable and is a URI, without showing it.
+  # Prove it is retrievable, without showing it.
   if got="$(security find-generic-password -a "$ACCOUNT" -s "$SERVICE" -w 2>/dev/null | base64 -d 2>/dev/null)"; then
     chars="${#got}"
     prefix="$(printf '%s' "$got" | cut -c1-4)"
     unset got
-    echo "Readable back: yes. Begins $prefix…, $chars characters."
+    echo "Readable back: yes. Begins ${prefix}… , $chars characters."
     echo "The password itself was not displayed and is not in any log."
   else
     echo "WARNING: stored, but could not be read back."
