@@ -25,10 +25,23 @@ services:
   storage:   true                    # 1,089 objects today; moving to R2, see media
   functions: true                    # 6 Edge Functions
   realtime:  true                    # 6 subscriptions across the two apps
-  auth:      false                   # NO GoTrue. Staff sign in with a 4-digit
-                                     # PIN checked by verify_pin (bcrypt).
-                                     # Zero calls to supabase.auth for sign-in.
-                                     # Running it would cost ~256 MB for nothing.
+  auth:      true                    # CHANGED 21 Nov 2026. This said false,
+                                     # on the measurement that nothing called
+                                     # supabase.auth for sign-in. That is no
+                                     # longer true: auth.users holds one user,
+                                     # created 18 November and signed in since,
+                                     # with the address staff.<id>@staff.invalid
+                                     # that super-service's `staff-login` mints.
+                                     # The deployed function was v12 from
+                                     # 15 September; v13 went out on 18 November
+                                     # and that is when the user appeared.
+                                     # So GoTrue is a live dependency now.
+                                     #
+                                     # It is also what 043/044/047 were waiting
+                                     # for — they move the business tables
+                                     # behind a real session — so this is the
+                                     # dependency working, not a mistake to
+                                     # undo. It does mean ~256 MB on the VPS.
 
 database:
   extensions: [pgcrypto, uuid-ossp, pg_cron, pg_net]
