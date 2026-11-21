@@ -61,10 +61,70 @@ function moolreChannel(phone: string): string {
 // Shared secret appended to every callback URL we hand the payment providers.
 // While unset, callbacks stay open (existing behaviour) and a warning is logged.
 const CALLBACK_SECRET = Deno.env.get('PAYMENT_CALLBACK_SECRET') || ''
+const PAYSTACK_SECRET_KEY = Deno.env.get('PAYSTACK_SECRET_KEY') || ''
+
+/**
+ * Paystack signs every webhook with HMAC-SHA512 of the raw body, keyed on the
+ * account's secret key, in `x-paystack-signature`.
+ *
+ * Fail CLOSED when the key is absent. callbackAuthorised() below returns true
+ * in that case, which is how this surface came to be unauthenticated — a
+ * warning in a log nobody reads is not a control.
+ */
+/**
+ * Does this notification actually settle that order?
+ *
+ * Checked, in order: the provider's own final status, the currency, and the
+ * amount in pesewas.
+ *
+ * AN OVERPAYMENT IS ACCEPTED, DELIBERATELY. nalopayCharge() multiplies the
+ * order total by PROCESSING_FEE (1.013) before charging, so the amount that
+ * comes back is about 1.3% MORE than the order. An exact-match check would
+ * refuse every legitimate mobile-money settlement. Only an UNDERPAYMENT is
+ * refused — which is the case that gives goods away.
+ *
+ * Returns null when it settles, or a reason when it does not.
+ */
+function settleRefusal(order: any, pd: any): string | null {
+  const owed = Math.round(Number(order?.total || 0) * 100)
+  const paid = Math.round(Number(pd?.amount || 0))
+  if (owed <= 0) return 'the order has no total to settle'
+  if (!Number.isFinite(paid) || paid <= 0) return 'the notification carries no amount'
+  // Paystack sends data.status; absent on providers that do not, so only a
+  // value that is explicitly NOT success is refused.
+  const st = String(pd?.status ?? '').trim().toLowerCase()
+  if (st && st !== 'success') return `provider status is "${st}", not success`
+  const cur = String(pd?.currency ?? '').trim().toUpperCase()
+  if (cur && cur !== (Deno.env.get('SHOP_CURRENCY') || 'GHS')) return `currency is ${cur}`
+  if (paid < owed) return `underpaid: ${paid} pesewas against ${owed} owed`
+  return null
+}
+
+async function paystackSignatureValid(rawBody: string, signature: string): Promise<boolean> {
+  if (!PAYSTACK_SECRET_KEY) {
+    console.error('SECURITY: PAYSTACK_SECRET_KEY is not set — refusing the callback rather than trusting it.')
+    return false
+  }
+  if (!signature) return false
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(PAYSTACK_SECRET_KEY),
+    { name: 'HMAC', hash: 'SHA-512' }, false, ['sign'])
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(rawBody))
+  const expected = Array.from(new Uint8Array(mac)).map(b => b.toString(16).padStart(2, '0')).join('')
+  if (expected.length !== signature.length) return false
+  let diff = 0
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i)
+  return diff === 0
+}
 
 function callbackAuthorised(url: URL, req: Request): boolean {
   if (!CALLBACK_SECRET) {
-    console.warn('SECURITY: PAYMENT_CALLBACK_SECRET is not set — payment callbacks are unauthenticated and anyone who knows this URL can mark an order Paid.')
+    // DELIBERATELY STILL FAIL-OPEN, and it must not stay that way.
+    // nalopay-callback, hubtel-callback and moolre-callback come through here,
+    // and NaloPay is the LIVE provider: returning false today would stop real
+    // mobile-money confirmations and leave customers who have paid sitting at
+    // Pending. This hole closes in the SECOND step, once
+    // PAYMENT_CALLBACK_SECRET is set. See deploy/BEDTIME-SECURITY-AUDIT.md.
+    console.error('SECURITY: PAYMENT_CALLBACK_SECRET is not set — nalopay/hubtel/moolre callbacks are UNAUTHENTICATED. Set it, then deploy the fail-closed change.')
     return true
   }
   const provided = url.searchParams.get('s') || req.headers.get('x-callback-secret') || ''
@@ -296,7 +356,28 @@ serve(async (req) => {
     const action = url.searchParams.get('action')
 
     if (action === 'webhook') {
-      const body = await req.json()
+      // ── HOTFIX 2026-11-21 ─────────────────────────────────────────────────
+      // This path had NO authentication of any kind: not Paystack's HMAC, not
+      // the callback secret, nothing. An unsigned POST of
+      //   {"event":"charge.success","data":{"reference":"<a real ref>","amount":100}}
+      // marked that order Paid, deducted its stock and texted the customer
+      // that their payment had arrived. Demonstrated against this exact
+      // deployed file: a GHS 770 order settled by a claim of GHS 1.00.
+      //
+      // The function URL is the same base URL shipped in the browser bundle,
+      // so "whoever knows the URL" is everyone.
+      //
+      // Refusing unauthenticated callers breaks nothing: no order has ever
+      // carried a reference in Paystack's own format — every one is POS-,
+      // WEB-, USSD- or WA- — and PAYSTACK_SECRET_KEY is not configured. This
+      // endpoint has no legitimate caller today.
+      const rawBody = await req.text()
+      if (!await paystackSignatureValid(rawBody, req.headers.get('x-paystack-signature') || '')) {
+        console.error('webhook: refused an unauthenticated or unsigned callback')
+        return new Response(JSON.stringify({ error: 'unauthorised' }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } })
+      }
+      const body = JSON.parse(rawBody)
       console.log('WEBHOOK:', body.event, JSON.stringify(body.data || {}).slice(0, 500))
       if (body.event !== 'charge.success') return new Response(JSON.stringify({ received: true }), { headers: { 'Content-Type': 'application/json' } })
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -312,11 +393,11 @@ serve(async (req) => {
       }
       if (ref.startsWith('USSD-')) {
         const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single()
-        if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: pd.paid_at || new Date().toISOString() }).eq('id', o.id); try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch {} const amount = (pd.amount/100).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} }; return new Response(JSON.stringify({ success: true, type: 'ussd-ref' }), { headers: { 'Content-Type': 'application/json' } }) }
+        if (o) { const refusal = settleRefusal(o, pd); if (refusal) { console.error('webhook: NOT settling ' + (o.order_no||o.id) + ' — ' + refusal); try { await sendSMS(ADMIN_PHONES, `Payment needs checking: ${o.order_no}. ${refusal}.`) } catch {}; return new Response(JSON.stringify({ received: true, review: refusal }), { headers: { 'Content-Type': 'application/json' } }) } await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: pd.paid_at || new Date().toISOString() }).eq('id', o.id); try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch {} const amount = (pd.amount/100).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} }; return new Response(JSON.stringify({ success: true, type: 'ussd-ref' }), { headers: { 'Content-Type': 'application/json' } }) }
       }
       if (ref) {
         const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single()
-        if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: pd.paid_at || new Date().toISOString() }).eq('id', o.id); try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch {} const amount = (pd.amount/100).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} }; return new Response(JSON.stringify({ success: true, type: 'ref' }), { headers: { 'Content-Type': 'application/json' } }) }
+        if (o) { const refusal = settleRefusal(o, pd); if (refusal) { console.error('webhook: NOT settling ' + (o.order_no||o.id) + ' — ' + refusal); try { await sendSMS(ADMIN_PHONES, `Payment needs checking: ${o.order_no}. ${refusal}.`) } catch {}; return new Response(JSON.stringify({ received: true, review: refusal }), { headers: { 'Content-Type': 'application/json' } }) } await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: pd.paid_at || new Date().toISOString() }).eq('id', o.id); try { await supabase.rpc('deduct_order_stock', { p_order_id: o.id }) } catch {} const amount = (pd.amount/100).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} }; return new Response(JSON.stringify({ success: true, type: 'ref' }), { headers: { 'Content-Type': 'application/json' } }) }
       }
       const { data: products } = await supabase.from('products').select('*'); const rawItems = meta.items || []; let subtotal = 0
       const items = rawItems.map((it: any) => { let price = Number(it.price) || 0; const name = it.name || it.product || ''; const qty = Number(it.qty) || Number(it.quantity) || 1; if (!price && name && products) { const m = products.find((p: any) => p.name.toLowerCase() === name.toLowerCase()); if (m) price = Number(m.price) || 0 }; const lt = price * qty; subtotal += lt; return { name, qty, price, lineTotal: lt } })
@@ -450,7 +531,7 @@ serve(async (req) => {
       }
       const body = await req.json(); const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
       const ref = body.ClientReference || body.Data?.ClientReference || ''; const status = body.ResponseCode || body.Data?.ResponseCode || ''
-      if (status === '0000' && ref) { const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single(); if (o) { await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: new Date().toISOString() }).eq('id', o.id); const amount = Number(o.total).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} } } }
+      if (status === '0000' && ref) { const { data: o } = await supabase.from('whatsapp_orders').select('id,order_no,total,customer_phone,customer_name').eq('paystack_ref', ref).single(); if (o) { const refusal = settleRefusal(o, pd); if (refusal) { console.error('webhook: NOT settling ' + (o.order_no||o.id) + ' — ' + refusal); try { await sendSMS(ADMIN_PHONES, `Payment needs checking: ${o.order_no}. ${refusal}.`) } catch {}; return new Response(JSON.stringify({ received: true, review: refusal }), { headers: { 'Content-Type': 'application/json' } }) } await supabase.from('whatsapp_orders').update({ status: 'Paid', paid_at: new Date().toISOString() }).eq('id', o.id); const amount = Number(o.total).toFixed(2); try { await sendSMS(ADMIN_PHONES, `Payment received. ${o.order_no} GHS ${amount}. Process ASAP.`) } catch {}; if (o.customer_phone) { try { await sendSMS(o.customer_phone, `Hi ${o.customer_name || 'Customer'}, your payment of GHS ${amount} has been received.\n\nOrder: ${o.order_no}\n\nBEDTIME BEDDINGS & HOME\n${SHOP_PHONE}`) } catch {} } } }
       return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } })
     }
 

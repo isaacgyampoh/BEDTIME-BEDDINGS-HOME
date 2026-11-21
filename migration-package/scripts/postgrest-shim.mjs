@@ -116,7 +116,16 @@ const server = createServer(async (req, res) => {
                   (limit != null ? ` LIMIT ${limit}` : '') + (offset ? ` OFFSET ${offset}` : '')
       const rows = q(sql)
       const total = q(`SELECT count(*)::int AS c FROM ${ident(table)} ${where(params)}`)[0]?.c ?? rows.length
-      return send(200, rows, { 'Content-Range': `${offset}-${offset + Math.max(rows.length - 1, 0)}/${total}` })
+      const hdrs = { 'Content-Range': `${offset}-${offset + Math.max(rows.length - 1, 0)}/${total}` }
+      const wantsOne = /vnd\.pgrst\.object/.test(req.headers.accept || '')
+      if (wantsOne) {
+        if (rows.length === 1) return send(200, rows[0], hdrs)
+        // PostgREST's own behaviour: 406 for .single() with 0 or >1 rows.
+        return send(406, { code: 'PGRST116',
+          message: `JSON object requested, multiple (or no) rows returned`,
+          details: `Results contain ${rows.length} rows` }, hdrs)
+      }
+      return send(200, rows, hdrs)
     }
     if (req.method === 'PATCH' || req.method === 'POST') {
       let body = ''
@@ -133,6 +142,10 @@ const server = createServer(async (req, res) => {
       const sql = `WITH u AS (UPDATE ${ident(table)} SET ${sets} ${where(params)} RETURNING *) ` +
                   `SELECT COALESCE(json_agg(u), '[]'::json)::text FROM u`
       const out = execFileSync('psql', ['-t','-A','-d',DB,'-c',sql], { encoding:'utf8' }).trim()
+      if (/vnd\.pgrst\.object/.test(req.headers.accept || '')) {
+        let arr = []; try { arr = JSON.parse(out || '[]') } catch {}
+        return send(arr.length === 1 ? 200 : 406, arr.length === 1 ? arr[0] : { code: 'PGRST116', message: 'JSON object requested' })
+      }
       return send(200, out || '[]')
     }
     return send(405, { message: 'shim: method not supported' })
