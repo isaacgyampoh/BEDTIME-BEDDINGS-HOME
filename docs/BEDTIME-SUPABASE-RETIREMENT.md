@@ -1,13 +1,36 @@
 # Retiring hosted Supabase for Bedtime
 
-**Do not delete anything yet.** Project `wqkgfvmvuljzexhevlnp` ("Mimi") is
-still the live backend: both front ends point at it, its cron jobs still run,
-and it still answers payment callbacks. This is the list of what has to stop
-depending on it first, in order, with how to check each one.
+**Cutover is DONE.** Both front ends serve from `https://api.bedtimehome.com`
+as of 24 November 2026, Supabase's 16 scheduled jobs are disabled, and
+Bedtime's 9 run on Contabo. **Do not delete Supabase yet** — the checklist
+below has to pass first.
 
-State at the time of writing (24 November 2026): Bedtime runs in full on
-Contabo and is verified, but **the front ends have not been switched over**,
-so Supabase is still production.
+State at the time of writing:
+
+| | |
+|---|---|
+| front ends | **Contabo** (`api.bedtimehome.com`, real Let's Encrypt cert) |
+| database | `bedtime` inside `central-postgres`, exact copy, `ussd_code_seq` 50666 |
+| scheduled jobs | 9 `btm-*` on Contabo; Supabase's 16 **disabled, definitions kept** |
+| images | R2 via the Worker; new uploads go straight to R2 |
+| staff login | verified end-to-end (GoTrue session issued) |
+| payments | NaloPay merchant auth verified; `reconcile-payments` every 5 min |
+| SMS | verified delivered (mNotify code 2000, 6,458 credits) |
+| data exposure | closed on **both** backends (043/044/047) |
+| rollback | `bedtime_t0` snapshot + `cutover-delta.py` |
+| Everytinroom | unaffected throughout |
+
+### Rolling back
+
+```sh
+# 1. carry Contabo's trading back to Supabase
+/srv/central/scripts/cutover-delta.py --base bedtime_t0 --current bedtime > back.sql
+#    then run back.sql against Supabase (it refuses unless Supabase still equals T0)
+# 2. re-enable Supabase's jobs
+#    SELECT cron.alter_job(jobid, active := true) FROM cron.job;
+# 3. republish the front ends with none of the VITE_ overrides
+./scripts/deploy.sh both
+```
 
 ---
 
@@ -15,10 +38,10 @@ so Supabase is still production.
 
 | # | Dependency | Status | What replaces it |
 |---|---|---|---|
-| 1 | Both front ends (`VITE_SUPABASE_URL`) | **live on Supabase** | rebuild against `https://api.bedtimehome.com` |
-| 2 | 16 cron jobs in Supabase's `cron.job` | **still firing** | 8 `btm-*` jobs on Contabo, already registered and verified |
-| 3 | Edge Functions `super-service` v18, `sms-reports` v9 | **still serving** | the same two on Contabo, verified |
-| 4 | NaloPay callbacks for charges begun on Supabase | in flight | Contabo polls NaloPay directly (`action=reconcile-payments`) |
+| 1 | Both front ends | **done — on Contabo** | — |
+| 2 | 16 cron jobs in Supabase's `cron.job` | **done — disabled** | 9 `btm-*` jobs on Contabo |
+| 3 | Edge Functions `super-service` v18, `sms-reports` v10 | **kept on purpose** | so in-flight callbacks still settle; remove at retirement |
+| 4 | NaloPay callbacks for charges begun on Supabase | **handled** | `btm-reconcile-payments` polls NaloPay every 5 min, so Contabo is authoritative whichever backend got the callback. Supabase's `super-service` is deliberately left deployed so those callbacks still land. |
 | 5 | `product-images` bucket, 1,153 objects | still origin | R2 holds all 948 referenced; the Worker reads through for the rest |
 | 6 | R2 Worker `ORIGIN_BASE` | points at Supabase | clear it once nothing misses |
 | 7 | `imageUpload.js` Supabase fallback | still a fallback | remove once R2 uploads are proven in daily use |
