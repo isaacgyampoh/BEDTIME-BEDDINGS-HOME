@@ -11,6 +11,23 @@
 #
 # Afterwards the stack is on disk but NOT started and NOT configured: secrets
 # have to be generated into .env first. See selfhost/README.md.
+#
+# ===========================================================================
+# DO NOT RUN THIS ON 169.58.120.116.
+#
+# That server already runs Everytinroom. This script was written for an empty
+# machine and does three things that would damage a shared one:
+#
+#   * `ufw --force reset` DISCARDS EVERY EXISTING FIREWALL RULE before adding
+#     its own. Everytinroom's rules would be gone.
+#   * it reloads sshd.
+#   * it claims /opt/supabase and binds ports 80 and 443 through Caddy, which
+#     a reverse proxy already serving Everytinroom is holding.
+#
+# For the shared server use selfhost/survey-cotenant.sh first, which only
+# reads, and then the co-tenant path it prints. The guard below enforces this:
+# override it only on a genuinely empty host.
+# ===========================================================================
 set -euo pipefail
 
 APP_USER="${1:-bedtime}"
@@ -18,6 +35,28 @@ STACK_DIR="/opt/supabase"
 
 say () { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 [ "$(id -u)" -eq 0 ] || { echo "run this as root"; exit 1; }
+
+# ── refuse to run on a host that is already serving something ──────────────
+if [ "${I_HAVE_READ_THE_COTENANT_WARNING:-}" != "yes" ]; then
+  OCCUPIED=""
+  command -v docker >/dev/null 2>&1 && \
+    [ "$(docker ps -q 2>/dev/null | wc -l)" -gt 0 ] && OCCUPIED="running containers"
+  for d in /srv/central /opt/everytinroom /srv/everytinroom; do
+    [ -d "$d" ] && OCCUPIED="${OCCUPIED:+$OCCUPIED, }$d exists"
+  done
+  ss -ltn 2>/dev/null | grep -qE ':(80|443)\s' && \
+    OCCUPIED="${OCCUPIED:+$OCCUPIED, }ports 80/443 already bound"
+  if [ -n "$OCCUPIED" ]; then
+    echo
+    echo "REFUSING: this host is already in use — $OCCUPIED"
+    echo
+    echo "This script resets the firewall and claims 80/443. On a shared"
+    echo "server that breaks whatever is already there."
+    echo
+    echo "Run selfhost/survey-cotenant.sh instead. It only reads."
+    exit 9
+  fi
+fi
 . /etc/os-release
 echo "Host: $PRETTY_NAME, $(nproc) cores, $(free -g | awk '/^Mem:/{print $2}') GB RAM, $(df -h / | awk 'NR==2{print $4}') free on /"
 
