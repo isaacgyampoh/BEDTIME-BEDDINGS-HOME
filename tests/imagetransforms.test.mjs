@@ -4,17 +4,17 @@ import { join } from 'node:path'
 const t = suite('Nothing requests a paid image transformation unless asked to')
 
 /**
- * Supabase's image-transform endpoint is billable per origin transformation
- * and the organisation is over its allowance. Both web apps were gated on
- * 27 October 2026 when the feature started returning 403 FeatureNotEnabled —
- * but wa-agent was missed, because an Edge Function has no visible blank
- * image to notice. It kept rewriting every product photo it sent a customer.
+ * Supabase's image-transform endpoint is billable per ORIGIN IMAGE per month.
+ * Both web apps were gated on 27 October 2026, when the feature was returning
+ * 403 FeatureNotEnabled. It works again now: re-verified 24 November 2026
+ * against nine real product images, every one 200 with an x-transformations
+ * header at 41% of the original bytes. So an ungated path spends money rather
+ * than merely breaking, which is why the gates stay.
  *
- * The feature is enabled again (a request returns 200 with an
- * x-transformations header), so an ungated path now spends money rather than
- * merely breaking. This test fails if any source file reaches that endpoint
- * without a flag in the way, which is the only form of this that lasts: the
- * previous fix was correct and incomplete, and nothing would have told us.
+ * The third offender used to be the WhatsApp agent, which transformed every
+ * photo it sent and had no visible blank image to give it away. That agent
+ * was retired on 24 November 2026 and its deployment deleted, so the only
+ * paths left to guard are the two web apps.
  */
 const ROOTS = ['src', 'storefront/src', 'supabase/functions']
 const SKIP = new Set(['node_modules', 'dist', '.git'])
@@ -68,9 +68,14 @@ t.ok('the admin flag defaults off',
 t.ok('the shop front flag defaults off',
   /TRANSFORMS_ON\s*=\s*String\(import\.meta\.env\?\.VITE_IMAGE_TRANSFORMS \|\| ''\) === 'on'/
     .test(readFileSync('storefront/src/lib/utils.js', 'utf8')))
-t.ok('the WhatsApp agent flag defaults off',
-  /WA_TRANSFORMS_ON\s*=\s*\(Deno\.env\.get\('WA_IMAGE_TRANSFORMS'\) \|\| ''\) === 'on'/
-    .test(readFileSync('supabase/functions/wa-agent/index.ts', 'utf8')))
+// The retired agent must not come back. Nothing under supabase/functions may
+// reach OpenAI or WaSender again, and no source file may reference the agent's
+// own tables -- a reintroduction would otherwise be silent.
+{
+  const banned = /api\.openai\.com|wasenderapi\.com|OPENAI_API_KEY|WASENDER_API_KEY/
+  const back = files.filter(f => banned.test(readFileSync(f, 'utf8')))
+  t.eq('no OpenAI or WaSender integration has returned', back.join(', '), '')
+}
 
 // thumb() with the flag off must hand back exactly what it was given.
 {
