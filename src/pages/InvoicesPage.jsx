@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useStore } from '../hooks/useStore'
 import { getSupabase } from '../lib/supabase'
+import { uploadInvoicePhoto } from '../lib/imageUpload'
 import { money, num, fmtDate, today } from '../lib/utils'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
@@ -19,9 +20,17 @@ export default function InvoicesPage() {
     const sb = getSupabase(); let imageUrl = ''
     if (form.file) {
       const ext = form.file.name.split('.').pop()
-      const path = `inv_${Date.now()}.${ext}`
-      const { error: upErr } = await sb.storage.from('invoice-photos').upload(path, form.file)
-      if (!upErr) { const { data: urlData } = sb.storage.from('invoice-photos').getPublicUrl(path); imageUrl = urlData?.publicUrl || '' }
+      // R2 through the Worker, with Supabase Storage only as a fallback. The
+      // invoice-photos bucket has never held an object, so nothing historical
+      // depends on the old URL shape.
+      const put = await uploadInvoicePhoto({
+        sb,
+        filename: `inv_${Date.now()}.${ext}`,
+        blob: form.file,
+        contentType: form.file.type || 'image/jpeg',
+      })
+      if (!put.ok) { toast.error('Invoice photo upload failed: ' + put.error); setLoading(false); return }
+      imageUrl = put.url
     }
     const invId = form.invoiceId.trim() || 'INV-' + Date.now().toString(36).toUpperCase()
     await sb.from('invoices').insert({ invoice_id: invId, date: form.date || today(), supplier: form.supplier.trim(), amount: num(form.amount), notes: form.notes.trim(), image: imageUrl })

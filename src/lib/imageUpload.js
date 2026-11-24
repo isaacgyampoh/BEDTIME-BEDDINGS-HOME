@@ -89,3 +89,40 @@ export async function uploadProductImage({ sb, path, blob, contentType, storageU
   }
   return { ok: true, via: 'supabase', url: publicUrl }
 }
+
+/**
+ * Upload a supplier invoice photo.
+ *
+ * Same route as a product photo: R2 through the Worker, authorised by the
+ * staff member's own session, with Supabase Storage as the fallback. The
+ * Worker permits the `invoices/` prefix for exactly this.
+ *
+ * Returns the URL to store. Unlike a product photo this one IS an R2 URL,
+ * because no historical invoice row holds a Supabase-shaped one -- the
+ * invoice-photos bucket has never had a single object in it -- so there is no
+ * existing shape to stay compatible with.
+ */
+export async function uploadInvoicePhoto({ sb, filename, blob, contentType }) {
+  const path = `invoices/${filename}`
+  if (HOST) {
+    try {
+      const { data } = await sb.auth.getSession()
+      const accessToken = data?.session?.access_token
+      if (accessToken) {
+        const r = await fetch(`${HOST}/img/${path}`, {
+          method: 'PUT',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': contentType },
+          body: blob,
+        })
+        if (r.ok) return { ok: true, via: 'r2', url: `${HOST}/img/${path}` }
+        console.warn('R2 invoice upload refused:', r.status, (await r.text()).slice(0, 200))
+      }
+    } catch (e) {
+      console.warn('R2 invoice upload threw, falling back:', e?.message || e)
+    }
+  }
+  const { error } = await sb.storage.from('invoice-photos').upload(filename, blob, { contentType, upsert: true })
+  if (error) return { ok: false, via: 'supabase', error: error.message }
+  const { data: urlData } = sb.storage.from('invoice-photos').getPublicUrl(filename)
+  return { ok: true, via: 'supabase', url: urlData?.publicUrl || '' }
+}
