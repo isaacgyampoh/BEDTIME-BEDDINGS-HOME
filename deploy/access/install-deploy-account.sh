@@ -102,7 +102,7 @@ head_ "Authorized key"
 AK="$HOME_D/.ssh/authorized_keys"
 install -d -m 0700 -o "$USER_N" -g "$USER_N" "$HOME_D/.ssh"
 touch "$AK"
-BEFORE=$(grep -c . "$AK" 2>/dev/null || echo 0)
+BEFORE=$(grep -c . "$AK" 2>/dev/null); BEFORE=${BEFORE:-0}
 if grep -qxF "$PUBKEY" "$AK" 2>/dev/null; then
   ok "the key is already authorized -- nothing appended"
 else
@@ -113,7 +113,7 @@ else
   ok "key appended"
 fi
 chown "$USER_N:$USER_N" "$AK"; chmod 600 "$AK"
-AFTER=$(grep -c . "$AK" 2>/dev/null || echo 0)
+AFTER=$(grep -c . "$AK" 2>/dev/null); AFTER=${AFTER:-0}
 note "$USER_N now has $AFTER authorized key(s) (was $BEFORE)"
 
 # Prove the untouchable file was untouched.

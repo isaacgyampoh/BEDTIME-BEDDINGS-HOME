@@ -28,7 +28,13 @@
 # ===========================================================================
 set -uo pipefail
 HOST=169.58.120.116
-KEY="$HOME/.ssh/bedtime_contabo"
+# Reconnaissance runs as root with the instance's assigned key, because the
+# whole point of bedtime-deploy is that it CANNOT inspect the host: it has no
+# docker group, no general sudo, and no read access to /root. Everything this
+# probe does is a query -- it starts, stops, installs and writes nothing --
+# and all of Bedtime's actual work afterwards runs as bedtime-deploy.
+KEY="${SURVEY_KEY:-$HOME/.ssh/everytinroom_contabo_rsa}"
+SURVEY_USER="${SURVEY_USER:-root}"
 LOCAL=0
 [ "${1:-}" = "--local" ] && LOCAL=1
 
@@ -116,15 +122,15 @@ if [ "$LOCAL" -eq 1 ]; then
   rc=$?
 else
   [ -f "$KEY" ] || { no "no $KEY"; exit 2; }
-  say "Surveying $HOST over ssh (read-only)"
+  say "Surveying $HOST over ssh as $SURVEY_USER (read-only)"
   OUT="$(ssh -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new \
-           -o ConnectTimeout=15 -o LogLevel=ERROR "root@$HOST" "bash -s" <<<"$PROBE" 2>&1)"
+           -o ConnectTimeout=15 -o LogLevel=ERROR "$SURVEY_USER@$HOST" "bash -s" <<<"$PROBE" 2>&1)"
   rc=$?
   if [ "$rc" -ne 0 ]; then
     no "could not survey the server"
     printf '%s\n' "$OUT" | sed 's/^/      /'
-    note "If this is 'Permission denied (publickey)', the Bedtime key is not"
-    note "authorized yet. Run migration-package/scripts/install-bedtime-key.sh."
+    note "If this is 'Permission denied (publickey)', re-check which key the"
+    note "instance has assigned: ./migration-package/scripts/contabo-api.sh survey"
     note "NOT retrying with other keys or users."
     exit 3
   fi
