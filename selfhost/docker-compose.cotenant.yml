@@ -1,0 +1,168 @@
+# ===========================================================================
+# Bedtime as a CO-TENANT on 169.58.120.116, beside Everytinroom.
+#
+# Used INSTEAD OF docker-compose.override.yml, which was written for a server
+# Bedtime owned alone and binds 80/443 through its own Caddy. On this machine
+# those ports belong to whatever already serves Everytinroom, and taking them
+# is the one mistake that would be noticed by customers rather than by us.
+#
+#   cd /srv/bedtime/supabase
+#   docker compose -p bedtime \
+#     -f docker-compose.yml \
+#     -f /srv/bedtime/docker-compose.cotenant.yml up -d
+#
+# The `-p bedtime` is not cosmetic. It namespaces the project, so containers,
+# volumes and the default network are all prefixed `bedtime_` and cannot
+# collide with, adopt, or be adopted by Everytinroom's stack.
+#
+# WHAT THIS CHANGES AGAINST UPSTREAM
+#
+#   * NOTHING binds a public port. Kong listens on 127.0.0.1 only, and the
+#     existing reverse proxy forwards api.bedtimehome.com to it. One line in
+#     that proxy's config is the entire integration.
+#   * Four services are REMOVED rather than merely stopped, because on a
+#     shared 8 GB box the memory matters and none of them is used:
+#       - imgproxy : image transforms are retired. R2 serves the photos, and
+#                    paying per origin image was the reason to leave.
+#       - studio   : an admin UI on a production host is an attack surface we
+#                    do not need; psql over the ssh tunnel does the same job.
+#       - supavisor: connection pooling for a two-till shop with one website
+#                    is machinery without a purpose. PostgREST pools already.
+#       - vector   : log shipping to a collector that does not exist here.
+#   * Postgres keeps pg_cron and logical WAL, because the SMS and report jobs
+#     are cron jobs and a future replica needs the WAL level.
+#   * Every service restarts unless explicitly stopped, so a reboot of the
+#     shared host brings Bedtime back without anyone logging in.
+#
+# WHAT IT DELIBERATELY DOES NOT DO
+#
+#   * It does not reset or edit the firewall. The survey reports what ufw
+#     already allows; nothing here changes it, because 443 is already open and
+#     Bedtime needs no new hole.
+#   * It does not touch sshd, any Everytinroom container, volume, network or
+#     file, or the host's reverse proxy configuration. Adding the vhost is a
+#     separate, reviewable one-line change.
+# ===========================================================================
+services:
+
+  db:
+    restart: unless-stopped
+    # Upstream publishes 5432 on all interfaces. On a shared host that would
+    # expose Bedtime's database to anything that can reach the box, and would
+    # also collide with Everytinroom's Postgres if it does the same.
+    # `!override []` empties the list rather than appending to it.
+    ports: !override []
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - shared_preload_libraries=pg_stat_statements,pg_cron
+      - -c
+      - cron.database_name=postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=10
+      - -c
+      - max_wal_senders=10
+      # Sized for a co-tenant, not for the whole machine. Everytinroom's
+      # Postgres is sizing itself from the same 8 GB.
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=100
+    volumes:
+      - bedtime-db-data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  # The only way in. 127.0.0.1 ONLY -- the host's existing proxy reaches it
+  # over loopback, and nothing off-box can.
+  kong:
+    restart: unless-stopped
+    ports: !override
+      - "127.0.0.1:8001:8000"
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  rest:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  auth:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  realtime:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # Still needed after the R2 move: invoice photos upload through the storage
+  # API, and the product-images bucket stays readable until the shop has run
+  # on R2 long enough that a problem would have shown up.
+  storage:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  meta:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  functions:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # ── kept out of the running set, with the reason in the header ───────────
+  #
+  # Assigning a profile is how a service is excluded, rather than `!reset`.
+  # A service with a profile does not start unless that profile is named, and
+  # "never" is never named. This works on every Compose version, whereas
+  # `!reset` needs 2.24+ and is documented for resetting a VALUE, not for
+  # deleting a service. Docker is not installed on this machine, so the merge
+  # could not be validated here -- which is reason enough to prefer the
+  # construct that does not need validating.
+  #
+  # To bring one back, add it to the profile list on the command line.
+  imgproxy:
+    profiles: ["never"]
+  studio:
+    profiles: ["never"]
+  supavisor:
+    profiles: ["never"]
+  vector:
+    profiles: ["never"]
+
+volumes:
+  bedtime-db-data:
+    name: bedtime-db-data
+  bedtime-storage-data:
+    name: bedtime-storage-data
