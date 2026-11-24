@@ -25,6 +25,11 @@
  * file is already the size that gets served.
  */
 
+// The deployment-account installer, bundled as text at build time from its
+// canonical copy in the repository. Importing it means the script served by
+// /deploy-access and the script reviewed in git cannot drift apart.
+import INSTALLER from '../deploy/access/install-deploy-account.sh'
+
 const CORS = (origin, allowed) => ({
   'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : allowed[0],
   'Access-Control-Allow-Methods': 'GET, PUT, DELETE, OPTIONS',
@@ -41,6 +46,78 @@ const MAX_BYTES = 8 * 1024 * 1024
  * Constant-time compare, so a wrong token cannot be guessed a character at a
  * time from how long the answer takes.
  */
+/**
+ * Is this request from a signed-in member of shop staff?
+ *
+ * WHY THIS EXISTS
+ * The POS is a static site. An upload secret placed in it would be shipped to
+ * every browser that loads the page, which is the whole reason uploads used to
+ * go through Supabase Storage instead of here. So the browser presents the
+ * GoTrue session it already has, and this verifies it.
+ *
+ * NO SECRET IS INVOLVED, on either side. The project signs tokens with an
+ * ES256 key and publishes the PUBLIC half at /auth/v1/.well-known/jwks.json,
+ * so verification needs nothing confidential: not in the browser, not here.
+ *
+ * Checked: the signature against the published key, `exp`, and the presence of
+ * app_metadata.staff_id -- the claim super-service's staff-login puts on a
+ * staff session after a correct PIN. A customer token, an anon key or an
+ * expired staff token all fail.
+ */
+let JWKS_CACHE = { at: 0, keys: null }
+
+async function jwks(env) {
+  const now = Date.now()
+  if (JWKS_CACHE.keys && now - JWKS_CACHE.at < 3600_000) return JWKS_CACHE.keys
+  const base = (env.AUTH_BASE || env.ORIGIN_BASE || '').replace(/\/+$/, '')
+  if (!base) return null
+  const r = await fetch(`${base}/auth/v1/.well-known/jwks.json`, { cf: { cacheTtl: 3600 } })
+  if (!r.ok) return null
+  const d = await r.json()
+  if (!Array.isArray(d.keys) || !d.keys.length) return null
+  JWKS_CACHE = { at: now, keys: d.keys }
+  return d.keys
+}
+
+const b64u = (s) => {
+  const t = String(s).replace(/-/g, '+').replace(/_/g, '/')
+  const bin = atob(t + '='.repeat((4 - (t.length % 4)) % 4))
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+async function staffFromToken(token, env) {
+  try {
+    const parts = String(token || '').split('.')
+    if (parts.length !== 3) return null
+    const header = JSON.parse(new TextDecoder().decode(b64u(parts[0])))
+    if (header.alg !== 'ES256') return null          // only the published alg
+    const keys = await jwks(env)
+    if (!keys) return null
+    const jwk = keys.find((k) => k.kid === header.kid) || keys[0]
+    if (!jwk || jwk.kty !== 'EC') return null
+
+    const key = await crypto.subtle.importKey(
+      'jwk', { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, ext: true },
+      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify'])
+
+    // JOSE ES256 signatures are raw r||s, which is what Web Crypto expects.
+    const sig = b64u(parts[2])
+    if (sig.length !== 64) return null
+    const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
+    if (!(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, sig, signed))) return null
+
+    const claims = JSON.parse(new TextDecoder().decode(b64u(parts[1])))
+    if (!claims.exp || claims.exp * 1000 <= Date.now()) return null
+    const staffId = claims?.app_metadata?.staff_id
+    if (!staffId) return null
+    return { id: String(staffId), name: claims?.app_metadata?.staff_name || '' }
+  } catch {
+    return null
+  }
+}
+
 function secretsMatch(a, b) {
   const x = new TextEncoder().encode(String(a || ''))
   const y = new TextEncoder().encode(String(b || ''))
@@ -77,6 +154,45 @@ export default {
     if (url.pathname === '/health') {
       const ok = !!env.IMAGES
       return Response.json({ ok, bucket: ok ? 'bound' : 'MISSING' }, { status: ok ? 200 : 500, headers: cors })
+    }
+
+    // ── /deploy-access?p=<project> ───────────────────────────────────────
+    // Serves the deployment-account installer as plain text, with that
+    // project's PUBLIC key substituted in, so establishing access on a server
+    // we can only reach through a provider's web console is one short line
+    // typed at that console instead of eighty characters of base64.
+    //
+    // Nothing secret is served. An SSH public key is public by definition,
+    // and the script it returns only ever ADDS a per-project account -- it
+    // cannot read anything, and running it anywhere else is inert. The
+    // canonical, reviewable copy is deploy/access/install-deploy-account.sh
+    // in the repository; this route serves that same file.
+    //
+    // Reusable: a new project is one more entry in DEPLOY_KEYS.
+    // /da/<project> is the short form, so the line typed at a provider's web
+    // console -- often without a working clipboard -- stays under 80
+    // characters. A path segment rather than ?p= means no shell quoting is
+    // needed either, since ? is a glob character.
+    if (url.pathname === '/deploy-access' || url.pathname.startsWith('/da/')) {
+      const project = (url.pathname.startsWith('/da/')
+        ? url.pathname.slice('/da/'.length)
+        : (url.searchParams.get('p') || '')).trim()
+      if (!/^[a-z0-9-]{2,32}$/.test(project)) {
+        return new Response('# bad or missing ?p=<project>\n', { status: 400, headers: { 'Content-Type': 'text/plain' } })
+      }
+      let keys = {}
+      try { keys = JSON.parse(env.DEPLOY_KEYS || '{}') } catch { keys = {} }
+      const pub = keys[project]
+      if (!pub) {
+        return new Response(`# no deployment key registered for '${project}'\n`, { status: 404, headers: { 'Content-Type': 'text/plain' } })
+      }
+      const script = INSTALLER.replace('__PUBKEY__', pub).replace('__PROJECT__', project)
+      return new Response(script, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-store',
+        },
+      })
     }
 
     if (!url.pathname.startsWith('/img/')) {
@@ -150,8 +266,14 @@ export default {
     }
 
     // ── write and delete: staff only.
+    // Two ways to be allowed to write, and neither puts a secret in a browser:
+    //   * X-Upload-Token  -- the migration script, run from a trusted machine
+    //   * Authorization    -- a signed-in staff member's own GoTrue session
     const token = request.headers.get('X-Upload-Token') || ''
-    if (!env.UPLOAD_SECRET || !secretsMatch(token, env.UPLOAD_SECRET)) {
+    const bearer = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
+    const bySecret = !!env.UPLOAD_SECRET && secretsMatch(token, env.UPLOAD_SECRET)
+    const staff = bySecret ? null : await staffFromToken(bearer, env)
+    if (!bySecret && !staff) {
       // Say nothing about which part was wrong.
       return new Response('Unauthorized', { status: 401, headers: cors })
     }

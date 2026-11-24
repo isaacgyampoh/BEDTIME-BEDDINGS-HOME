@@ -31,8 +31,13 @@
 set -uo pipefail
 HOST=169.58.120.116
 KEY="$HOME/.ssh/bedtime_contabo"
+# Not root. deploy/access/install-deploy-account.sh creates this account with
+# no password, no docker group and no general sudo -- it may run exactly one
+# root-owned wrapper, and only against its own compose project.
+ACCT=bedtime-deploy
 ROOT=/srv/bedtime
 PROJ=bedtime
+CTL="sudo /usr/local/sbin/bedtimectl"
 KONG_PORT=8001
 GO=0
 [ "${1:-}" = "--go" ] && GO=1
@@ -43,7 +48,7 @@ no   () { printf '  \033[31m✗\033[0m %s\n' "$*"; }
 note () { printf '  \033[90m–\033[0m %s\n' "$*"; }
 plan () { printf '  \033[36m→\033[0m %s\n' "$*"; }
 
-SSH="ssh -i $KEY -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o LogLevel=ERROR root@$HOST"
+SSH="ssh -i $KEY -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o LogLevel=ERROR $ACCT@$HOST"
 
 # Every remote action goes through this, so the dry run is honest: nothing
 # can act without being printed, because acting IS printing plus $GO.
@@ -68,8 +73,19 @@ note "host $HOST, project '$PROJ', root $ROOT, kong on 127.0.0.1:$KONG_PORT"
 
 # ── preflight ─────────────────────────────────────────────────────────────
 say "Preflight (read-only)"
-WHO="$(query 'id -un')" || { no "cannot log in. The Bedtime key is not authorized yet."; note "See deploy/BEDTIME-ONE-ACCESS-REQUEST.md. Not retrying other keys."; exit 3; }
-[ "$WHO" = root ] && ok "logged in as root" || { no "logged in as '$WHO', not root"; exit 3; }
+WHO="$(query 'id -un')" || {
+  no "cannot log in as $ACCT"
+  note "Run the one line in deploy/access/CONTABO-CONSOLE-PROCEDURE.md at the"
+  note "Contabo web console first. Not retrying other keys or users."
+  exit 3; }
+[ "$WHO" = "$ACCT" ] && ok "logged in as $ACCT (not root, by design)" || { no "logged in as '$WHO', expected $ACCT"; exit 3; }
+if [ -n "$(query "sudo -n /usr/local/sbin/bedtimectl 2>&1 | grep -q usage && echo x")" ]; then
+  ok "the scoped wrapper is callable without a password"
+else
+  no "cannot call /usr/local/sbin/bedtimectl -- the sudoers drop-in is missing"
+  note "Re-run the console line; it is idempotent and will repair this."
+  exit 3
+fi
 
 FREE_MB="$(query "df -Pm / | awk 'NR==2{print \$4}'")"
 note "free on / : ${FREE_MB} MB"
@@ -89,12 +105,16 @@ if [ "${AVAIL_MB:-0}" -lt 2500 ]; then
 fi
 ok "memory headroom is sufficient"
 
-if [ -n "$(query "test -e $ROOT && echo x")" ]; then
-  no "$ROOT already exists. Refusing, so nothing of someone else's is adopted."
-  note "Inspect it, then move or remove it deliberately."
+# $ROOT is this account's home and is created by the console step, so here it
+# must exist and be ours. What must NOT already exist is a stack inside it.
+OWNER="$(query "stat -c %U $ROOT 2>/dev/null")"
+[ "$OWNER" = "$ACCT" ] && ok "$ROOT exists and belongs to $ACCT" || { no "$ROOT is owned by '${OWNER:-nothing}', not $ACCT"; exit 3; }
+if [ -n "$(query "test -e $ROOT/supabase/docker-compose.yml && echo x")" ]; then
+  no "a stack is already installed at $ROOT/supabase. Refusing to overwrite it."
+  note "Inspect it, then move it aside deliberately."
   exit 3
 fi
-ok "$ROOT is free"
+ok "no stack installed at $ROOT yet"
 
 if [ -n "$(query "ss -ltn | grep -E '127.0.0.1:$KONG_PORT\\s' && echo x")" ]; then
   no "127.0.0.1:$KONG_PORT is taken. Pick another and re-run."
@@ -120,7 +140,6 @@ fi
 
 # ── Phase B ───────────────────────────────────────────────────────────────
 say "Phase B — an isolated stack"
-remote "create $ROOT" "mkdir -p $ROOT && chmod 750 $ROOT"
 remote "fetch the official self-hosting bundle (upstream, so upgrades follow upstream)" \
   "cd $ROOT && git clone --depth 1 https://github.com/supabase/supabase.git _src && cp -a _src/docker supabase && rm -rf _src"
 plan "copy the co-tenant override up"
@@ -153,10 +172,9 @@ note "They are minted in Phase C once the stack can sign them."
 
 # ── Phase C ───────────────────────────────────────────────────────────────
 say "Phase C — bring up only the services the apps need"
-remote "start the stack as project '$PROJ'" \
-  "cd $ROOT/supabase && docker compose -p $PROJ -f docker-compose.yml -f $ROOT/docker-compose.cotenant.yml up -d"
+remote "start the stack through the scoped wrapper" "$CTL up"
 remote "wait for Postgres to accept connections" \
-  "for i in \$(seq 1 60); do docker exec ${PROJ}-db-1 pg_isready -U postgres >/dev/null 2>&1 && { echo ready; break; }; sleep 2; done"
+  "for i in \$(seq 1 60); do $CTL psql -Atc 'select 1' >/dev/null 2>&1 && { echo ready; break; }; sleep 2; done"
 remote "confirm nothing of Bedtime's is listening off-box" \
   "ss -ltn | grep -E '0.0.0.0:(5432|8001)|:::(5432|8001)' && echo 'EXPOSED -- INVESTIGATE' || echo 'loopback only, correct'"
 
@@ -171,12 +189,12 @@ note "The dump is taken by migration-package/scripts/backup-production.sh and"
 note "copied up; it is not re-dumped here, so the restored bytes are the same"
 note "bytes that were verified on this machine."
 remote "restore into the Bedtime database" \
-  "test -f $ROOT/dump.sql.gz && gunzip -c $ROOT/dump.sql.gz | docker exec -i ${PROJ}-db-1 psql -U postgres -v ON_ERROR_STOP=0 postgres >$ROOT/restore.log 2>&1; tail -3 $ROOT/restore.log"
+  "test -f $ROOT/dump.sql.gz && gunzip -c $ROOT/dump.sql.gz | $CTL psql -v ON_ERROR_STOP=0 >$ROOT/restore.log 2>&1; tail -3 $ROOT/restore.log"
 note "ON_ERROR_STOP=0 deliberately: a managed dump carries role and extension"
 note "statements that a self-hosted cluster rejects harmlessly, and chaining on"
 note "a non-zero exit has already failed one good restore in this project."
 remote "reconcile row counts, sequences and money against the baseline" \
-  "docker exec ${PROJ}-db-1 psql -U postgres -At -c \"select 'products='||(select count(*) from products)||' sales='||(select count(*) from sales)||' customers='||(select count(*) from customers)||' orders='||(select count(*) from whatsapp_orders)||' settled='||(select count(*) from whatsapp_orders where paid_at is not null)||' sales_ghs='||(select coalesce(sum(total),0) from sales)||' ussd_seq='||(select last_value from ussd_code_seq)\""
+  "$CTL psql -At -c \"select 'products='||(select count(*) from products)||' sales='||(select count(*) from sales)||' customers='||(select count(*) from customers)||' orders='||(select count(*) from whatsapp_orders)||' settled='||(select count(*) from whatsapp_orders where paid_at is not null)||' sales_ghs='||(select coalesce(sum(total),0) from sales)||' ussd_seq='||(select last_value from ussd_code_seq)\""
 note "Compare that line against migration-package/BASELINE-*.txt. At capture:"
 note "  products=671 sales=1407 customers=1216 orders=657 settled=303"
 note "  sales_ghs=684456.00 ussd_seq=50661"

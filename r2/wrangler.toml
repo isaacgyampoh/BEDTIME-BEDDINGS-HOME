@@ -34,3 +34,23 @@ ALLOWED_ORIGINS = "https://bedtimehome.com,https://www.bedtimehome.com,https://a
 # Clear it to make a miss a hard 404 again.
 ORIGIN_BASE = "https://wqkgfvmvuljzexhevlnp.supabase.co"
 ORIGIN_BUCKET = "product-images"
+
+# Per-project DEPLOYMENT PUBLIC keys, as a JSON object. Public keys are not
+# secrets -- they are precisely what gets installed, and publishing one grants
+# nothing without the matching private key, which never leaves the project's
+# own machine.
+#
+# A new project joins by adding one entry here and redeploying. That is the
+# whole of the access procedure that has blocked every migration so far.
+#
+# This must stay inside [vars]: a bare key after a [[rules]] table would be
+# parsed as part of that table instead, which is how it was lost once.
+DEPLOY_KEYS = '{"bedtime":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEe6NRO3thxOFzhMKuwsqL/Wk5hwp1oi1QTghS3VDPuJ bedtime-migration@Isaacs-MacBook-Pro-20261121"}'
+
+# Bundle the deployment-account installer as text, so /deploy-access serves
+# the same bytes that are reviewable in deploy/access/install-deploy-account.sh
+# and the two cannot drift apart.
+[[rules]]
+type = "Text"
+globs = ["**/*.sh"]
+fallthrough = true

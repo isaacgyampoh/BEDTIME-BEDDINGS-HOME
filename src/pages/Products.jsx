@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useStore } from '../hooks/useStore'
 import { getSupabase, STORAGE_URL } from '../lib/supabase'
 import { chooseUpload, uploadPath, verifyUploaded } from '../lib/productImage'
+import { uploadProductImage } from '../lib/imageUpload'
+import { imageUrl as servedUrl } from '../lib/imageHost'
 import { money, num, thumb } from '../lib/utils'
 import Modal from '../components/Modal'
 import PromoteProduct from '../components/PromoteProduct'
@@ -93,15 +95,24 @@ export default function Products() {
         if (picked.error) { toast.error(picked.error, { duration: 8000 }); setLoading(false); return }
 
         const path = uploadPath(picked.ext)
-        const { error: upErr } = await sb.storage.from('product-images')
-          .upload(path, picked.blob, { cacheControl: '31536000', upsert: true, contentType: picked.contentType })
-        if (upErr) { toast.error('Upload failed: ' + (upErr.message || 'create a public "product-images" bucket in Supabase')); setLoading(false); return }
-        imageUrl = `${STORAGE_URL}/product-images/${path}`
+        // R2 first, Supabase as the fallback. What goes in the row is the
+        // Supabase-shaped URL either way -- imageHost.js rewrites it on the
+        // way to the <img> tag, so the stored shape stays the one every past
+        // receipt already holds.
+        const put = await uploadProductImage({
+          sb, path, blob: picked.blob, contentType: picked.contentType, storageUrl: STORAGE_URL,
+        })
+        if (!put.ok) { toast.error('Upload failed: ' + put.error); setLoading(false); return }
+        imageUrl = put.url
 
         // Ask for it back before telling anyone it worked. An upload can
         // succeed and the file still be invisible, and "Saved!" with no
         // picture is the failure that is hardest to act on.
-        const seen = await verifyUploaded(imageUrl)
+        // Read it back through the host that will actually SERVE it, not
+        // through Supabase. A photo that went only to R2 is not at the
+        // Supabase URL, and checking there would tell a staff member their
+        // upload failed when it had not.
+        const seen = await verifyUploaded(servedUrl(imageUrl))
         if (!seen.ok) {
           console.error('Image verification failed:', seen)
           toast.error(seen.why, { duration: 12000 })
