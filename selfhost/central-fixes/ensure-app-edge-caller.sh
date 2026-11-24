@@ -99,6 +99,16 @@ BEGIN
   PERFORM net.http_post(url := v_url || p_path, headers := v_headers, body := '{}'::jsonb);
 END;
 $fn$$f$, :'schema', :'schema', :'schema', :'schema') \gexec
+
+-- Lock it to the owner. The postgres database is SHARED between tenants, so a
+-- SECURITY DEFINER function that posts with this application's service key
+-- must not be PUBLIC-executable. Schema USAGE being owner-only is what
+-- actually blocks another tenant today, but if anyone ever grants USAGE then
+-- a default PUBLIC EXECUTE becomes an immediate way for one application to
+-- issue requests authenticated as another.
+SELECT format('REVOKE ALL ON FUNCTION %I.call_edge(text) FROM PUBLIC', :'schema') \gexec
+SELECT format('REVOKE ALL ON SCHEMA %I FROM PUBLIC', :'schema') \gexec
+SELECT format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM PUBLIC', :'schema') \gexec
 SQL
 rc=$?
 [ "$rc" -eq 0 ] || { no "could not create $SCHEMA.call_edge"; exit 3; }
