@@ -20,3 +20,17 @@ bucket_name = "bedtime-images"
 
 [vars]
 ALLOWED_ORIGINS = "https://bedtimehome.com,https://www.bedtimehome.com,https://admin.bedtimehome.com"
+
+# Read-through origin. A GET for a key R2 does not hold is fetched from here,
+# served, and copied into the bucket in the background.
+#
+# This is what makes switching VITE_IMAGE_HOST safe: the apps still upload new
+# product photos to Supabase Storage, so without a fallback every photo added
+# after the migration would be a broken image on the shop floor. It also
+# closes any gap the bulk copy left.
+#
+# Only the public object path is reachable, and only when the response is one
+# of the four allowed image types, so this cannot become an open proxy.
+# Clear it to make a miss a hard 404 again.
+ORIGIN_BASE = "https://wqkgfvmvuljzexhevlnp.supabase.co"
+ORIGIN_BUCKET = "product-images"

@@ -15,9 +15,11 @@
  *   DELETE /img/<path>     delete, requires the staff secret
  *   GET    /health         is the binding wired up
  *
- * Thumbnails are NOT generated here. Supabase's transform endpoint is what
- * put the organisation 553/100 over its image-transformation allowance, and
- * paying Cloudflare for resizing instead would only move the bill. The apps
+ * Thumbnails are NOT generated here. Supabase's transform endpoint bills per
+ * origin image per month, and paying Cloudflare for resizing instead would
+ * only move the bill. (An earlier note here said the organisation was 553
+ * against an allowance of 100; that came from the dashboard and the
+ * Management API exposes no usage endpoint, so treat it as indicative.) The apps
  * resize in the browser before uploading (src/lib/productImage.js), which
  * costs nothing, uploads faster on a slow connection, and means the stored
  * file is already the size that gets served.
@@ -63,7 +65,7 @@ function safePath(raw) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url)
     const origin = request.headers.get('Origin') || ''
     const allowed = String(env.ALLOWED_ORIGINS || 'https://bedtimehome.com')
@@ -87,12 +89,64 @@ export default {
     //    a replaced photo is a new name and this can never serve a stale one.
     if (request.method === 'GET' || request.method === 'HEAD') {
       const object = await env.IMAGES.get(key)
-      if (!object) return new Response('Not found', { status: 404, headers: cors })
+      if (object) {
+        const headers = new Headers(cors)
+        object.writeHttpMetadata(headers)
+        headers.set('etag', object.httpEtag)
+        headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+        headers.set('X-Image-Source', 'r2')
+        return new Response(request.method === 'HEAD' ? null : object.body, { headers })
+      }
+
+      // ── a miss is NOT a 404 ─────────────────────────────────────────────
+      // The apps still upload new product photos to Supabase Storage. If a
+      // miss ended here, switching VITE_IMAGE_HOST to this Worker would serve
+      // every photo added after the migration as a broken image -- the one
+      // sharp edge in the whole move, and it would show up on the shop floor
+      // rather than in a test.
+      //
+      // So read through to the origin and heal the gap: serve the file from
+      // Supabase now, and copy it into R2 in the background so the next
+      // request is local. That also covers anything the bulk copy missed,
+      // which means the migration cannot leave a hole behind.
+      if (!env.ORIGIN_BASE) {
+        return new Response('Not found', { status: 404, headers: cors })
+      }
+      const originUrl = `${env.ORIGIN_BASE.replace(/\/+$/, '')}/storage/v1/object/public/${env.ORIGIN_BUCKET || 'product-images'}/${key}`
+      const upstream = await fetch(originUrl, { cf: { cacheTtl: 300 } })
+      if (!upstream.ok) {
+        return new Response('Not found', { status: 404, headers: cors })
+      }
+      const ctype = (upstream.headers.get('Content-Type') || '').split(';')[0].trim()
+      if (!ALLOWED_TYPES.has(ctype)) {
+        // The origin is public, so refuse to relay anything that is not an
+        // image rather than becoming an open proxy for the bucket.
+        return new Response('Not an image', { status: 415, headers: cors })
+      }
+
+      // One body, two consumers: tee so the client is not made to wait for
+      // the R2 write, and the write still gets the whole stream.
+      const [toClient, toBucket] = upstream.body.tee()
+      const len = upstream.headers.get('Content-Length')
+      if (!len || Number(len) <= MAX_BYTES) {
+        ctx.waitUntil(
+          env.IMAGES.put(key, toBucket, { httpMetadata: { contentType: ctype } })
+            .catch((e) => console.log('heal failed for', key, String(e)))
+        )
+      } else {
+        // Too big to store; drain the branch so the stream is not left open.
+        ctx.waitUntil(toBucket.cancel().catch(() => {}))
+      }
+
       const headers = new Headers(cors)
-      object.writeHttpMetadata(headers)
-      headers.set('etag', object.httpEtag)
+      headers.set('Content-Type', ctype)
       headers.set('Cache-Control', 'public, max-age=31536000, immutable')
-      return new Response(request.method === 'HEAD' ? null : object.body, { headers })
+      headers.set('X-Image-Source', 'origin-healed')
+      if (request.method === 'HEAD') {
+        ctx.waitUntil(toClient.cancel().catch(() => {}))
+        return new Response(null, { headers })
+      }
+      return new Response(toClient, { headers })
     }
 
     // ── write and delete: staff only.
