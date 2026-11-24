@@ -11,7 +11,15 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevl
 const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 const OPENAI_KEY = Deno.env.get('OPENAI_API_KEY') || ''
 const WASENDER_KEY = Deno.env.get('WASENDER_API_KEY') || ''
-const OWNER_PHONE = Deno.env.get('OWNER_PHONE') || '233548124978'  // owner alerts
+// Owner alerts. DIVERGENCE FROM THE DEPLOYED FUNCTION, recorded 24 Nov 2026:
+// hyper-service v7 (live) falls back to 233599084552, which is SHOP_PHONE --
+// the shop's own WhatsApp line, the line this agent sends FROM. With that
+// value every owner alert is the agent messaging itself. 233548124978 is the
+// owner's handset, the number already used for the SMS reports. Neither has
+// ever fired: OWNER_PHONE is unset on the project and the agent is inert, so
+// this is a correction waiting to take effect, not a live change. Confirm the
+// destination before the agent is switched on.
+const OWNER_PHONE = Deno.env.get('OWNER_PHONE') || '233548124978'
 
 const SHOP = 'BEDTIME BEDDINGS & HOME'
 // Changed on 9 November 2026 from 059 908 4552. From the environment, so
@@ -40,13 +48,23 @@ const sb = () => createClient(SUPABASE_URL, SUPABASE_KEY)
  * and every photo broke — but this function was missed, because it is in an
  * Edge Function rather than the bundles, so nobody saw a blank image here.
  *
- * Transformations are billable and chargeable per origin transformation, and
- * the organisation is over its allowance (553 of 100 at the time of writing).
- * They are also working again as of 4 November 2026: a request now returns
- * 200 with `x-transformations: width:200,resizing_type:fit,quality:50` and
- * `cf-cache-status: MISS`, so this path spends money every time it runs on an
- * image that is not already cached. That makes it the only BEDTIME code left
- * that can add to that bill.
+ * Transformations are billable per ORIGIN IMAGE per month, not per request.
+ * Re-verified 24 November 2026 against nine real product images: every one
+ * returned 200 with `x-transformations: width:800,resizing_type:fit,
+ * quality:75`, averaging 41% of the original's bytes. So the endpoint works
+ * and it bills -- those two facts together are the reason for the gate, not
+ * breakage. A repeat request came back `cf-cache-status: HIT`, so the charge
+ * lands on an image's first transform in a billing period.
+ *
+ * The allowance figure recorded here earlier (553 against 100) came from the
+ * dashboard; api.supabase.com exposes no usage endpoint to re-check it, so
+ * treat it as indicative, not current. 644 products carry storage-hosted
+ * images, which bounds what this path could ever bill.
+ *
+ * This is the only BEDTIME code left that can add to that bill -- and as of
+ * 24 November 2026 it cannot run at all: WASENDER_API_KEY and OPENAI_API_KEY
+ * are not configured on the project, and wa_conversations holds 0 rows. The
+ * gate matters for the day those keys are set, not for spend happening today.
  *
  * WhatsApp re-compresses what it is sent, so the original is no worse for the
  * customer, only larger to upload. Set WA_IMAGE_TRANSFORMS=on to turn the
@@ -191,18 +209,28 @@ async function runTool(name: string, args: any, phone: string, conv: any) {
   if (name === 'send_product_images') {
     const names = args.product_names || []
     let sent = 0
+    let failed = 0
     for (const nm of names) {
       const { data } = await db.from('products').select('name,price,image,quantity').ilike('name', `%${nm}%`).limit(1)
       const p = data?.[0]
       if (p && p.image) {
         const stock = (p.quantity || 0) > 0 ? '' : ' (out of stock)'
-        await waSendImage(phone, thumbUrl(p.image), `${p.name} — GHS ${Number(p.price).toFixed(2)}${stock}`)
-        sent++
+        // waSendImage returns false on a non-2xx from WaSender. Counting the
+        // attempt rather than the result made the agent tell customers "sent
+        // it, take a look" when nothing had left the building -- and with
+        // WASENDER_API_KEY unset every send is a 401, so that was every time.
+        const delivered = await waSendImage(phone, thumbUrl(p.image), `${p.name} — GHS ${Number(p.price).toFixed(2)}${stock}`)
+        if (delivered) sent++
+        else failed++
       }
     }
-    return sent > 0
-      ? { sent, message: `Sent ${sent} product image(s). Now reply plainly and human, e.g. 'sent it, take a look' or 'here, this is the one'. No emojis. Don't re-describe every image.` }
-      : { sent: 0, message: 'No images available for those products. Describe them from the catalog instead and offer to check for photos.' }
+    if (sent > 0) {
+      return { sent, failed, message: `Sent ${sent} product image(s). Now reply plainly and human, e.g. 'sent it, take a look' or 'here, this is the one'. No emojis. Don't re-describe every image.` }
+    }
+    if (failed > 0) {
+      return { sent: 0, failed, message: `Sending failed for all ${failed} image(s). Do NOT say you sent a photo -- the customer received nothing. Describe the item in words, and say you will send a picture shortly.` }
+    }
+    return { sent: 0, failed: 0, message: 'No images available for those products. Describe them from the catalog instead and offer to check for photos.' }
   }
   if (name === 'create_order') {
     const items = args.items || []

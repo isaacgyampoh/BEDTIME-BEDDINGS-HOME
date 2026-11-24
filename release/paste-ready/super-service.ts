@@ -8,7 +8,7 @@
 // Inlined: _shared/reminders.js, _shared/status.js
 // Remote imports (https://…) are left as they are; Deno fetches them.
 //
-// Generated 2026-11-24T12:05:52Z
+// Generated 2026-11-24T12:38:49Z
 // ===========================================================================
 
 // ───────── _shared/reminders.js — scoped, exporting: dueReminder, isChaseable, reminderMessage, stepsFrom ─────────
@@ -350,22 +350,43 @@ async function paystackSignatureValid(rawBody: string, signature: string): Promi
   return diff === 0
 }
 
+/** A URL safe to log: the callback secret stripped out of the query. */
+function safeUrl(u: URL | string): string {
+  const str = String(u)
+  return str.replace(/([?&]s=)[^&]*/g, '$1***REDACTED***')
+}
+
 function callbackAuthorised(url: URL, req: Request): boolean {
   if (!CALLBACK_SECRET) {
-    // DELIBERATELY STILL FAIL-OPEN, and it must not stay that way.
-    // nalopay-callback, hubtel-callback and moolre-callback come through here,
-    // and NaloPay is the LIVE provider: returning false today would stop real
-    // mobile-money confirmations and leave customers who have paid sitting at
-    // Pending. This hole closes in the SECOND step, once
-    // PAYMENT_CALLBACK_SECRET is set. See deploy/BEDTIME-SECURITY-AUDIT.md.
-    console.error('SECURITY: PAYMENT_CALLBACK_SECRET is not set — nalopay/hubtel/moolre callbacks are UNAUTHENTICATED. Set it, then deploy the fail-closed change.')
-    return true
+    // STEP 2, 24 November 2026 — now FAIL CLOSED.
+    //
+    // This returned true when the secret was unset, which left
+    // nalopay-callback, hubtel-callback and moolre-callback able to settle an
+    // order for anyone who knew the URL. The code logged that fact and
+    // carried on, which is not a control.
+    //
+    // Safe to close now, and it was not before:
+    //   * PAYMENT_CALLBACK_SECRET is set, and the two places that build a
+    //     NaloPay callback URL already append &s=<secret>, so every charge
+    //     initiated from now on carries it.
+    //   * 0 charges were in flight when this went out — no unpaid order, none
+    //     carrying a reference, none created in 24 hours — so no in-flight
+    //     callback could be orphaned by the change.
+    //   * Hubtel and Moolre are NOT configured for Bedtime (no HUBTEL_* or
+    //     MOOLRE_* secret on the project), so their callbacks have no
+    //     legitimate caller to break.
+    console.error('SECURITY: PAYMENT_CALLBACK_SECRET is not set — refusing the callback rather than trusting it.')
+    return false
   }
   const provided = url.searchParams.get('s') || req.headers.get('x-callback-secret') || ''
-  if (provided.length !== CALLBACK_SECRET.length) return false
+  if (provided.length !== CALLBACK_SECRET.length) {
+    console.error('callback REFUSED (secret length mismatch):', safeUrl(url))
+    return false
+  }
   // Constant-time compare so the secret can't be recovered by timing.
   let diff = 0
   for (let i = 0; i < CALLBACK_SECRET.length; i++) diff |= provided.charCodeAt(i) ^ CALLBACK_SECRET.charCodeAt(i)
+  if (diff !== 0) console.error('callback REFUSED (wrong secret):', safeUrl(url))
   return diff === 0
 }
 
@@ -711,7 +732,7 @@ serve(async (req) => {
         try { body = Object.fromEntries(new URLSearchParams(rawBody)) } catch {}
       }
       for (const [k, v] of url.searchParams) { if (!body[k]) body[k] = v }
-      console.log('NALOPAY CALLBACK PARSED:', JSON.stringify(body))
+      console.log('NALOPAY CALLBACK PARSED:', (() => { try { const o = JSON.parse(JSON.stringify(body)); if (o && o.s) o.s = '***REDACTED***'; return JSON.stringify(o) } catch { return '[unloggable]' } })())
 
       const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
       const d = body.data || body

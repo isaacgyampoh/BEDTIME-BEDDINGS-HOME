@@ -1,3 +1,9 @@
+// ============================================================
+// BEDTIME BEDDINGS & HOME — WhatsApp AI Sales Agent
+// Receives WaSender webhooks, thinks with OpenAI (human-like sales rep),
+// looks up real inventory, creates orders, and replies via WaSender.
+// Fully automatic; flags the owner only when needed.
+// ============================================================
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://wqkgfvmvuljzexhevlnp.supabase.co';
@@ -5,9 +11,11 @@ const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const OPENAI_KEY = Deno.env.get('OPENAI_API_KEY') || '';
 const WASENDER_KEY = Deno.env.get('WASENDER_API_KEY') || '';
 const OWNER_PHONE = Deno.env.get('OWNER_PHONE') || '233599084552' // owner alerts
+;
 const SHOP = 'BEDTIME BEDDINGS & HOME';
 const SHOP_PHONE = '059 908 4552';
 const USSD_PREFIX = '*920*141*' // NaloPay USSD; order code appended
+;
 // Shop location (fill in real values). If SHOP_LAT/LNG are set, the agent sends
 // a native WhatsApp location pin; it always sends the Maps link + plain address.
 const SHOP_ADDRESS = Deno.env.get('SHOP_ADDRESS') || 'McCarthy Hills, near McCarthy Junction (last stop), Accra';
@@ -18,13 +26,16 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': '*',
   'Content-Type': 'application/json'
+};
 const sb = ()=>createClient(SUPABASE_URL, SUPABASE_KEY);
 // Serve a resized product image (smaller = sends faster on WhatsApp).
 function thumbUrl(url) {
   if (!url) return url;
   if (url.includes('/storage/v1/object/public/')) {
     return url.replace('/object/public/', '/render/image/public/') + '?width=800&quality=75&resize=contain';
+  }
   return url;
+}
 // ---- WaSender: send a WhatsApp message -------------------------------------
 async function waSend(to, text) {
   try {
@@ -45,6 +56,8 @@ async function waSend(to, text) {
   } catch (e) {
     console.log('WaSend error:', e);
     return false;
+  }
+}
 // Send a product image with a caption. The caption carries the product name so
 // that if the customer replies to this exact image, we know which product it is.
 async function waSendImage(to, imageUrl, caption) {
@@ -66,6 +79,8 @@ async function waSendImage(to, imageUrl, caption) {
   } catch (e) {
     console.log('WaSendImage error:', e);
     return false;
+  }
+}
 // Send a native WhatsApp location pin.
 async function waSendLocation(to) {
   if (!SHOP_LAT || !SHOP_LNG) return false;
@@ -92,12 +107,13 @@ async function waSendLocation(to) {
   } catch (e) {
     console.log('WaSendLocation error:', e);
     return false;
+  }
+}
 // ---- The agent's persona + rules -------------------------------------------
 function systemPrompt(ctx) {
-  return `You are a real person working at ${SHOP}, a Ghanaian bedding & home shop. You handle customer chats on WhatsApp. You are NOT an AI, bot, or assistant 
- you are a human sales person, full stop.
-HOW YOU MUST TEXT (this is the most important thing 
- sound like a real Ghanaian trader on WhatsApp):
+  return `You are a real person working at ${SHOP}, a Ghanaian bedding & home shop. You handle customer chats on WhatsApp. You are NOT an AI, bot, or assistant — you are a human sales person, full stop.
+
+HOW YOU MUST TEXT (this is the most important thing — sound like a real Ghanaian trader on WhatsApp):
 - ABSOLUTELY NO EMOJIS. None. Ever. Real traders here don't spam emojis. Emojis instantly expose you as a bot. Do not use a single one.
 - Text like a normal person on WhatsApp: short, casual, sometimes lowercase, natural. "hi good morning", "yes it's available", "okay noted", "alright", "sure", "no problem".
 - Don't be overly formal or polished. Real people write quick, plain messages. "how can i help you" not "How may I assist you today?".
@@ -106,35 +122,39 @@ HOW YOU MUST TEXT (this is the most important thing
 - Never use phrases that sound like customer-service scripts or AI: avoid "I'd be happy to", "certainly!", "How may I assist", "Is there anything else", "feel free to". Just talk normally.
 - Don't repeat the customer's name too much. Don't be weirdly cheerful. Be normal, warm, a bit relaxed.
 - Never say you're an AI/bot/assistant/system. If asked "are you a bot / is this AI", say something like "no it's [say a normal first name], how can i help you" and move on naturally.
-WHAT YOU KNOW (only quote from THIS 
- never invent products, prices, or stock):
+
+WHAT YOU KNOW (only quote from THIS — never invent products, prices, or stock):
 CATALOG (name | price GHS | in stock):
 ${ctx.catalog || '(catalog will be provided)'}
 ${ctx.promos ? 'CURRENT PROMOS:\n' + ctx.promos : ''}
+
 HOW YOU SELL:
 - If they ask about a product, use search_products to find it. Give the real price plainly: "yes we have it, it's 150".
 - SEND IMAGES: when a customer asks to see a product, or when you recommend something, use send_product_images to send the actual photos. Show, don't just describe.
 - OUT OF STOCK: if what they want is finished, don't just say no. Say it's finished, then offer a similar in-stock item AND send its image: "ahh that one is finished ooh. but i have this one, very similar [send image]. same quality. you want it?"
 - IF THEY INSIST on the exact out-of-stock item: don't keep refusing. Say "okay give me a minute let me check for you, i'll get back to you shortly" then use flag_human (reason: 'customer wants out-of-stock item, may be restocking or not entered'). A human checks.
-- WHICH IMAGE THEY MEAN: if the customer replies to / references a specific image you sent (the message context tells you which product), you ALREADY KNOW which product. NEVER ask "which one?" or "what type?" 
- that exposes you. Just continue with that product.
+- WHICH IMAGE THEY MEAN: if the customer replies to / references a specific image you sent (the message context tells you which product), you ALREADY KNOW which product. NEVER ask "which one?" or "what type?" — that exposes you. Just continue with that product.
 - LOCATION: if they ask where you're located / for directions / can they come to the shop, use send_location (it sends a map pin + Google Maps link). Then say plainly you've sent the location and they can tap the link to find you. We also deliver, so you can mention that too if relevant.
 - When ready to buy, confirm items + total plainly, then use create_order (returns the USSD code). Tell them: dial the code; if the prompt doesn't pop up, open MoMo app, go to approvals/pending and approve there.
 - After they say they've paid, ask for delivery details (name, area, landmark, phone). When they send them, use save_delivery. Then tell them it's being processed, someone will call them.
-- Be honest. Never promise stock you can't see. Never invent delivery times 
- "our rider will call you to arrange it".
+- Be honest. Never promise stock you can't see. Never invent delivery times — "our rider will call you to arrange it".
+
 WHEN TO FLAG A HUMAN (use flag_human):
 - A complaint, refund, or upset customer.
 - They want something not in the catalog.
 - Anything about money that seems off, or a big/wholesale order.
 - If you're unsure. Better to flag than guess.
+
 ABOUT THIS CUSTOMER:
 Name: ${ctx.name || 'unknown'}
 What you know about them: ${ctx.summary || 'first time chatting'}
 Current stage: ${ctx.stage}
+
 Sound human. Plain, short, warm, no emojis, no scripts. Help them and close the sale like a real person would.`;
+}
 // ---- Tools the agent can call ----------------------------------------------
 const TOOLS = [
+  {
     type: 'function',
     function: {
       name: 'search_products',
@@ -153,6 +173,7 @@ const TOOLS = [
       }
     }
   },
+  {
     type: 'function',
     function: {
       name: 'send_product_images',
@@ -174,6 +195,7 @@ const TOOLS = [
       }
     }
   },
+  {
     type: 'function',
     function: {
       name: 'create_order',
@@ -214,6 +236,7 @@ const TOOLS = [
       }
     }
   },
+  {
     type: 'function',
     function: {
       name: 'save_delivery',
@@ -237,6 +260,7 @@ const TOOLS = [
       }
     }
   },
+  {
     type: 'function',
     function: {
       name: 'send_location',
@@ -248,6 +272,7 @@ const TOOLS = [
       }
     }
   },
+  {
     type: 'function',
     function: {
       name: 'flag_human',
@@ -264,6 +289,8 @@ const TOOLS = [
         ]
       }
     }
+  }
+];
 // ---- Tool implementations ---------------------------------------------------
 async function runTool(name, args, phone, conv) {
   const db = sb();
@@ -283,6 +310,7 @@ async function runTool(name, args, phone, conv) {
           has_image: !!p.image
         }))
     };
+  }
   if (name === 'send_product_images') {
     const names = args.product_names || [];
     let sent = 0;
@@ -291,8 +319,7 @@ async function runTool(name, args, phone, conv) {
       const p = data?.[0];
       if (p && p.image) {
         const stock = (p.quantity || 0) > 0 ? '' : ' (out of stock)';
-        await waSendImage(phone, thumbUrl(p.image), `${p.name} 
- GHS ${Number(p.price).toFixed(2)}${stock}`);
+        await waSendImage(phone, thumbUrl(p.image), `${p.name} — GHS ${Number(p.price).toFixed(2)}${stock}`);
         sent++;
       }
     }
@@ -303,6 +330,7 @@ async function runTool(name, args, phone, conv) {
       sent: 0,
       message: 'No images available for those products. Describe them from the catalog instead and offer to check for photos.'
     };
+  }
   if (name === 'create_order') {
     const items = args.items || [];
     const total = items.reduce((s, it)=>s + Number(it.price) * Number(it.qty), 0);
@@ -336,6 +364,7 @@ async function runTool(name, args, phone, conv) {
       ussd_code: `${USSD_PREFIX}${uc}#`,
       instructions: `Tell the customer: to pay GHS ${total.toFixed(2)}, dial ${USSD_PREFIX}${uc}# . If the prompt doesn't pop up, open their MoMo app, go to Approvals/Pending, and approve it there.`
     };
+  }
   if (name === 'save_delivery') {
     const orderNo = conv.last_order_no;
     if (!orderNo) return {
@@ -352,12 +381,12 @@ async function runTool(name, args, phone, conv) {
       stage: 'done'
     }).eq('phone', phone);
     // Alert the owner that an order is ready to package
-    await waSend(OWNER_PHONE, `
- New WhatsApp order ready to package.\nOrder: ${orderNo}\nDeliver to: ${args.address}\nCustomer: ${args.name || conv.customer_name || phone}`);
+    await waSend(OWNER_PHONE, `📦 New WhatsApp order ready to package.\nOrder: ${orderNo}\nDeliver to: ${args.address}\nCustomer: ${args.name || conv.customer_name || phone}`);
     return {
       saved: true,
       message: 'Delivery saved. The shop will package and deliver.'
     };
+  }
   if (name === 'send_location') {
     if (!SHOP_MAPS_LINK && !SHOP_LAT) {
       return {
@@ -372,6 +401,7 @@ async function runTool(name, args, phone, conv) {
       sent: true,
       message: `Location sent (pin + maps link). Now reply plainly, e.g. 'sent you our location, tap the link to locate us. ${SHOP_ADDRESS ? 'we are at ' + SHOP_ADDRESS : ''}'. No emojis.`
     };
+  }
   if (name === 'flag_human') {
     // Pause the agent for this chat so the human handles it without the AI
     // talking over them. Owner is notified. Re-enable from the POS later.
@@ -380,28 +410,28 @@ async function runTool(name, args, phone, conv) {
       flag_reason: args.reason,
       agent_enabled: false
     }).eq('phone', phone);
-    await waSend(OWNER_PHONE, `
- A WhatsApp chat needs you.\nFrom: ${conv.customer_name || phone}\nReason: ${args.reason}\nReply them directly on WhatsApp. (Agent paused for this chat.)`);
+    await waSend(OWNER_PHONE, `🔔 A WhatsApp chat needs you.\nFrom: ${conv.customer_name || phone}\nReason: ${args.reason}\nReply them directly on WhatsApp. (Agent paused for this chat.)`);
     return {
       flagged: true,
-      message: 'Owner has been notified and will help. Tell the customer someone will assist them shortly 
- warm and brief.'
+      message: 'Owner has been notified and will help. Tell the customer someone will assist them shortly — warm and brief.'
     };
+  }
   return {
     error: 'unknown tool'
   };
+}
 // ---- Build catalog + promos text for the prompt ----------------------------
 async function loadCatalog() {
   const db = sb();
   const { data: prods } = await db.from('products').select('name,price,quantity').order('name').limit(120);
   const catalog = (prods || []).map((p)=>`${p.name} | ${Number(p.price).toFixed(2)} | ${(p.quantity || 0) > 0 ? 'yes (' + p.quantity + ')' : 'out of stock'}`).join('\n');
   const { data: promos } = await db.from('promos').select('name,description').eq('active', true).limit(10);
-  const promoTxt = (promos || []).map((p)=>`${p.name}${p.description ? ' 
- ' + p.description : ''}`).join('\n');
+  const promoTxt = (promos || []).map((p)=>`${p.name}${p.description ? ' — ' + p.description : ''}`).join('\n');
   return {
     catalog,
     promos: promoTxt
   };
+}
 // ---- Call OpenAI with tools (loop until it produces a text reply) ----------
 async function think(phone, conv, history) {
   const { catalog, promos } = await loadCatalog();
@@ -457,7 +487,9 @@ async function think(phone, conv, history) {
       continue; // let the model use the tool result to form its reply
     }
     return msg.content || "okay";
+  }
   return "let me get back to you on that shortly";
+}
 // ---- Main webhook handler ---------------------------------------------------
 serve(async (req)=>{
   if (req.method === 'OPTIONS') return new Response('ok', {
@@ -475,24 +507,21 @@ serve(async (req)=>{
   if (url.searchParams.get('action') === 'follow-ups') {
     const db = sb();
     const results = [];
-    // 1) Unpaid orders: pending 2
-48h old, remind once via WhatsApp.
+    // 1) Unpaid orders: pending 2–48h old, remind once via WhatsApp.
     const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
     const until = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
     const { data: unpaid } = await db.from('whatsapp_orders').select('order_no,customer_phone,customer_name,total,ussd_code,followed_up').eq('status', 'Pending').gte('date', since).lte('date', until).limit(30);
     for (const o of unpaid || []){
       if (o.followed_up || !o.customer_phone) continue;
       const name = (o.customer_name || '').split(' ')[0] || 'there';
-      const msg = `hi ${name}, just following up on your order from ${SHOP}. it's still waiting for payment. to pay ${Number(o.total).toFixed(2)} cedis, dial ${USSD_PREFIX}${o.ussd_code}# 
- if the prompt doesn't pop up, open your momo app, go to approvals and approve it there. let me know if you need help.`;
+      const msg = `hi ${name}, just following up on your order from ${SHOP}. it's still waiting for payment. to pay ${Number(o.total).toFixed(2)} cedis, dial ${USSD_PREFIX}${o.ussd_code}# — if the prompt doesn't pop up, open your momo app, go to approvals and approve it there. let me know if you need help.`;
       await waSend(o.customer_phone.replace(/[^0-9]/g, '').replace(/^0/, '233'), msg);
       await db.from('whatsapp_orders').update({
         followed_up: true
       }).eq('order_no', o.order_no);
       results.push(`unpaid:${o.order_no}`);
     }
-    // 2) Quiet chats: customer went silent after we replied, 3
-24h ago, nudge once.
+    // 2) Quiet chats: customer went silent after we replied, 3–24h ago, nudge once.
     const qSince = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     const qUntil = new Date(Date.now() - 3 * 3600 * 1000).toISOString();
     const { data: quiet } = await db.from('wa_conversations').select('phone,customer_name,stage,followed_up,last_agent_at,last_message_at,agent_enabled,needs_human').eq('followed_up', false).eq('agent_enabled', true).eq('needs_human', false).in('stage', [
@@ -522,6 +551,7 @@ serve(async (req)=>{
     }), {
       headers: CORS
     });
+  }
   try {
     const db = sb();
     const body = await req.json().catch(()=>({}));
@@ -560,8 +590,7 @@ serve(async (req)=>{
     const text = m.messageBody || m.message?.conversation || m.message?.extendedTextMessage?.text || '';
     const mediaUrl = m.message?.imageMessage?.url || '';
     const waId = m.key?.id || '';
-    // VOICE NOTE 
- escalate to a human immediately (the agent can't hear audio).
+    // VOICE NOTE → escalate to a human immediately (the agent can't hear audio).
     const isVoice = !!(m.message?.audioMessage || m.message?.pttMessage || m.messageType === 'audioMessage');
     if (isVoice) {
       let { data: vconv } = await sb().from('wa_conversations').select('*').eq('phone', phone).single();
@@ -585,9 +614,7 @@ serve(async (req)=>{
         last_message_at: new Date().toISOString()
       }).eq('phone', phone);
       await waSend(phone, 'okay noted, give me a moment let me get back to you shortly');
-      await waSend(OWNER_PHONE, `
- Voice note from ${vconv?.customer_name || phone} on WhatsApp 
- please listen and reply. (Agent paused for this chat.)`);
+      await waSend(OWNER_PHONE, `🔔 Voice note from ${vconv?.customer_name || phone} on WhatsApp — please listen and reply. (Agent paused for this chat.)`);
       return new Response(JSON.stringify({
         ok: true,
         note: 'voice escalated'
@@ -639,7 +666,7 @@ serve(async (req)=>{
     }
     // Log the incoming message
     let userContent = text || (mediaUrl ? '[customer sent an image]' : '[message]');
-    // If they replied to a product image we sent, tell the agent which product 
+    // If they replied to a product image we sent, tell the agent which product —
     // so it never asks "which one?".
     if (quotedContext) {
       userContent = `[customer replied to your earlier message: "${quotedContext}"] ${userContent}`;
@@ -687,37 +714,5 @@ serve(async (req)=>{
     }), {
       headers: CORS
     });
-// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.
-import { delay } from "../async/mod.ts";
-/** Thrown by Server after it has been closed. */ const ERROR_SERVER_CLOSED = "Server closed";
-/** Default port for serving HTTP. */ const HTTP_PORT = 80;
-/** Default port for serving HTTPS. */ const HTTPS_PORT = 443;
-/** Initial backoff delay of 5ms following a temporary accept failure. */ const INITIAL_ACCEPT_BACKOFF_DELAY = 5;
-/** Max backoff delay of 1s following a temporary accept failure. */ const MAX_ACCEPT_BACKOFF_DELAY = 1000;
-/** Used to construct an HTTP server. */ export class Server {
-  #port;
-  #host;
-  #handler;
-  #closed = false;
-  #listeners = new Set();
-  #acceptBackoffDelayAbortController = new AbortController();
-  #httpConnections = new Set();
-  #onError;
-  /**
-   * Constructs a new HTTP Server instance.
-   *
-   * ```ts
-   * import { Server } from "https://deno.land/std@$STD_VERSION/http/server.ts";
-   *
-   * const port = 4505;
-   * const handler = (request: Request) => {
-   *   const body = `Your user-agent is:\n\n${request.headers.get(
-   *    "user-agent",
-   *   ) ?? "Unknown"}`;
-   *
-   *   return new Response(body, { status: 200 });
-   * };
-   *
-   * const server = new Server({ port, handler });
-   * ```
-   *
+  }
+});
