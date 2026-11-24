@@ -245,10 +245,13 @@ function providerAccepted(status: number, body: string): boolean {
     const j = JSON.parse(text)
     if (j && typeof j === 'object') {
       const st = String((j as Record<string, unknown>).status ?? '').toLowerCase()
+      // The provider states the outcome explicitly; trust that over guesswork.
+      // mNotify uses code 2000 on /api/sms/quick and 1000 on the legacy
+      // endpoint, so keying on the code was wrong in both directions: first it
+      // let 1004 "Invalid API key" through as delivered, then it rejected a
+      // genuine 2000 "messages sent successfully" as failed.
+      if (st === 'success' || st === 'ok') return true
       if (st === 'error' || st === 'failed') return false
-      const code = String((j as Record<string, unknown>).code ?? '')
-      // mNotify: 1000 is success; 1004 invalid key, 1005 invalid number, etc.
-      if (code && code !== '1000' && /^\d{4}$/.test(code)) return false
     }
   } catch { /* not JSON: fall through to the text checks */ }
   return !/invalid\s+api\s+key|insufficient|unauthor|failed|error/i.test(text)

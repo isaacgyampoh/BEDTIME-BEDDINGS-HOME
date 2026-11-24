@@ -87,7 +87,10 @@ APPLESCRIPT
   fi
   case "$raw" in *"button returned:Skip"*) printf '__SKIP__'; return ;; esac
   raw="${raw#*text returned:}"; raw="${raw%%, button returned:*}"
-  printf '%s' "$raw" | tr -d '\r' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+  # Delete CR and LF outright -- a pasted key routinely carries a trailing
+  # newline, and an embedded one would corrupt functions.env. Spaces are kept,
+  # because NALOPAY_AUTH_HEADER legitimately contains them.
+  printf '%s' "$raw" | tr -d '\r\n' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
 }
 
 ALL_NAMES=(NALOPAY_API_KEY NALOPAY_AUTH_HEADER NALOPAY_MERCHANT_ID MNOTIFY_KEY TIKTOK_CLIENT_KEY TIKTOK_CLIENT_SECRET)
@@ -137,7 +140,12 @@ for i in "${!NAMES[@]}"; do
       exit 3 ;;
     __SKIP__|'') note "${NAMES[$i]} skipped"; continue ;;
   esac
-  case "$v" in *$'\n'*|*$'\r'*) no "${NAMES[$i]} contains a newline; skipped"; continue ;; esac
+  case "$v" in
+    *$'\n'*|*$'\r'*)
+      no "${NAMES[$i]} still contains a line break after stripping; skipped"
+      note "that suggests the paste spans lines -- copy the key only"
+      continue ;;
+  esac
   PAYLOAD="${PAYLOAD}${NAMES[$i]}=${v}"$'\n'
   SET_COUNT=$((SET_COUNT+1))
   ok "${NAMES[$i]} accepted (${#v} characters, not shown)"
