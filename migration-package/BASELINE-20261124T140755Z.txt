@@ -1,0 +1,44 @@
+BEDTIME production baseline, captured 2026-11-24 14:07:55Z
+Supabase project wqkgfvmvuljzexhevlnp (Mimi), eu-central-1
+
+== row counts ==
+bundles = 4
+customers = 1216
+expenses = 5
+invoices = 0
+pin_attempts = 59
+product_price_history = 170
+products = 671
+promos = 3
+refunds = 0
+sales = 1407
+sms_exempt_numbers = 2
+sms_log = 136
+social_audit_log = 0
+social_automation_rules = 0
+social_connections = 0
+social_posts = 1
+staff = 2
+stock_adjustments = 0
+stock_takes = 0
+store_settings = 1
+wa_agent_settings = 2
+wa_conversations = 0
+wa_messages = 0
+whatsapp_orders = 657
+
+== sequences (MUST be restored to at least these values) ==
+public.pin_attempts_id_seq = 5931
+public.product_price_history_id_seq = 170
+public.sms_log_id_seq = 2457
+public.social_audit_log_id_seq = (unused)
+public.ussd_code_seq = 50661
+
+== financial totals (must match after restore) ==
+sales_total_ghs = 684456.00
+orders_total_ghs = 280609.00
+settled_orders = 303
+stock_units = 2347
+
+== storage ==
+product-images = 1153 objects, 319 MB

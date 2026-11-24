@@ -1,12 +1,25 @@
 -- ===========================================================================
 -- 053 — Retire the WhatsApp AI agent's own tables
 --
--- WHAT THIS TOUCHES: wa_conversations and wa_messages. Nothing else.
+-- WHAT THIS TOUCHES: wa_conversations, wa_messages and wa_agent_settings.
+-- Nothing else.
 --
 -- WHY IT IS SAFE
 --
--- Both tables are EMPTY (0 rows each, checked 24 November 2026) and carry no
--- business history. They occupy 56 kB and 32 kB of empty structure.
+-- wa_conversations and wa_messages are EMPTY (0 rows each, checked
+-- 24 November 2026) and carry no business history. They occupy 56 kB and
+-- 32 kB of empty structure.
+--
+-- wa_agent_settings holds 2 rows, and they are configuration rather than
+-- business records -- the agent's own on/off switches:
+--
+--   agent_master_enabled = true
+--   business_hours_only  = false
+--
+-- Nothing in the application reads them any more. Their only readers were the
+-- deleted hyper-service function and the deleted WhatsAppChats admin page.
+-- The guard below refuses to run if the table has gained any key beyond those
+-- two, since that would mean something else adopted it.
 --
 -- Verified before writing this, against production:
 --   * no cron job references hyper-service, wa-agent or whatsapp-bot
@@ -46,14 +59,23 @@ BEGIN
   IF c > 0 THEN
     RAISE EXCEPTION 'wa_messages has % rows -- refusing. It was empty when 053 was written; something is writing to it.', c;
   END IF;
+  -- wa_agent_settings may hold ONLY the two known agent switches.
+  SELECT count(*) INTO c FROM wa_agent_settings
+   WHERE key NOT IN ('agent_master_enabled', 'business_hours_only');
+  IF c > 0 THEN
+    RAISE EXCEPTION 'wa_agent_settings holds % unexpected key(s) -- refusing. Something other than the retired agent is using it.', c;
+  END IF;
 END $$;
 
 DROP POLICY IF EXISTS "staff read conversations"   ON wa_conversations;
 DROP POLICY IF EXISTS "staff update conversations" ON wa_conversations;
 DROP POLICY IF EXISTS "staff read messages"        ON wa_messages;
+DROP POLICY IF EXISTS "staff read settings"        ON wa_agent_settings;
+DROP POLICY IF EXISTS "staff update settings"      ON wa_agent_settings;
 
 DROP TABLE IF EXISTS wa_messages;
 DROP TABLE IF EXISTS wa_conversations;
+DROP TABLE IF EXISTS wa_agent_settings;
 
 COMMIT;
 
