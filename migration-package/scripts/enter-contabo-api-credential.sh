@@ -81,24 +81,58 @@ HINTS=(
   "The API password you set on that page. NOT your control-panel password."
 )
 
-for i in 0 1 2 3; do
-  v="$(ask "${LABELS[$i]}" "${HINTS[$i]}")"
-  case "$v" in
-    __CANCELLED__) echo; echo "Cancelled. Nothing was stored."; exit 1 ;;
-    __ERROR__*)
-      no "the dialog could not be shown:"
-      printf '      %s\n' "${v#__ERROR__}" >&2
-      note "If it mentions automation permission, grant it to your terminal in"
-      note "System Settings -> Privacy & Security -> Automation, then re-run."
-      exit 3 ;;
-    '') no "${LABELS[$i]} was empty. Nothing was stored."; exit 1 ;;
+# Each field is validated as it is entered and retried in place, so one
+# mistyped or double-pasted value does not throw away the other three. A
+# duplicate paste is the likely slip here: the Client Secret and the API User
+# sit next to each other on Contabo's page.
+validate () {   # validate <index> <value> -> prints a complaint, or nothing
+  case "$1" in
+    0) case "$2" in *[!A-Za-z0-9_-]*) echo "that contains characters a Client Id does not have" ;; esac
+       [ "${#2}" -lt 6 ] && echo "that is only ${#2} characters; a Client Id is longer" ;;
+    1) [ "${#2}" -lt 20 ] && echo "that is only ${#2} characters; a Client Secret is much longer" ;;
+    2) case "$2" in
+         *@*.*) : ;;
+         *) echo "an API User is an e-mail address, and that has no @ in it${EXTRA:-}" ;;
+       esac ;;
+    3) [ "${#2}" -lt 6 ] && echo "that is only ${#2} characters; too short for the API password" ;;
   esac
-  VALUES+=("$v")
-  ok "${LABELS[$i]} accepted (${#v} characters, not shown)"
-done
+}
 
-# Shape checks only; no value is printed.
-case "${VALUES[2]}" in *@*.*) : ;; *) no "the API User does not look like an e-mail address. Nothing stored."; exit 1 ;; esac
+for i in 0 1 2 3; do
+  attempt=0
+  while : ; do
+    attempt=$((attempt+1))
+    v="$(ask "${LABELS[$i]}" "${HINTS[$i]}")"
+    case "$v" in
+      __CANCELLED__) echo; echo "Cancelled. Nothing was stored."; exit 1 ;;
+      __ERROR__*)
+        no "the dialog could not be shown:"
+        printf '      %s\n' "${v#__ERROR__}" >&2
+        note "If it mentions automation permission, grant it to your terminal in"
+        note "System Settings -> Privacy & Security -> Automation, then re-run."
+        exit 3 ;;
+      '') complaint="nothing was entered" ;;
+      *)
+        EXTRA=""
+        # Name the most likely cause rather than just rejecting it.
+        if [ "$i" = 2 ] && [ "${#VALUES[1]}" -gt 0 ] && [ "$v" = "${VALUES[1]}" ]; then
+          EXTRA=" -- that is the same value as the Client Secret, so the paste probably repeated"
+        fi
+        complaint="$(validate "$i" "$v")" ;;
+    esac
+    if [ -z "$complaint" ]; then
+      VALUES+=("$v")
+      ok "${LABELS[$i]} accepted (${#v} characters, not shown)"
+      break
+    fi
+    no "${LABELS[$i]}: $complaint"
+    if [ "$attempt" -ge 3 ]; then
+      no "three attempts at ${LABELS[$i]}. Nothing was stored."
+      exit 1
+    fi
+    note "asking again -- the other values you have entered are kept"
+  done
+done
 
 PAYLOAD="$(python3 - "${VALUES[0]}" "${VALUES[1]}" "${VALUES[2]}" "${VALUES[3]}" <<'PY'
 import json,sys,base64

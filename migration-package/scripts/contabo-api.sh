@@ -87,20 +87,44 @@ if [ -z "$TOKEN" ]; then
 fi
 ok "authenticated (token not shown)"
 
+# x-request-id must be a BARE uuid4. A prefixed one ("bedtime-<uuid>") is
+# rejected with 400 "x-request-id header not valid" -- and because the error
+# body still parses as JSON with no `data` key, an earlier version of this
+# script reported "0 instances" instead of an error. Hence both the bare uuid
+# and the explicit error check below.
+rid () { uuidgen | tr 'A-Z' 'a-z'; }
+
 api () {  # api <METHOD> <path> [body]
-  local m="$1" p="$2" b="${3:-}"
+  local m="$1" p="$2" b="${3:-}" out
   if [ -n "$b" ]; then
-    curl -s --max-time 60 -X "$m" "$API$p" \
+    out="$(curl -s --max-time 60 -X "$m" "$API$p" \
       -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-      -H "x-request-id: bedtime-$(uuidgen)" --data "$b"
+      -H "x-request-id: $(rid)" --data "$b")"
   else
-    curl -s --max-time 60 -X "$m" "$API$p" \
-      -H "Authorization: Bearer $TOKEN" -H "x-request-id: bedtime-$(uuidgen)"
+    out="$(curl -s --max-time 60 -X "$m" "$API$p" \
+      -H "Authorization: Bearer $TOKEN" -H "x-request-id: $(rid)")"
   fi
+  # Never let an error body be mistaken for an empty result set.
+  if printf '%s' "$out" | python3 -c "
+import sys,json
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(1)
+sys.exit(0 if isinstance(d,dict) and ('statusCode' in d or 'error' in d) and 'data' not in d else 1)
+" 2>/dev/null; then
+    no "API error on $m $p"
+    printf '%s' "$out" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+print('      ', d.get('statusCode',''), d.get('message') or d.get('error',''))" 2>/dev/null
+    return 1
+  fi
+  printf '%s' "$out"
 }
 
 # ── find the instance ─────────────────────────────────────────────────────
-INSTANCES="$(api GET '/v1/compute/instances?size=100')"
+INSTANCES="$(api GET '/v1/compute/instances?size=100')" || {
+  no "could not list instances -- stopping rather than reporting an empty account"
+  exit 4; }
 INST="$(printf '%s' "$INSTANCES" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
