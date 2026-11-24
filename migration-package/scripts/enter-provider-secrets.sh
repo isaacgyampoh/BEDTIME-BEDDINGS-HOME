@@ -90,15 +90,35 @@ APPLESCRIPT
   printf '%s' "$raw" | tr -d '\r' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
 }
 
-NAMES=(NALOPAY_API_KEY NALOPAY_AUTH_HEADER NALOPAY_MERCHANT_ID MNOTIFY_KEY TIKTOK_CLIENT_KEY TIKTOK_CLIENT_SECRET)
-HINTS=(
+ALL_NAMES=(NALOPAY_API_KEY NALOPAY_AUTH_HEADER NALOPAY_MERCHANT_ID MNOTIFY_KEY TIKTOK_CLIENT_KEY TIKTOK_CLIENT_SECRET)
+ALL_HINTS=(
   "NaloPay API key, for creating USSD and mobile-money charges."
   "The full Authorization header value NaloPay expects."
   "Your NaloPay merchant id."
-  "mNotify API key. Without it no SMS report is ever sent."
+  "mNotify API key, for sending the SMS reports to 0548124978.
+
+WHAT IS STORED NOW IS WRONG: it is byte-for-byte your NaloPay MERCHANT ID (same SHA-256), and mNotify answers \"invalid api key\" to it. The wrong value was almost certainly pasted into this box.
+
+Get the right one from mnotify.com -> your account -> API Key / Developer, and paste the whole string."
   "Optional. TikTok client key for the tiktok-status job."
   "Optional. TikTok client secret. Skip if you skipped the key."
 )
+
+# Ask only for the keys named on the command line, so a single wrong value
+# does not mean retyping the ones that are already verified correct.
+#   enter-provider-secrets.sh MNOTIFY_KEY
+NAMES=(); HINTS=()
+if [ "$#" -gt 0 ]; then
+  for req in "$@"; do
+    hit=0
+    for i in 0 1 2 3 4 5; do
+      if [ "${ALL_NAMES[$i]}" = "$req" ]; then NAMES+=("$req"); HINTS+=("${ALL_HINTS[$i]}"); hit=1; break; fi
+    done
+    [ "$hit" = 1 ] || { no "unknown key '$req'"; note "one of: ${ALL_NAMES[*]}"; exit 2; }
+  done
+else
+  NAMES=("${ALL_NAMES[@]}"); HINTS=("${ALL_HINTS[@]}")
+fi
 
 say "Bedtime provider secrets"
 note "They go straight to the server and are never stored on this computer."
@@ -106,7 +126,7 @@ note "Press Skip on any you do not want to set."
 
 PAYLOAD=""
 SET_COUNT=0
-for i in 0 1 2 3 4 5; do
+for i in "${!NAMES[@]}"; do
   v="$(ask "${NAMES[$i]}" "${HINTS[$i]}")"
   case "$v" in
     __CANCELLED__) echo; no "cancelled. Nothing was sent."; exit 1 ;;
@@ -137,30 +157,47 @@ printf '%s' "$PAYLOAD" | ssh -i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking
 set -uo pipefail
 F=$ENVF
 cp -a \"\$F\" \"\$F.bak-\$(date -u +%Y%m%dT%H%M%SZ)\"
-n=0
-while IFS= read -r line; do
-  [ -z \"\$line\" ] && continue
-  k=\${line%%=*}
-  if grep -q \"^\$k=\" \"\$F\" 2>/dev/null; then
-    # Replace in place without the value touching a command line: python reads
-    # the key and value from the environment, not from argv.
-    K=\"\$k\" V=\"\${line#*=}\" python3 -I -c '
-import io,os,sys
-p=os.environ[\"F\"]; k=os.environ[\"K\"]; v=os.environ[\"V\"]
-out=[]
-for l in io.open(p,encoding=\"utf-8\"):
-    out.append(f\"{k}={v}\n\" if l.startswith(k+\"=\") else l)
-io.open(p,\"w\",encoding=\"utf-8\").writelines(out)
-' F=\"\$F\" 2>/dev/null || { printf '%s\n' \"\$line\" >> \"\$F\"; }
-  else
-    printf '%s\n' \"\$line\" >> \"\$F\"
-  fi
-  n=\$((n+1))
-done
+# The whole payload goes to one python run, which rewrites the file in place:
+# every key is replaced where it already appears and appended only if absent,
+# and any DUPLICATE assignment of the same key is collapsed to one.
+#
+# An earlier version ran python per line and passed F as an ARGUMENT rather
+# than in the environment, so python raised KeyError('F'), the shell fallback
+# appended instead of replacing, and MNOTIFY_KEY ended up in the file twice.
+PAYLOAD=\"\$(cat)\" F=\"\$F\" python3 -I -c '
+import io, os
+p = os.environ[\"F\"]
+new = {}
+order = []
+for line in os.environ[\"PAYLOAD\"].splitlines():
+    if not line or \"=\" not in line:
+        continue
+    k, _, v = line.partition(\"=\")
+    if k not in new:
+        order.append(k)
+    new[k] = v
+out = []
+seen = set()
+for line in io.open(p, encoding=\"utf-8\"):
+    k = line.split(\"=\", 1)[0] if \"=\" in line else None
+    if k in new:
+        if k in seen:
+            continue            # drop a duplicate of a key we already wrote
+        out.append(k + \"=\" + new[k] + \"\\n\")
+        seen.add(k)
+    else:
+        out.append(line)
+for k in order:
+    if k not in seen:
+        out.append(k + \"=\" + new[k] + \"\\n\")
+        seen.add(k)
+io.open(p, \"w\", encoding=\"utf-8\").writelines(out)
+print(\"  wrote \" + str(len(new)) + \" key(s), duplicates collapsed\")
+'
 chmod 600 \"\$F\"
-echo \"  wrote \$n key(s); file is mode \$(stat -c %a \"\$F\")\"
+echo \"  file is mode \$(stat -c %a \"\$F\")\"
 echo '  keys now present (values never printed):'
-grep -oE '^[A-Z_]+=' \"\$F\" | tr -d '=' | sed 's/^/    /'
+grep -oE '^[A-Z_]+=' \"\$F\" | tr -d '=' | sort | uniq -c | sed 's/^/    /'
 " 2>&1 | tail -24
 unset PAYLOAD
 

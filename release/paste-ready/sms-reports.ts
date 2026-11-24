@@ -231,6 +231,29 @@ const sendSMS = async (phones, message) => {
     const results = []
     for (const phone of recipients) {
       try {
+/**
+ * Did the SMS provider actually accept the message?
+ *
+ * A 2xx is necessary and NOT sufficient. mNotify's legacy endpoint returns
+ * HTTP 200 for a rejected send and puts the reason in the body, so a status
+ * check alone reports a message nobody received as delivered.
+ */
+function providerAccepted(status: number, body: string): boolean {
+  if (!(status >= 200 && status < 300)) return false
+  const text = String(body || '')
+  try {
+    const j = JSON.parse(text)
+    if (j && typeof j === 'object') {
+      const st = String((j as Record<string, unknown>).status ?? '').toLowerCase()
+      if (st === 'error' || st === 'failed') return false
+      const code = String((j as Record<string, unknown>).code ?? '')
+      // mNotify: 1000 is success; 1004 invalid key, 1005 invalid number, etc.
+      if (code && code !== '1000' && /^\d{4}$/.test(code)) return false
+    }
+  } catch { /* not JSON: fall through to the text checks */ }
+  return !/invalid\s+api\s+key|insufficient|unauthor|failed|error/i.test(text)
+}
+
         const res = await fetch(`https://api.mnotify.com/api/sms/quick?key=${MNOTIFY_API_KEY}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ recipient: [phone], sender: SENDER_ID, message, is_schedule: false, schedule_date: '' })
@@ -245,7 +268,13 @@ const sendSMS = async (phones, message) => {
           console.log(`report SMS fallback to ${phone}: ${status} ${text.slice(0, 120)}`)
         }
         console.log(`report SMS to ${phone}: ${status} ${text.slice(0, 120)}`)
-        results.push({ phone, status, delivered: status >= 200 && status < 300 })
+        // mNotify answers HTTP 200 WITH AN ERROR IN THE BODY. On
+        // 24 November 2026 an invalid key produced
+        //   200 {"status":"error","code":"1004","message":"Invalid API key."}
+        // and this line called that delivered, because it only read the
+        // status code. Six report jobs in a row reported "delivered":true
+        // while nothing was sent and nothing anywhere said so.
+        results.push({ phone, status, delivered: providerAccepted(status, text) })
       } catch (e) {
         console.error(`report SMS failed for ${phone}:`, e)
         results.push({ phone, error: String(e) })
@@ -328,7 +357,13 @@ serve(async (req) => {
     }
 
     const result = await sendSMS(ADMIN_PHONES, message)
-    return new Response(JSON.stringify({ status: 'sent', type, recipients: ADMIN_PHONES, result }),
+    // The top line has to agree with the per-recipient results, because that
+    // is what a monitor reads. Saying 'sent' while every recipient shows
+    // delivered:false is how a broken provider key stays invisible.
+    const anyDelivered = Array.isArray((result as { results?: unknown[] })?.results)
+      ? (result as { results: { delivered?: boolean }[] }).results.some((r) => r?.delivered === true)
+      : false
+    return new Response(JSON.stringify({ status: anyDelivered ? 'sent' : 'not-delivered', type, recipients: ADMIN_PHONES, result }),
       { headers: { 'Content-Type': 'application/json' } })
   } catch (e) {
     return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json' } })
