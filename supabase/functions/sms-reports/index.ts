@@ -95,7 +95,19 @@ function providerAccepted(status: number, body: string): boolean {
         // and this line called that delivered, because it only read the
         // status code. Six report jobs in a row reported "delivered":true
         // while nothing was sent and nothing anywhere said so.
-        results.push({ phone, status, delivered: providerAccepted(status, text) })
+        // ACCEPTED IS NOT DELIVERED. mNotify's reply (code 2000,
+        // "messages sent successfully") means it took the message for
+        // sending, not that a handset received it. Whether it actually
+        // arrived is a separate delivery report, looked up later by the
+        // message id mNotify returns in summary._id -- which is why that id
+        // is captured here rather than thrown away.
+        //
+        // `delivered` is kept as an alias so nothing reading it breaks, but
+        // `accepted` is the claim this code can actually justify.
+        const accepted = providerAccepted(status, text)
+        let providerMsgId: string | null = null
+        try { providerMsgId = (JSON.parse(text)?.summary?._id ?? null) as string | null } catch { /* not JSON */ }
+        results.push({ phone, status, accepted, delivered: accepted, handsetDelivery: 'unknown', providerMsgId })
       } catch (e) {
         console.error(`report SMS failed for ${phone}:`, e)
         results.push({ phone, error: String(e) })
@@ -181,10 +193,13 @@ serve(async (req) => {
     // The top line has to agree with the per-recipient results, because that
     // is what a monitor reads. Saying 'sent' while every recipient shows
     // delivered:false is how a broken provider key stays invisible.
-    const anyDelivered = Array.isArray((result as { results?: unknown[] })?.results)
-      ? (result as { results: { delivered?: boolean }[] }).results.some((r) => r?.delivered === true)
+    const anyAccepted = Array.isArray((result as { results?: unknown[] })?.results)
+      ? (result as { results: { accepted?: boolean }[] }).results.some((r) => r?.accepted === true)
       : false
-    return new Response(JSON.stringify({ status: anyDelivered ? 'sent' : 'not-delivered', type, recipients: ADMIN_PHONES, result }),
+    // "accepted-by-provider", not "sent": the only thing we know is that the
+    // provider took it. A monitor that treats this as proof of arrival would
+    // be making the same overclaim the per-recipient flag used to.
+    return new Response(JSON.stringify({ status: anyAccepted ? 'accepted-by-provider' : 'not-accepted', type, recipients: ADMIN_PHONES, result }),
       { headers: { 'Content-Type': 'application/json' } })
   } catch (e) {
     return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json' } })
