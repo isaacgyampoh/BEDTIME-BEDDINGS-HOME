@@ -19,3 +19,6 @@ desktop/release
 
 # Deno, installed from npm by exec-functions.sh
 migration-package/scripts/.deno/
+
+# Recovered function bundles — binaries, not source of record
+deploy/recovered/*.body

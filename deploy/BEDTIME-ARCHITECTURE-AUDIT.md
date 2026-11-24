@@ -152,8 +152,30 @@ replacement.
 
 **Called by cron but not deployed at all:** `charge-momo`.
 
-`hyper-service` has to be resolved before cutover: it is running, something
-may call it, and it cannot be migrated from a source nobody has.
+### `hyper-service` — resolved, 24 November
+
+Recovered through the Management API (`GET /functions/hyper-service/body`):
+a 401 KB **ESZIP2.3** bundle, extracted to
+`deploy/recovered/hyper-service-v5-source.ts`.
+
+**It is an older build of `wa-agent`** — Bedtime's own WhatsApp agent under a
+previous name, not third-party code. Distinctive markers line up almost
+exactly: `waSend` 13/13, `wa_conversations` 12/12, `thumbUrl` 2/2,
+`follow-ups` 1/1, with `wa-agent` carrying one or two more references to
+`agent_enabled` and `needs_human` from later work.
+
+Two consequences:
+
+1. **The live WhatsApp agent requests paid image transformations.** The gate I
+   added for that went into `wa-agent`, which is **not deployed**. The live one
+   is `hyper-service`, ungated (`WA_TRANSFORMS_ON` appears 0 times in it). Same
+   mistake as the payment webhook: I fixed the file that does not run.
+2. It has `verify_jwt: false`, so it is publicly callable.
+
+For the migration this is good news — there is no unknown code to port, only a
+rename to settle. The question to decide is whether `wa-agent` replaces
+`hyper-service` (and the WaSender webhook is repointed), or `hyper-service`
+keeps the name and receives `wa-agent`'s fixes.
 
 ## Scheduled jobs — 16, where 7 belong
 
