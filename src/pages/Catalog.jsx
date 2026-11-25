@@ -112,7 +112,7 @@ export default function Catalog() {
             {SHOP.address}
           </a>
           <h1 className="text-white text-3xl md:text-5xl font-bold leading-tight mb-3" style={{ fontFamily: "'Playfair Display', serif" }}>Home essentials,<br />delivered to you.</h1>
-          <p className="text-green-300/60 text-sm md:text-base max-w-md mb-6">Quality cookware, curtains, bedding and more. Nationwide delivery across Ghana in 12–48 hours.</p>
+          <p className="text-green-300/60 text-sm md:text-base max-w-md mb-6">Quality cookware, curtains, bedding and more. Nationwide delivery across Ghana in <strong className="font-bold text-white">12–48 hours</strong>.</p>
           <div className="relative max-w-lg">
             <svg className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" strokeLinecap="round" strokeLinejoin="round"/></svg>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="What are you looking for?" className="w-full h-12 pl-11 pr-10 bg-white/10 border border-white/10 rounded-xl text-white text-sm placeholder:text-white/30 focus:outline-none focus:border-green-400/40 focus:bg-white/15 transition" />
@@ -189,7 +189,7 @@ export default function Catalog() {
           <div className="flex flex-wrap gap-10 mb-8">
             <div className="flex-1 min-w-[200px]">
               <h3 className="text-lg font-bold mb-2 text-white">BEDTIME BEDDINGS & HOME</h3>
-              <p className="text-xs text-stone-500 leading-relaxed max-w-xs">Quality home furnishings — cookware, curtains, bedding, kitchenware and more. Nationwide delivery across Ghana in 12–48 hours.</p>
+              <p className="text-xs text-stone-500 leading-relaxed max-w-xs">Quality home furnishings — cookware, curtains, bedding, kitchenware and more. Nationwide delivery across Ghana in <strong className="font-bold text-stone-800">12–48 hours</strong>.</p>
             </div>
             <div>
               <h4 className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider mb-3">Contact</h4>
