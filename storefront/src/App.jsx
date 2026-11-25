@@ -608,6 +608,13 @@ export default function App() {
               <button onClick={() => go('shop', '/shop')} className="h-12 px-8 bg-white text-black rounded-lg text-sm font-semibold hover:bg-zinc-100 transition btn-press flex items-center gap-2">Shop now {I.arrow}</button>
               <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="h-12 px-6 bg-white/15 border border-white/40 text-white rounded-full text-sm font-medium hover:bg-white/20 transition flex items-center gap-1.5">{I.phone} Call</a>
             </div>
+            {/* The delivery promise, where people actually look. Kept out of
+                the headline paragraph above, which is about the bedding, not
+                the logistics. */}
+            <p className="mt-5 text-white/75 text-xs sm:text-sm font-light flex items-center gap-2">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-white/75 flex-shrink-0" />
+              Delivery in 12–48 hours, anywhere in Ghana
+            </p>
             {heroProducts.length > 1 && <div className="flex gap-2 mt-7">
               {heroProducts.map((_, i) => (
                 <button key={i} onClick={() => setHeroIdx(i)} className={`rounded-full transition-all duration-500 ${i === heroIdx ? 'w-8 h-1 bg-white' : 'w-1 h-1 bg-white/40 hover:bg-white/60'}`} />
@@ -832,7 +839,7 @@ export default function App() {
             </button>
 
             <div className="mt-5 pt-5 border-t border-gray-100 space-y-2 text-xs text-gray-400">
-              <p className="flex items-center gap-1.5">{I.check} Fast delivery</p>
+              <p className="flex items-center gap-1.5">{I.check} Delivery in 12–48 hours</p>
               <p className="flex items-center gap-1.5">{I.check} Secure MoMo payment</p>
               <p className="flex items-center gap-1.5">{I.phone} Call {SHOP.phone}</p>
             </div>
@@ -885,7 +892,7 @@ export default function App() {
           </div>)}</div>
           <div className="bg-black text-white rounded-xl p-4 mb-4 flex justify-between items-center"><span className="text-sm text-zinc-200">Total</span><span className="text-lg font-bold">{money(ct)}</span></div>
           <button onClick={() => { setPage('checkout'); window.location.hash = '/checkout' }} className="w-full h-12 bg-black text-white rounded-full text-sm font-bold hover:bg-black transition btn-press flex items-center justify-center gap-2">Proceed to Checkout {I.arrow}</button>
-          <p className="text-[10px] text-gray-300 text-center mt-3">Delivery arranged after checkout</p>
+          <p className="text-[10px] text-gray-300 text-center mt-3">Delivery in 12–48 hours, arranged after checkout</p>
         </>}
       </div>}
 
@@ -938,7 +945,7 @@ export default function App() {
               </div>
               <div className="border-t border-gray-100 pt-5 mb-6">
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  Thank you. We've received your order and will call you on <span className="text-gray-900 font-medium">{custPhone}</span> shortly to confirm and arrange payment and delivery.
+                  Thank you. We've received your order and will call you on <span className="text-gray-900 font-medium">{custPhone}</span> shortly to confirm and arrange payment and delivery. Delivery takes <span className="text-gray-900 font-medium">12–48 hours</span>.
                 </p>
               </div>
             </>
@@ -956,9 +963,11 @@ export default function App() {
 
               <div className="border-t border-gray-100 pt-5 mb-6">
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  {orderResult.fulfillment === 'pickup'
-                    ? <>We're preparing your order. Our delivery team will call you on <span className="text-gray-900 font-medium">{custPhone}</span> to arrange delivery.</>
-                    : <>We're preparing your order. Our delivery team will call you on <span className="text-gray-900 font-medium">{custPhone}</span> to arrange delivery.</>}
+                  {/* Both arms of the old pickup/delivery ternary said exactly
+                      the same thing, and `fulfillment` is hard-coded to
+                      'delivery' anyway (there is no pickup location yet), so
+                      the branch was decoration. One sentence instead. */}
+                  We're preparing your order. Our delivery team will call you on <span className="text-gray-900 font-medium">{custPhone}</span> to arrange delivery, which takes <span className="text-gray-900 font-medium">12–48 hours</span>.
                 </p>
                 <p className="text-sm text-gray-600 mt-3">We've sent your order details by SMS.</p>
               </div>
@@ -1051,7 +1060,7 @@ export default function App() {
           <div>
             <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-2">Visit our shop</h2>
             <p className="text-sm text-zinc-600 leading-relaxed mb-1">McCarthy Hills Junction, Accra.</p>
-            <p className="text-sm text-zinc-600 leading-relaxed mb-4">Come see and feel the quality in person, or we deliver straight to you.</p>
+            <p className="text-sm text-zinc-600 leading-relaxed mb-4">Come see and feel the quality in person, or we deliver straight to you in 12–48 hours.</p>
             <div className="flex flex-wrap gap-3">
               <a href="https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6" target="_blank" rel="noreferrer" className="inline-flex items-center h-10 px-5 bg-black text-white text-sm font-medium rounded-lg hover:bg-zinc-800 transition">Open in Maps</a>
               <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="inline-flex items-center h-10 px-5 border border-zinc-300 text-sm font-medium rounded-lg hover:border-black transition">Call {SHOP.phone}</a>
