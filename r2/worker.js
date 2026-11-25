@@ -195,6 +195,37 @@ export default {
       })
     }
 
+    // ── /list?prefix=… ──────────────────────────────────────────────────
+    // Staff-only inventory of the bucket, for r2/lifecycle.mjs. R2 has no
+    // public listing and the migration tooling needs one to find objects that
+    // nothing references any more.
+    //
+    // It requires the upload secret: a public listing of every stored path
+    // would hand an attacker the whole key space, which is the one thing that
+    // makes guessing an unlisted object impractical.
+    if (url.pathname === '/list') {
+      const token = request.headers.get('X-Upload-Token') || ''
+      if (!env.UPLOAD_SECRET || !secretsMatch(token, env.UPLOAD_SECRET)) {
+        return Response.json({ error: 'unauthorised' }, { status: 401, headers: cors })
+      }
+      const prefix = (url.searchParams.get('prefix') || 'products/').replace(/^\/+/, '')
+      if (!/^(products|invoices|promos|quarantine)\//.test(prefix)) {
+        return Response.json({ error: 'bad prefix' }, { status: 400, headers: cors })
+      }
+      const out = []
+      let cursor
+      // R2 pages at 1000; keep going so a partial list cannot be mistaken for
+      // "these are all the objects there are".
+      do {
+        const page = await env.IMAGES.list({ prefix, cursor, limit: 1000 })
+        for (const o of page.objects) {
+          out.push({ key: o.key, size: o.size, uploaded: o.uploaded })
+        }
+        cursor = page.truncated ? page.cursor : undefined
+      } while (cursor)
+      return Response.json(out, { headers: cors })
+    }
+
     if (!url.pathname.startsWith('/img/')) {
       return new Response('Not found', { status: 404, headers: cors })
     }

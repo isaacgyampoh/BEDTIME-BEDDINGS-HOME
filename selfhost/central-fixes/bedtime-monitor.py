@@ -50,7 +50,7 @@ STATE = "/srv/central/monitor/bedtime-state.json"
 ENVF = f"/srv/central/apps/{APP}/functions.env"
 BACKUP_DIR = "/srv/central/backups"
 
-CRITICAL = {"api", "database", "containers"}
+CRITICAL = {"api", "database", "containers", "db_connections"}
 REMIND_AFTER = 6 * 3600
 DRY = "--dry-run" in sys.argv
 
@@ -219,6 +219,91 @@ def check_r2():
     return ok, "image Worker healthy, bucket bound"
 
 
+
+def check_auth_attempts():
+    """Suspicious PIN activity.
+
+    verify_pin locks out after 10 failures in 5 minutes, which stops
+    enumeration but is also a denial of service: one attacker locks every
+    cashier out. Worth knowing about either way."""
+    recent = psql(APP,
+                  "select count(*) from pin_attempts "
+                  "where succeeded = false and attempted_at > now() - interval '15 minutes'")
+    if recent is None:
+        return False, "could not read pin_attempts"
+    n = int(recent or 0)
+    return n < 20, f"{n} failed PIN attempt(s) in 15 min"
+
+
+def check_db_connections():
+    """Connection exhaustion. max_connections is 100 and TWO shops share it."""
+    used = psql("postgres", "select count(*) from pg_stat_activity")
+    cap = psql("postgres", "select setting from pg_settings where name = 'max_connections'")
+    if used is None or cap is None:
+        return False, "could not read pg_stat_activity"
+    u, c = int(used or 0), int(cap or 100)
+    return u < c * 0.8, f"{u} of {c} connections used"
+
+
+def check_cpu_memory():
+    """Headroom on a box two shops share."""
+    code, out, _ = sh(["free", "-m"])
+    if code != 0:
+        return False, "free failed"
+    try:
+        line = [l for l in out.splitlines() if l.startswith("Mem:")][0].split()
+        total, avail = int(line[1]), int(line[6])
+    except Exception:  # noqa: BLE001
+        return False, "could not parse free"
+    try:
+        with open("/proc/loadavg", encoding="utf-8") as fh:
+            load1 = float(fh.read().split()[0])
+    except OSError:
+        load1 = 0.0
+    cores = os.cpu_count() or 1
+    ok = avail > 1500 and load1 < cores * 2
+    return ok, f"{avail} MB available, load {load1:.2f} on {cores} cores"
+
+
+def check_tls():
+    """Certificate expiry. Caddy renews on its own, but a renewal that keeps
+    failing is silent until the day it expires."""
+    code, out, _ = sh([
+        "bash", "-lc",
+        f"echo | openssl s_client -connect {API.replace('https://','')}:443 "
+        f"-servername {API.replace('https://','')} 2>/dev/null "
+        "| openssl x509 -noout -enddate -issuer"
+    ], timeout=30)
+    if code != 0 or "notAfter" not in out:
+        return False, "could not read the certificate"
+    import datetime as _dt
+    try:
+        end = [l for l in out.splitlines() if l.startswith("notAfter=")][0].split("=", 1)[1].strip()
+        exp = _dt.datetime.strptime(end, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=_dt.timezone.utc)
+        days = (exp - _dt.datetime.now(_dt.timezone.utc)).days
+    except Exception:  # noqa: BLE001
+        return False, "could not parse the expiry date"
+    staging = "STAGING" in out or "Fake" in out
+    if staging:
+        return False, f"certificate is from Let's Encrypt STAGING (untrusted), {days}d left"
+    return days > 14, f"certificate valid for {days} more day(s)"
+
+
+def check_api_traffic():
+    """Unusual API traffic. Caddy rate-limits at the edge; a sustained burst of
+    429s means something is hammering the shop."""
+    code, out, _ = sh([
+        "bash", "-lc",
+        'docker logs central-caddy --since 15m 2>&1 | grep -c \'"status":429\' || true'
+    ], timeout=40)
+    if code != 0:
+        return True, "could not read the proxy log (not treated as a fault)"
+    try:
+        n = int((out or "0").strip().splitlines()[-1])
+    except Exception:  # noqa: BLE001
+        n = 0
+    return n < 200, f"{n} rate-limited request(s) in 15 min"
+
 CHECKS = {
     "api": check_api,
     "database": check_database,
@@ -229,6 +314,11 @@ CHECKS = {
     "backups": check_backups,
     "disk": check_disk,
     "r2": check_r2,
+    "auth_attempts": check_auth_attempts,
+    "db_connections": check_db_connections,
+    "cpu_memory": check_cpu_memory,
+    "tls": check_tls,
+    "api_traffic": check_api_traffic,
 }
 
 
