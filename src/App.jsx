@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { getSupabase, callFunction } from './lib/supabase'
 import { PAYMENTS_ENABLED } from './lib/utils'
-import { useStore } from './hooks/useStore'
+import { useStore, setAuthFailureHandler } from './hooks/useStore'
 import { usePosMode } from './hooks/usePosMode'
 import { useCustomerDisplayBroadcast, broadcastDisplay } from './hooks/useCustomerDisplay'
 import Loader from './components/Loader'
@@ -234,6 +234,15 @@ export default function App() {
   }, [waOrders])
 
   // Public pages - no login required
+  // A lost session used to look like a quiet day: empty lists, zeroed
+  // reports, nothing said. Say it instead.
+  const authExpired = useStore(s => s.authExpired)
+  const setAuthExpired = useStore(s => s.setAuthExpired)
+  useEffect(() => {
+    setAuthFailureHandler(() => setAuthExpired(true))
+    return () => setAuthFailureHandler(null)
+  }, [setAuthExpired])
+
   if (window.location.hash.includes('/customer-display')) return <Suspense fallback={<Loader />}><CustomerDisplay /></Suspense>
   if (window.location.hash.includes('/pay/')) return <Suspense fallback={<Loader />}><InvoicePay /></Suspense>
   if (window.location.hash.includes('/deliver/')) return <Suspense fallback={<Loader />}><DeliveryConfirm /></Suspense>
@@ -274,6 +283,24 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
+      {authExpired && (
+        <div
+          role="alert"
+          className="fixed top-0 inset-x-0 z-[300] bg-amber-500 text-black px-4 py-2.5 flex items-center justify-center gap-3 text-[13px] font-semibold shadow"
+        >
+          <span>Your session has expired, so this screen may be empty or out of date.</span>
+          <button
+            onClick={async () => {
+              try { await getSupabase()?.auth.signOut() } catch { /* already gone */ }
+              setAuthExpired(false)
+              window.location.reload()
+            }}
+            className="px-3 py-1 rounded-full bg-black text-white text-[12px] font-bold"
+          >
+            Sign in again
+          </button>
+        </div>
+      )}
       <Toaster position="top-center" toastOptions={{ duration: 2000, style: { borderRadius: '14px', padding: '12px 20px', fontWeight: 600, fontSize: '13px', background: darkMode ? '#222' : '#fff', color: darkMode ? '#eee' : '#1a1a1a' } }} />
       <Loader />
       <Navigation onOpenCart={() => setCartOpen(true)} />

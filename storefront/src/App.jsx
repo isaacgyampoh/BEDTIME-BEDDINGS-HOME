@@ -180,13 +180,12 @@ export default function App() {
       n++
       if (n > 200) { clearInterval(iv); return } // ~10 min
       try {
-        let st
+        // public_order_get only. The direct table read that used to stand in
+        // for it is gone: anon no longer has SELECT on whatsapp_orders,
+        // because that grant let the public key read all 663 orders with
+        // customer names, phones, addresses and USSD codes (migration 055).
         const viaFn = await rpcOrNull('public_order_get', { p_id: orderResult.orderId })
-        if (viaFn) st = viaFn.status
-        else {
-          const { data } = await supabase.from('whatsapp_orders').select('status').eq('id', orderResult.orderId).limit(1)
-          st = data?.[0]?.status
-        }
+        const st = viaFn?.status
         if (st === 'Paid' || st === 'Completed') { clearInterval(iv); setOrderResult(o => ({ ...o, status: st })) }
       } catch {}
     }, 3000)
@@ -457,8 +456,14 @@ export default function App() {
     } else if (created && created.success === false) {
       setSubmitting(false); setToast(created.error || 'Error placing order'); setTimeout(() => setToast(''), 2000); return
     } else {
-      const { data: row } = await supabase.from('whatsapp_orders').insert({ ...payload, date: new Date().toISOString(), items: payload.items, status: 'Pending', source: 'web', details_filled: true }).select('id,ussd_code').single()
-      inserted = row
+      // No table fallback. anon has no INSERT on whatsapp_orders any more
+      // (migration 055), and public_order_create is SECURITY DEFINER so it
+      // does not need one. A null here means the RPC itself is unreachable,
+      // which the customer must see rather than have papered over.
+      setSubmitting(false)
+      setToast('Could not place the order just now. Please try again.')
+      setTimeout(() => setToast(''), 3000)
+      return
     }
 
     if (!inserted?.ussd_code) { setSubmitting(false); setToast('Error placing order'); setTimeout(() => setToast(''), 2000); return }
@@ -491,11 +496,10 @@ export default function App() {
     if (!trackQuery.trim()) return; setTracking(true); const q = trackQuery.trim()
     // Exact order number, tracking number or phone. The old query used
     // ilike %q%, so a single character matched every order in the table.
-    let rows = await rpcOrNull('public_order_track', { p_query: q })
-    if (!rows) {
-      const { data } = await supabase.from('whatsapp_orders').select('order_no,status,total,customer_name,tracking_no,delivery_status,delivery_guy,delivered_at,date').or(`customer_phone.ilike.%${phoneKey(q) || q}%,order_no.ilike.%${q}%`).order('date', { ascending: false }).limit(20)
-      rows = data
-    }
+    // public_order_track only. It returns a deliberately narrow field set and
+    // matches exactly, where the old direct query used ilike %q% -- so one
+    // character returned every order in the table.
+    const rows = await rpcOrNull('public_order_track', { p_query: q })
     setTrackResult(rows || []); setTracking(false)
   }
 

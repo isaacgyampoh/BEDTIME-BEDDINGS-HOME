@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { isAuthFailure } from '../lib/authFailure.js'
 import { getSupabase, endStaffSession } from '../lib/supabase'
 import { orderCounts, unbookedPaid, tableCount } from '../lib/counts'
 import { num } from '../lib/utils'
@@ -35,6 +36,11 @@ const mapStockAdj = a => ({ id: a.id, date: a.date, productId: a.product_id, pro
 // back as [] so one secondary table cannot stop the till loading — which is
 // right for most tables and wrong for products (see loadAll).
 const failedTables = new Set()
+
+// The detector lives in its own module so it can be tested without pulling
+// the whole store (and its Vite-resolved imports) into Node.
+let onAuthFailure = () => {}
+export function setAuthFailureHandler(fn) { onAuthFailure = typeof fn === 'function' ? fn : () => {} }
 const q = async (sb, table, opts = {}) => {
   try {
     let query = sb.from(table).select(opts.select || '*')
@@ -42,7 +48,12 @@ const q = async (sb, table, opts = {}) => {
     if (opts.limit) query = query.limit(opts.limit)
     if (opts.gt) query = query.gt(opts.gt[0], opts.gt[1])
     const { data, error } = await query
-    if (error) { console.warn(`[store] ${table} query failed:`, error.message); failedTables.add(table); return [] }
+    if (error) {
+      console.warn(`[store] ${table} query failed:`, error.message)
+      failedTables.add(table)
+      if (isAuthFailure(error)) onAuthFailure(table, error)
+      return []
+    }
     return data || []
   } catch (e) { console.warn(`[store] ${table} query threw:`, e); failedTables.add(table); return [] }
 }
@@ -86,6 +97,7 @@ const qAll = async (sb, table, opts = {}) => {
       if (error) {
         console.warn(`[store] ${table} page ${from} failed:`, error.message)
         failedTables.add(table)
+        if (isAuthFailure(error)) onAuthFailure(table, error)
         // Pages already fetched are real rows, but the set is incomplete.
         if (rows.length) truncatedTables.add(table)
         return rows
@@ -109,6 +121,10 @@ const qAll = async (sb, table, opts = {}) => {
 export const isTruncated = (table) => truncatedTables.has(table)
 
 export const useStore = create((set, get) => ({
+  // Set when a data load fails because the session is gone. The UI shows a
+  // banner instead of an empty till, which is the whole point.
+  authExpired: false,
+  setAuthExpired: v => set({ authExpired: !!v }),
   products: [], bundles: [], sales: [], staff: [], expenses: [],
   customers: [], waOrders: [], refunds: [], promos: [], invoices: [], stockTakes: [], stockAdjustments: [],
   loading: true, loadingText: 'Connecting...',
