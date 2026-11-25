@@ -613,7 +613,7 @@ export default function App() {
                 the logistics. */}
             <p className="mt-5 text-white text-xs sm:text-sm font-bold flex items-center gap-2">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-white flex-shrink-0" />
-              Delivery in 12–48 hours, anywhere in Ghana
+              Delivery in 12–48 hours in Accra, 2–3 days nationwide
             </p>
             {heroProducts.length > 1 && <div className="flex gap-2 mt-7">
               {heroProducts.map((_, i) => (
@@ -839,7 +839,7 @@ export default function App() {
             </button>
 
             <div className="mt-5 pt-5 border-t border-gray-100 space-y-2 text-xs text-gray-400">
-              <p className="flex items-center gap-1.5 text-gray-700 font-bold">{I.check} Delivery in 12–48 hours</p>
+              <p className="flex items-center gap-1.5 text-gray-700 font-bold">{I.check} Delivery in 12–48 hours in Accra, 2–3 days nationwide</p>
               <p className="flex items-center gap-1.5">{I.check} Secure MoMo payment</p>
               <p className="flex items-center gap-1.5">{I.phone} Call {SHOP.phone}</p>
             </div>
@@ -892,7 +892,7 @@ export default function App() {
           </div>)}</div>
           <div className="bg-black text-white rounded-xl p-4 mb-4 flex justify-between items-center"><span className="text-sm text-zinc-200">Total</span><span className="text-lg font-bold">{money(ct)}</span></div>
           <button onClick={() => { setPage('checkout'); window.location.hash = '/checkout' }} className="w-full h-12 bg-black text-white rounded-full text-sm font-bold hover:bg-black transition btn-press flex items-center justify-center gap-2">Proceed to Checkout {I.arrow}</button>
-          <p className="text-[11px] text-gray-500 font-bold text-center mt-3">Delivery in 12–48 hours, arranged after checkout</p>
+          <p className="text-[11px] text-gray-500 font-bold text-center mt-3">Delivery in 12–48 hours in Accra, 2–3 days nationwide — arranged after checkout</p>
         </>}
       </div>}
 
@@ -945,7 +945,7 @@ export default function App() {
               </div>
               <div className="border-t border-gray-100 pt-5 mb-6">
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  Thank you. We've received your order and will call you on <span className="text-gray-900 font-medium">{custPhone}</span> shortly to confirm and arrange payment and delivery. Delivery takes <span className="text-gray-900 font-bold">12–48 hours</span>.
+                  Thank you. We've received your order and will call you on <span className="text-gray-900 font-medium">{custPhone}</span> shortly to confirm and arrange payment and delivery. Delivery takes <span className="text-gray-900 font-bold">12–48 hours in Accra</span> and <span className="text-gray-900 font-bold">2–3 days</span> elsewhere in Ghana.
                 </p>
               </div>
             </>
@@ -967,7 +967,7 @@ export default function App() {
                       the same thing, and `fulfillment` is hard-coded to
                       'delivery' anyway (there is no pickup location yet), so
                       the branch was decoration. One sentence instead. */}
-                  We're preparing your order. Our delivery team will call you on <span className="text-gray-900 font-medium">{custPhone}</span> to arrange delivery, which takes <span className="text-gray-900 font-bold">12–48 hours</span>.
+                  We're preparing your order. Our delivery team will call you on <span className="text-gray-900 font-medium">{custPhone}</span> to arrange delivery, which takes <span className="text-gray-900 font-bold">12–48 hours in Accra</span> and <span className="text-gray-900 font-bold">2–3 days</span> elsewhere in Ghana.
                 </p>
                 <p className="text-sm text-gray-600 mt-3">We've sent your order details by SMS.</p>
               </div>
@@ -1060,7 +1060,7 @@ export default function App() {
           <div>
             <h2 className="text-lg sm:text-xl font-bold tracking-tight mb-2">Visit our shop</h2>
             <p className="text-sm text-zinc-600 leading-relaxed mb-1">McCarthy Hills Junction, Accra.</p>
-            <p className="text-sm text-zinc-600 leading-relaxed mb-4">Come see and feel the quality in person, or we deliver straight to you in <strong className="font-bold text-zinc-900">12–48 hours</strong>.</p>
+            <p className="text-sm text-zinc-600 leading-relaxed mb-4">Come see and feel the quality in person, or we deliver straight to you — <strong className="font-bold text-zinc-900">12–48 hours in Accra</strong>, <strong className="font-bold text-zinc-900">2–3 days</strong> nationwide.</p>
             <div className="flex flex-wrap gap-3">
               <a href="https://maps.app.goo.gl/J6ZzrEGW5kXZmo2N6" target="_blank" rel="noreferrer" className="inline-flex items-center h-10 px-5 bg-black text-white text-sm font-medium rounded-lg hover:bg-zinc-800 transition">Open in Maps</a>
               <a href={`tel:${SHOP.phone.replace(/\s/g,'')}`} className="inline-flex items-center h-10 px-5 border border-zinc-300 text-sm font-medium rounded-lg hover:border-black transition">Call {SHOP.phone}</a>
