@@ -234,3 +234,43 @@ codes.
 Two weeks of normal trading, a restored backup, a real settled payment, and
 every external callback migrated. Disable before deleting; pause before
 destroying. Keep a final dump off the server.
+
+## 11. Inherit the audit's protections
+
+Every new project gets these from the start, not after a breach:
+
+```sh
+/srv/central/scripts/check-tenant-isolation.sh <app>   # exit status = problems
+```
+
+**Audit RLS against the live API, not against policy names.** The worst finding
+of the Bedtime audit was a policy called `anon_read_own_orders` whose predicate
+was `USING (true)` — it exposed every customer order, and it survived an
+earlier tightening pass because the name sounded right. Enumerate every table
+with the anon key and see what actually comes back:
+
+```sh
+for t in $(psql -tAqX -c "select table_name from information_schema.tables \
+  where table_schema='public' and table_type='BASE TABLE'"); do
+  curl -s "$API/rest/v1/$t?select=*&limit=1" -H "apikey: $ANON" ...
+done
+```
+
+Anything that returns rows to anon and is not a catalogue is a finding.
+
+**Do not let a loader swallow an auth error.** Returning `[]` on failure turns
+an expired session into an empty shop with nothing said. Copy
+`src/lib/authFailure.js` and surface it.
+
+**Ship these headers.** `/*`, not `/index.html`: HSTS, `frame-ancestors 'none'`,
+`X-Frame-Options`, nosniff, Referrer-Policy, Permissions-Policy. Keep the full
+CSP report-only until it has been exercised in a real browser.
+
+**Make money constraints schema-level.** A partial unique index on the payment
+reference, excluding the empty string that walk-ins carry.
+
+**Rotate the platform logs** (`/etc/logrotate.d/central-platform`) and cap
+Docker's (`max-size`, `max-file`). Two shops share one disk.
+
+**Monitor independently.** Copy `bedtime-monitor.py`, give it its own state
+file and recipient, and offset its cron so monitors never contend.
