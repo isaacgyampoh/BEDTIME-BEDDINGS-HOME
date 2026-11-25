@@ -70,8 +70,22 @@ self.addEventListener('fetch', (e) => {
   })())
 })
 
-// Badge updates pushed from the app (pending + paid order count).
 self.addEventListener('message', (e) => {
+  // Activate a worker that is stuck in `waiting`.
+  //
+  // install() already calls skipWaiting(), but that is not enough on its own:
+  // a worker installed by an OLDER build sits in `waiting` for ever, because
+  // the code that would have stepped aside is the code being replaced. Found
+  // in the shop's real Safari 27.2 -- an update downloaded, installed, and
+  // waiting, while the page kept running a bundle several deploys old. The
+  // page asks for this only when the till is idle, so an update can never
+  // interrupt an open sale.
+  if (e.data && e.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+    return
+  }
+
+  // Badge updates pushed from the app (pending + paid order count).
   if (e.data && e.data.type === 'UPDATE_BADGE') {
     const count = e.data.count || 0
     if (count > 0) self.registration.setAppBadge?.(count).catch(() => {})

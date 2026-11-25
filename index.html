@@ -42,6 +42,57 @@
             if (document.visibilityState === 'visible') check()
           })
           setInterval(check, 30 * 60 * 1000)
+
+          // Checking for an update is not the same as applying one.
+          //
+          // A worker that finished installing waits for every page running the
+          // old one to go away -- which, on a till that is open all day, is
+          // never. sw.js calls skipWaiting() on install, but a worker put into
+          // `waiting` by an OLDER build has no such code, so it sits there for
+          // good. That is exactly what the shop's Safari was doing: an update
+          // downloaded, installed, waiting, while the page ran a bundle several
+          // deploys old. No amount of reloading fixes it, which is why it
+          // looked like the app simply would not update.
+          //
+          // So ask the waiting worker to step aside -- but ONLY when the till
+          // is idle. window.__posBusy is kept true by the app while a sale is
+          // open or the cart has anything in it, because activating swaps the
+          // worker and reloads the page, and doing that mid-checkout would
+          // cost the transaction.
+          //
+          // The message only reaches a worker that KNOWS about it, and the
+          // worker that is stuck was installed by a build that predates the
+          // handler. Verified in the shop's Safari: the page took the new HTML
+          // and the new bundle over the network, posted SKIP_WAITING, and the
+          // old worker carried on waiting because nothing was listening.
+          //
+          // So after a couple of attempts, drop the registration entirely. A
+          // fresh worker installs on the next load and its own skipWaiting()
+          // works normally. unregister() touches only the worker -- it does
+          // not clear localStorage, so held carts, the register id and staff
+          // settings all survive, and the caches left behind are deleted by
+          // the new worker's activate step.
+          let unstick = 0
+          const applyIfIdle = () => {
+            const w = reg.waiting
+            if (!w || window.__posBusy) return
+            try { w.postMessage({ type: 'SKIP_WAITING' }) } catch (e) { /* gone */ }
+            if (++unstick < 2) return
+            reg.unregister().then((gone) => {
+              if (gone && !window.__posBusy) window.location.reload()
+            }).catch(() => {})
+          }
+          applyIfIdle()
+          reg.addEventListener('updatefound', () => {
+            const fresh = reg.installing
+            if (!fresh) return
+            fresh.addEventListener('statechange', () => {
+              if (fresh.state === 'installed') applyIfIdle()
+            })
+          })
+          // Retry, so an update that arrived mid-sale lands once the till is
+          // free rather than waiting for the next launch.
+          setInterval(applyIfIdle, 60 * 1000)
         }).catch(() => {})
 
         // When a NEW worker replaces an existing one, this page is still

@@ -284,6 +284,17 @@ export default function App() {
     }
   }, [restoring, user, loadAll])
 
+  // Tell the service-worker bootstrap in index.html when it must not swap the
+  // worker. Activating a waiting worker reloads the page, and doing that with
+  // a sale open or a cart filled would throw the transaction away. The same
+  // signal the desktop updater uses (txDepth + cart), published where plain
+  // script in the document head can read it.
+  const cartCount = useStore(s => s.cart.length)
+  const txDepth = useStore(s => s.txDepth)
+  useEffect(() => {
+    window.__posBusy = txDepth > 0 || cartCount > 0
+  }, [txDepth, cartCount])
+
   const authExpired = useStore(s => s.authExpired)
   const setAuthExpired = useStore(s => s.setAuthExpired)
   const sessionMissing = useStore(s => s.sessionMissing)
