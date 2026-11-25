@@ -13,7 +13,8 @@
 # The service worker decides when everything else updates. Cached, it would
 # pin the old one in place.
 /sw.js
-  Cache-Control: no-cache
+  Cache-Control: no-cache, no-store, must-revalidate
+  Pragma: no-cache
 
 /manifest.json
   Cache-Control: no-cache

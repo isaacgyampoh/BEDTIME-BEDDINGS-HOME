@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/stamp-sw.mjs dist",
     "_comment:build:desktop": "The desktop app loads the bundle from disk over file://, where an absolute /assets/... path resolves to the drive root and nothing loads \u2014 a white window. --base=./ emits relative paths. Passed on the CLI rather than through an env var because the release runner is Windows, where VITE_BASE=x npm run build is not a thing cmd.exe understands.",
     "build:desktop": "vite build --base=./",
     "preview": "vite preview",

@@ -30,7 +30,31 @@
     // assets after an update installs.
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {})
+        navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then((reg) => {
+          // Registering is not the same as checking. An installed PWA can run
+          // the same worker for days, and while CACHE_NAME was a fixed string
+          // sw.js never changed, so no new worker was ever installed and the
+          // old cache kept serving a stale bundle. Ask explicitly, on every
+          // launch and whenever the till is brought back to the foreground.
+          const check = () => { try { reg.update() } catch (e) { /* offline */ } }
+          check()
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') check()
+          })
+          setInterval(check, 30 * 60 * 1000)
+        }).catch(() => {})
+
+        // When a NEW worker replaces an existing one, this page is still
+        // running the old bundle, so reload once. Only when one was already
+        // in control: on a first install the same event fires and a reload
+        // there would just be a pointless flicker for a new visitor.
+        const hadController = !!navigator.serviceWorker.controller
+        let reloaded = false
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!hadController || reloaded) return
+          reloaded = true
+          window.location.reload()
+        })
       })
     }
   </script>
