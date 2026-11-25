@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { Toaster } from 'react-hot-toast'
-import { getSupabase, callFunction } from './lib/supabase'
+import { getSupabase, callFunction, restoreStaffSession } from './lib/supabase'
 import { PAYMENTS_ENABLED } from './lib/utils'
 import { useStore, setAuthFailureHandler } from './hooks/useStore'
 import { usePosMode } from './hooks/usePosMode'
@@ -235,11 +235,44 @@ export default function App() {
 
   // Public pages - no login required
   // A lost session used to look like a quiet day: empty lists, zeroed
-  // reports, nothing said. Say it instead.
+  // reports, nothing said. Say it instead -- but only when there is a session
+  // to have lost.
+  //
+  // The first version of this fired on ANY auth failure, including the loads
+  // that run before anyone has signed in, which are anon by definition and
+  // fail by design. The banner then appeared over a perfectly good session
+  // and invited the cashier to press "Sign in again", which signed them OUT.
+  // GoTrue deletes the session row on sign-out, so the shop ended up with a
+  // user who had just authenticated and no session at all -- which is exactly
+  // what the live database showed: last_sign_in updated, zero sessions.
+  // Before offering the PIN screen, see whether a valid session is already in
+  // storage. Without this every reload re-authenticated and minted another
+  // GoTrue session, which is why the shop showed 19 sign-ins in two hours.
+  const loginToStore = useStore(s => s.login)
+  const [restoring, setRestoring] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const staff = await restoreStaffSession()
+      if (!cancelled && staff) loginToStore(staff, String(staff.role).toLowerCase() === 'admin')
+      if (!cancelled) setRestoring(false)
+    })()
+    return () => { cancelled = true }
+  }, [loginToStore])
+
   const authExpired = useStore(s => s.authExpired)
   const setAuthExpired = useStore(s => s.setAuthExpired)
+  const signedIn = useStore(s => !!s.user)
+  const signedInRef = useRef(signedIn)
+  useEffect(() => { signedInRef.current = signedIn }, [signedIn])
   useEffect(() => {
-    setAuthFailureHandler(() => setAuthExpired(true))
+    // Signing in clears any stale warning from before the session existed.
+    if (signedIn) setAuthExpired(false)
+  }, [signedIn, setAuthExpired])
+  useEffect(() => {
+    setAuthFailureHandler(() => {
+      if (signedInRef.current) setAuthExpired(true)
+    })
     return () => setAuthFailureHandler(null)
   }, [setAuthExpired])
 
@@ -256,7 +289,7 @@ export default function App() {
   // Adding a staff member looked like the button did nothing: the form simply
   // vanished, taking the name and PIN with it.
   if (loading && !user) return <><Loader /><Toaster /></>
-  if (!user) return <><Login /><Toaster /></>
+  if (!user) return restoring ? <><Loader /><Toaster /></> : <><Login /><Toaster /></>
 
   const pages = {
     dash: <Dashboard />,
@@ -290,8 +323,11 @@ export default function App() {
         >
           <span>Your session has expired, so this screen may be empty or out of date.</span>
           <button
-            onClick={async () => {
-              try { await getSupabase()?.auth.signOut() } catch { /* already gone */ }
+            onClick={() => {
+              // Reload only. Signing out here DELETED the GoTrue session of a
+              // cashier who had just authenticated, which is the opposite of
+              // helping; the login screen appears by itself when there is no
+              // valid session.
               setAuthExpired(false)
               window.location.reload()
             }}

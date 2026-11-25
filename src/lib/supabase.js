@@ -107,3 +107,32 @@ export async function rpcOrNull(name, args) {
     return null
   }
 }
+
+
+/**
+ * Restore the signed-in cashier from a session that is already in storage.
+ *
+ * The Supabase client persists the session across reloads, but the store's
+ * `user` starts null, so every refresh dropped the cashier back to the PIN
+ * screen — and each re-entry minted a brand new GoTrue session. The live
+ * database showed the result: 19 successful PIN entries in two hours against
+ * a handful of sessions.
+ *
+ * staff-login puts staff_id, staff_name and staff_role in app_metadata, so a
+ * valid session already carries everything the till needs. Returns null when
+ * there is no session, when it has expired, or when it is not a staff token —
+ * in each of which cases the PIN screen is the right answer.
+ */
+export async function restoreStaffSession() {
+  try {
+    const { data, error } = await supabaseInstance.auth.getSession()
+    if (error) return null
+    const session = data?.session
+    if (!session?.access_token) return null
+    const meta = session.user?.app_metadata || {}
+    if (!meta.staff_id) return null
+    return { id: String(meta.staff_id), name: meta.staff_name || 'Staff', role: meta.staff_role || 'Cashier' }
+  } catch {
+    return null
+  }
+}
