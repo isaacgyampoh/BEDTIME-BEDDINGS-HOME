@@ -125,6 +125,19 @@ export const useStore = create((set, get) => ({
   // banner instead of an empty till, which is the whole point.
   authExpired: false,
   setAuthExpired: v => set({ authExpired: !!v }),
+  // Set when a cashier is signed in to the UI but this browser holds no API
+  // session, which is a different fault from an expired one and needs saying
+  // differently. It happens when staff-login succeeds server-side but the
+  // session cannot be stored, and Login falls back to a bare verify_pin.
+  //
+  // It is not a cosmetic distinction. Since the row policies were tightened,
+  // `anon` has no INSERT on sales and no SELECT at all on whatsapp_orders, so
+  // a sessionless till cannot record a sale and reads the books as empty --
+  // and PostgREST answers an RLS-denied SELECT with 200 and zero rows, so
+  // nothing raises an error for the expired-session banner to catch. Reports
+  // simply render GHS 0.00 as though the shop had sold nothing.
+  sessionMissing: false,
+  setSessionMissing: v => set({ sessionMissing: !!v }),
   products: [], bundles: [], sales: [], staff: [], expenses: [],
   customers: [], waOrders: [], refunds: [], promos: [], invoices: [], stockTakes: [], stockAdjustments: [],
   loading: true, loadingText: 'Connecting...',

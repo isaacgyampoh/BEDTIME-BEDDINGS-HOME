@@ -90,6 +90,51 @@ its own retry, which can be up to 30 minutes. Do not force it: the admin API
 is deliberately off and the documented reload is
 `docker compose restart caddy`, which blips **every** tenant.
 
+### The gateway must answer CORS preflights for `/auth/v1/*`
+
+```sh
+python3 -I selfhost/central-fixes/patch-caddy-auth-cors.py   # then re-render + restart
+```
+
+**Hosted Supabase puts Kong in front of GoTrue, and Kong answers preflights.**
+Replace Kong with Caddy and nothing does, so browser sign-in breaks — but only
+after cutover, and never in a way that looks like auth.
+
+GoTrue (v2.197.0) answers a preflight naming **any** request header —
+`authorization`, `apikey`, even `content-type` — with a bare 204 and no
+`Access-Control-*` headers. A preflight naming no headers is answered
+correctly, which is why probing it casually suggests CORS is fine.
+
+Two things in supabase-js then fail silently:
+
+1. `setSession()` must `GET /auth/v1/user` to finish storing a session. Blocked,
+   it returns an error and the session is **discarded**, so a login that
+   succeeded server-side leaves the browser on the public anon key.
+2. A refresh `POST`s `/auth/v1/token`. Blocked, **no session can ever renew**.
+
+Bedtime ran eleven hours like this. The shop looked empty, not broken: reports
+at GHS 0.00, no receipts, 487 denials on `whatsapp_orders`, and a cashier
+entering a PIN 44 times. The database said it outright — 11 sessions, 11 refresh
+tokens, **none ever used** — which is the check worth running after any cutover:
+
+```sql
+SELECT count(*) FILTER (WHERE revoked) AS refreshes_that_worked,
+       count(*) AS tokens_issued FROM auth.refresh_tokens;
+```
+
+`refreshes_that_worked = 0` after a day of trading means sessions are not
+renewing, whatever the login screen says. And verify the preflight itself, with
+a header named, because without one it passes:
+
+```sh
+curl -sD- -o/dev/null -X OPTIONS "$API/auth/v1/user" \
+  -H 'Origin: https://admin.example.com' \
+  -H 'Access-Control-Request-Method: GET' \
+  -H 'Access-Control-Request-Headers: authorization,apikey' | grep -i access-control
+```
+
+No `access-control-allow-origin` in the reply is the fault.
+
 ## 3. Data
 
 ```sh

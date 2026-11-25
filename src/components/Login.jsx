@@ -12,7 +12,7 @@ export default function Login() {
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { login, setPage } = useStore()
+  const { login, setPage, setSessionMissing } = useStore()
   const touchPOS = usePosMode()
 
   const submit = async (candidate) => {
@@ -28,6 +28,7 @@ export default function Login() {
       // attempts against the throttle.
       const viaSession = await startStaffSession(candidate)
       let data = null
+      let sessionless = false
       if (viaSession.ok) {
         data = { success: true, ...viaSession.staff }
       } else if (viaSession.error) {
@@ -36,6 +37,13 @@ export default function Login() {
         setPin('')
         return
       } else {
+        // The fallback keeps a correct PIN from being refused because of an
+        // infrastructure fault, but it produces a till with no API session --
+        // and that till cannot record a sale (`anon` has no INSERT on sales)
+        // and reads an empty shop. It used to do so silently, which is how a
+        // whole trading day showed GHS 0.00 and nobody could tell why. Let the
+        // cashier in, then say plainly what is wrong.
+        sessionless = true
         const sb = getSupabase()
         ;({ data } = await sb.rpc('verify_pin', { p_pin: candidate }))
       }
@@ -49,6 +57,7 @@ export default function Login() {
             await document.documentElement.requestFullscreen()
           }
         } catch {}
+        setSessionMissing(sessionless)
         login({ id: data.id, name: data.name, role: data.role }, isAdmin)
         setPage(isAdmin ? 'dash' : 'pos')
         return

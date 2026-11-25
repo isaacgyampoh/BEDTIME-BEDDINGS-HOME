@@ -62,6 +62,60 @@ and 5xx are deliberately **not** treated as auth failures — telling a cashier 
 sign in again when the server is down sends them round a loop. 11 tests cover
 both sides of that line.
 
+### CRITICAL — the till never had a session at all
+
+*Found after the audit closed, on 25 November, when the POS still showed empty
+screens. It corrects the finding above: the session was not being **lost**.
+There was never one.*
+
+Self-hosted GoTrue answers a CORS preflight naming **any** request header —
+`authorization`, `apikey`, even `content-type` — with a bare 204 and no
+`Access-Control-*` headers, so the browser never sends the request behind it. A
+preflight naming no headers is answered correctly, which is what hid it.
+
+Hosted Supabase puts Kong in front of GoTrue and Kong answers preflights. The
+Contabo platform replaced Kong with Caddy, and nothing took the job over — so
+this was created by the migration and could only appear after cutover.
+
+Two things in supabase-js failed, both silently:
+
+1. `setSession()` must `GET /auth/v1/user` to finish storing a session. Blocked,
+   it returns an error and the session is discarded — so `staff-login` minted a
+   real session server-side, 44 times, and the browser kept none of them.
+   `Login` then fell back to a bare `verify_pin`, which checks the PIN but
+   mints no session, and signed the cashier into a till running on the **public
+   anon key**.
+2. A refresh `POST`s `/auth/v1/token`. Blocked, so no session could ever renew.
+
+The evidence, from the live gateway log and database:
+
+| | |
+|---|---|
+| `staff-login` POSTs returning a session | **44** |
+| `GET /auth/v1/user` (what `setSession` needs) | **11** |
+| Browser denials on `/rest/v1/whatsapp_orders` | **480** |
+| Refresh tokens issued / ever used | **11 / 0** |
+
+This is why the shop looked **empty rather than broken**, and why the
+expired-session banner was not the answer: PostgREST replies to an RLS-denied
+`SELECT` with `200` and zero rows, so `sales` returned `200 []` and Reports
+rendered GHS 0.00 as fact. Only `whatsapp_orders` erred at all, because
+migration 055 had revoked anon's table `GRANT` outright — a 401 that was, by
+luck, the one thread worth pulling.
+
+Worse than wrong figures: `anon` has **no INSERT on `sales`**, so that till
+could not have recorded a sale either.
+
+**Fixed, in two places.** The gateway now answers `/auth/v1/*` preflights
+(`selfhost/central-fixes/patch-caddy-auth-cors.py`, folded into
+`caddy-site.template` so every future app inherits it). Verified end to end with
+browser `Origin` headers: preflight → `GET /auth/v1/user` → refresh → a
+refreshed token reading sales, orders, customers and expenses; and
+`auth.refresh_tokens` recorded this platform's **first successful refresh**.
+And `startStaffSession()` now confirms the session is really in storage instead
+of trusting `setSession()`, so a sessionless login can no longer pass itself off
+as a real one — it says so, in red, naming what it prevents.
+
 ### MEDIUM — payment references were not unique
 
 Code refused double settlement; the schema did not. Now a partial unique index

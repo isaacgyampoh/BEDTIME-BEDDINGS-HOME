@@ -254,7 +254,12 @@ export default function App() {
     let cancelled = false
     ;(async () => {
       const staff = await restoreStaffSession()
-      if (!cancelled && staff) loginToStore(staff, String(staff.role).toLowerCase() === 'admin')
+      if (!cancelled && staff) {
+        // A staff record came back only because getSession() produced a valid
+        // session, so any warning left over from a sessionless login is stale.
+        useStore.getState().setSessionMissing(false)
+        loginToStore(staff, String(staff.role).toLowerCase() === 'admin')
+      }
       if (!cancelled) setRestoring(false)
     })()
     return () => { cancelled = true }
@@ -262,6 +267,8 @@ export default function App() {
 
   const authExpired = useStore(s => s.authExpired)
   const setAuthExpired = useStore(s => s.setAuthExpired)
+  const sessionMissing = useStore(s => s.sessionMissing)
+  const setSessionMissing = useStore(s => s.setSessionMissing)
   const signedIn = useStore(s => !!s.user)
   const signedInRef = useRef(signedIn)
   useEffect(() => { signedInRef.current = signedIn }, [signedIn])
@@ -334,6 +341,27 @@ export default function App() {
             className="px-3 py-1 rounded-full bg-black text-white text-[12px] font-bold"
           >
             Sign in again
+          </button>
+        </div>
+      )}
+      {!authExpired && sessionMissing && (
+        <div
+          role="alert"
+          className="fixed top-0 inset-x-0 z-[300] bg-red-600 text-white px-4 py-2.5 flex items-center justify-center gap-3 text-[13px] font-semibold shadow"
+        >
+          {/* Red, not amber, and worded for what it actually prevents: this
+              till cannot save a sale. An RLS-denied read comes back as 200
+              with zero rows, so without this the screen just shows GHS 0.00
+              and no error anywhere. */}
+          <span>No secure session with the server. Sales cannot be saved and figures are not reliable.</span>
+          <button
+            onClick={() => {
+              setSessionMissing(false)
+              window.location.reload()
+            }}
+            className="px-3 py-1 rounded-full bg-white text-red-700 text-[12px] font-bold"
+          >
+            Retry
           </button>
         </div>
       )}
