@@ -2,8 +2,15 @@ import { useState } from 'react'
 import { useStore } from '../hooks/useStore'
 import { money, num, today, weekStartDate, monthStart, isoDate, fmtDate } from '../lib/utils'
 
+// min-w-0 is load-bearing. Every Section is a grid item, and a grid item
+// defaults to `min-width: auto`, which resolves to its MIN-CONTENT width --
+// so a card refuses to shrink to its track and pushes the page out instead.
+// Measured on a Pixel 9 Pro XL: the grid was 416px wide and this card was
+// 622px, which is what dragged the whole Reports page into horizontal
+// scrolling (scrollWidth 638 against a 448px viewport). Nothing above it was
+// a scroll container, so the page itself had to move.
 const Section = ({ title, children, action }) => (
-  <div className="bg-white rounded-xl border border-gray-200/80">
+  <div className="bg-white rounded-xl border border-gray-200/80 min-w-0">
     <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
       <h3 className="text-[13px] font-bold text-gray-700 uppercase tracking-wide">{title}</h3>
       {action}
@@ -232,9 +239,19 @@ export default function ReportsPage() {
                 <div key={i} className="flex items-center gap-3">
                   <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${i < 3 ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-500'}`}>{i + 1}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-baseline mb-1">
-                      <span className="text-sm font-semibold text-gray-700 truncate pr-2">{p.name}</span>
-                      <span className="text-xs text-gray-400 whitespace-nowrap">{p.qty} sold • {money(p.revenue)}</span>
+                    {/* min-w-0 on BOTH the row and the truncating span.
+                        `truncate` sets white-space:nowrap, and a flex item
+                        defaults to min-width:auto -- which for nowrap text is
+                        the width of the whole string. So the span refused to
+                        shrink and this card grew to whatever the longest
+                        product name needed. Measured on the Pixel: the card
+                        reached 622px inside a 448px viewport and dragged the
+                        entire Reports page into horizontal scrolling, because
+                        nothing above it was a scroll container. The ellipsis
+                        could never appear either, which is the tell. */}
+                    <div className="flex justify-between items-baseline mb-1 gap-2 min-w-0">
+                      <span className="text-sm font-semibold text-gray-700 truncate min-w-0">{p.name}</span>
+                      <span className="text-xs text-gray-400 whitespace-nowrap shrink-0">{p.qty} sold • {money(p.revenue)}</span>
                     </div>
                     <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
                       <div className="h-full bg-gray-800 rounded-full transition-all" style={{ width: (p.qty / maxQty * 100) + '%' }} />
