@@ -167,7 +167,7 @@ export const useStore = create((set, get) => ({
   setMode: mode => set({ mode }), setCat: cat => set({ selectedCat: cat }),
   setWAFilter: f => set({ waFilter: f }), setPerfPeriod: p => set({ perfPeriod: p }),
   setLoading: (loading, text) => set({ loading, loadingText: text || 'Loading...' }),
-  // Per-cashier carts: when a cashier logs out (incl. auto-logout), their cart
+  // Per-cashier carts: when a cashier logs out, their cart
   // is stashed under their id. When they log back in, it's restored. A DIFFERENT
   // cashier logging in gets their own cart (fresh if none saved). Kept in memory
   // + localStorage so it survives the session.

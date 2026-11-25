@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { getSupabase, callFunction, restoreStaffSession } from './lib/supabase'
 import { PAYMENTS_ENABLED } from './lib/utils'
+import { shouldLoad } from './lib/loadGate'
 import { useStore, setAuthFailureHandler } from './hooks/useStore'
 import { usePosMode } from './hooks/usePosMode'
 import { useCustomerDisplayBroadcast, broadcastDisplay } from './hooks/useCustomerDisplay'
@@ -42,14 +43,24 @@ const DeliveryConfirm = lazy(() => import('./pages/DeliveryConfirm'))
 const DeliveryDetails = lazy(() => import('./pages/DeliveryDetails'))
 const CustomerDisplay = lazy(() => import('./pages/CustomerDisplay'))
 
-const INACTIVITY_TIMEOUT = 60 * 1000 // 1 minute
+// There was an inactivity auto-logout here, set to ONE MINUTE. A cashier who
+// paused to serve a customer, count change or answer the phone came back to a
+// PIN pad, and every one of those re-entries minted a fresh GoTrue session --
+// which is a large part of why this shop recorded dozens of sign-ins a day.
+//
+// It is gone deliberately, not by accident. The till is used all day by staff
+// already standing behind the counter, so an idle timer protected nothing a
+// locked shop door does not, while costing a sale's worth of interruption
+// every time it fired. What actually protects the data is unchanged: tokens
+// still expire and refresh, the row policies still decide what a session may
+// read and write, explicit logout still ends the session, and an administrator
+// can still revoke one.
 const ADMIN_PAGES = ['products', 'staff', 'promos', 'invoices', 'stocktakes', 'stockadjustments', 'restock', 'social', 'promotions', 'onlineshop']
 
 export default function App() {
   const { user, page, setPage, loading, loadAll, logout, isAdmin, darkMode } = useStore()
   const [cartOpen, setCartOpen] = useState(false)
   const [receipt, setReceipt] = useState(null)
-  const lastActivityRef = useRef(Date.now())
   const [salePopup, setSalePopup] = useState(null)
 
   // Stamps data-pos="touch" on <html> for the touch-terminal stylesheet.
@@ -98,7 +109,10 @@ export default function App() {
   }, []) // eslint-disable-line
 
   useEffect(() => {
-    loadAll()
+    // loadAll() deliberately does NOT run here. See the effect further down
+    // that waits until we know who is signed in: loading as `anon` populates
+    // the till with the empty results the row policies return, and nothing
+    // ever reloads them.
     const channel = setupRealtime()
     // Tear the subscription down on unmount, otherwise React StrictMode (dev)
     // and any remount leave orphaned realtime channels open.
@@ -135,28 +149,6 @@ export default function App() {
     const iv = setInterval(run, 20000)
     return () => clearInterval(iv)
   }, [user]) // eslint-disable-line
-
-  // Auto-logout on inactivity. The last-activity timestamp lives in a ref so
-  // that ordinary interaction doesn't re-render the whole app or tear down and
-  // re-register these listeners on every keystroke.
-  const resetActivity = useCallback(() => { lastActivityRef.current = Date.now() }, [])
-
-  useEffect(() => {
-    if (!user) return
-    lastActivityRef.current = Date.now()
-    const events = ['mousedown', 'keydown', 'touchstart', 'scroll']
-    events.forEach(e => window.addEventListener(e, resetActivity))
-    const timer = setInterval(() => {
-      if (Date.now() - lastActivityRef.current > INACTIVITY_TIMEOUT) {
-        logout()
-        toast('Logged out — enter your PIN to continue')
-      }
-    }, 10000) // check every 10s
-    return () => {
-      events.forEach(e => window.removeEventListener(e, resetActivity))
-      clearInterval(timer)
-    }
-  }, [user, logout, resetActivity])
 
   // Guard admin pages — redirect non-admin users
   useEffect(() => {
@@ -264,6 +256,33 @@ export default function App() {
     })()
     return () => { cancelled = true }
   }, [loginToStore])
+
+  // Load the books once we know WHO is asking, and again when someone signs in.
+  //
+  // This used to be a bare loadAll() on mount. That fires before the PIN has
+  // been entered and before a stored session has been restored, so every
+  // request went out as `anon` -- and since the row policies return zero rows
+  // to anon for sales, orders, customers and expenses (while still answering
+  // 200, so nothing errors), the till filled up with empty arrays. Signing in
+  // then changed nothing, because nothing asked again.
+  //
+  // That is what "I signed in and it still shows GHS 0.00" was. Measured on
+  // the shop's own phone: 18 amounts on screen, every one GHS 0.00, with a
+  // valid session sitting in storage that could read 1,416 sales. One reload
+  // turned the same screen into 673 amounts, 670 of them non-zero.
+  //
+  // Reloading on sign-OUT is deliberately not done: the PIN screen is all
+  // there is to show, and a refetch as anon would only generate denials.
+  const loadedForRef = useRef(undefined)
+  useEffect(() => {
+    const id = user?.id || null
+    if (shouldLoad({ restoring, userId: id, loadedFor: loadedForRef.current })) {
+      loadedForRef.current = id
+      loadAll()
+    } else if (!restoring) {
+      loadedForRef.current = id
+    }
+  }, [restoring, user, loadAll])
 
   const authExpired = useStore(s => s.authExpired)
   const setAuthExpired = useStore(s => s.setAuthExpired)
@@ -387,7 +406,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="pt-14 md:pt-0 pb-24 md:pb-10 min-h-screen transition-all duration-200 content-shell">
+      <main className="pt-mobile-header md:pt-0 pb-mobile-nav md:pb-10 min-h-screen transition-all duration-200 content-shell">
         <div className="px-4 md:px-7 lg:px-9 py-4 md:py-5 max-w-[1600px] mx-auto">
           <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="w-7 h-7 border-[2.5px] border-stone-200 border-t-gray-800 rounded-full animate-spin" /></div>}>
             {pages[page] || <POS />}

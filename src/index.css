@@ -18,6 +18,24 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Inter', -apple-system, system-ui, sans-se
 @layer utilities {
   .safe-top { padding-top: env(safe-area-inset-top); }
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+  /* Clear the mobile header, INCLUDING the status-bar inset it carries.
+     The header is `h-14 safe-top`, so it is 3.5rem PLUS the inset tall, but
+     the content below it used a flat `pt-14` of 3.5rem. On any phone with an
+     inset the difference is exactly how far the page title sits underneath
+     the shop name. Measured on a Pixel 9 Pro XL: the header ran to y=79 while
+     the title started at y=72 -- a 23px overlap, and the taller the status
+     bar, the worse it reads. Mirrored for the bottom bar, which is
+     `safe-bottom` for the gesture area.
+
+     Scoped to the mobile breakpoint on purpose: the desktop rule is
+     `md:pt-0`, and relying on which of two unmediated utilities Tailwind
+     emits last would put 3.5rem of dead space at the top of every desktop
+     screen the first time the build order changed. */
+  @media (max-width: 767px) {
+    .pt-mobile-header { padding-top: calc(3.5rem + env(safe-area-inset-top)); }
+    .pb-mobile-nav { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+  }
   .glass { background: var(--surface); }
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }

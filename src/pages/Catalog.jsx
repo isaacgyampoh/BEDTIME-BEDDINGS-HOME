@@ -1,20 +1,24 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getSupabase } from '../lib/supabase'
-import { SHOP } from '../lib/utils'
+import { SHOP, thumb as sharedThumb } from '../lib/utils'
 
 const money = v => 'GHS ' + Number(v || 0).toFixed(2)
-const IK_ENDPOINT = 'https://ik.imagekit.io/bqikvsp59'
-const thumb = (url, w = 500) => {
-  if (!url) return ''
-  if (IK_ENDPOINT && url.includes('res.cloudinary.com/')) {
-    let path = url.split('res.cloudinary.com/')[1]
-    path = path.replace(/(\/upload\/)[^/]*[,_][^/]*\//, '$1')
-    return `${IK_ENDPOINT}/${path}?tr=w-${w},q-70,f-auto`
-  }
-  if (url.includes('cloudinary')) return url.replace('/upload/', `/upload/w_${w},f_auto/`)
-  if (url.includes('supabase')) return url + (url.includes('?') ? '&' : '?') + `width=${w}&quality=80`
-  return url
-}
+
+// This page used to carry its OWN copy of thumb(), and that copy had not been
+// kept in step with the shared one. Its Supabase branch appended
+// `?width=&quality=` to the stored URL and returned it unchanged, so it never
+// called imageUrl() -- which means the catalogue bypassed the R2 migration
+// entirely and served all 389 of its photos from the retiring Supabase
+// project. Verified on the shop's own phone: 389 images on screen, 389 of them
+// Supabase, none on the Worker.
+//
+// Nothing looked wrong, because those URLs still work. They stop working the
+// day Supabase is switched off, which is exactly the kind of breakage that
+// arrives with no deploy to blame it on.
+//
+// One helper now, so a change of image host reaches every page at once. The
+// default width is kept because this page calls thumb() without one.
+const thumb = (url, w = 500) => sharedThumb(url, w)
 const WA = '233245315581'
 
 export default function Catalog() {
