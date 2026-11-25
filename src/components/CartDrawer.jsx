@@ -10,6 +10,7 @@ import toast from 'react-hot-toast'
 import { askConfirm } from './PromptDialog'
 import { statusIs } from '../lib/counts'
 import { normalisePhone } from '../lib/phone'
+import { saleFailureMessage } from '../lib/saleFailure'
 
 
 export default function CartDrawer({ open, onClose, onReceipt }) {
@@ -110,7 +111,14 @@ export default function CartDrawer({ open, onClose, onReceipt }) {
         toast.error(data?.error || error?.message || 'Could not record the sale')
         return null
       }
-    } catch (e) { toast.error('Error: ' + e.message); return null }
+    } catch (e) {
+      // Reaching here means the round trip failed, so the sale does NOT exist.
+      // `Error: Load failed` reads like a glitch worth ignoring; a cashier who
+      // ignores it hands over the goods for nothing. finishSale() has not run,
+      // so the cart is still there and the sale can simply be taken again.
+      toast.error(saleFailureMessage(e, typeof navigator === 'undefined' || navigator.onLine !== false))
+      return null
+    }
     finally { endTx(); saleInFlight.current = false }
   }
 
