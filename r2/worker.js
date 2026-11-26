@@ -55,30 +55,43 @@ const MAX_BYTES = 8 * 1024 * 1024
  * go through Supabase Storage instead of here. So the browser presents the
  * GoTrue session it already has, and this verifies it.
  *
- * NO SECRET IS INVOLVED, on either side. The project signs tokens with an
- * ES256 key and publishes the PUBLIC half at /auth/v1/.well-known/jwks.json,
- * so verification needs nothing confidential: not in the browser, not here.
+ * NO SECRET IS INVOLVED, on either side. The token is handed back to the
+ * project that issued it, which is the only party able to judge it, so
+ * nothing confidential lives in the browser or here.
  *
- * Checked: the signature against the published key, `exp`, and the presence of
- * app_metadata.staff_id -- the claim super-service's staff-login puts on a
+ * Checked: `exp` locally, then the project's own verdict, then the presence
+ * of app_metadata.staff_id -- the claim super-service's staff-login puts on a
  * staff session after a correct PIN. A customer token, an anon key or an
  * expired staff token all fail.
  */
-let JWKS_CACHE = { at: 0, keys: null }
-
-async function jwks(env) {
-  const now = Date.now()
-  if (JWKS_CACHE.keys && now - JWKS_CACHE.at < 3600_000) return JWKS_CACHE.keys
-  const base = (env.AUTH_BASE || env.ORIGIN_BASE || '').replace(/\/+$/, '')
-  if (!base) return null
-  const r = await fetch(`${base}/auth/v1/.well-known/jwks.json`, { cf: { cacheTtl: 3600 } })
-  if (!r.ok) return null
-  const d = await r.json()
-  if (!Array.isArray(d.keys) || !d.keys.length) return null
-  JWKS_CACHE = { at: now, keys: d.keys }
-  return d.keys
-}
-
+/**
+ * Ask the project whether this token is a live staff session.
+ *
+ * THIS REPLACED LOCAL ES256 VERIFICATION, AND WHY MATTERS
+ *
+ * The old code fetched /auth/v1/.well-known/jwks.json and verified the
+ * signature here, refusing anything whose header was not `alg: ES256`. That
+ * was correct for hosted Supabase. The self-hosted project signs with
+ * **HS256**, whose key is a shared secret and is therefore never published --
+ * so after the migration every single upload was refused with 401, and the
+ * uploader fell through to a Supabase Storage path that no longer answers a
+ * CORS preflight. What a staff member saw was "Upload failed: Failed to
+ * fetch", which names neither cause.
+ *
+ * Verifying HS256 here would mean putting the project's JWT secret in the
+ * Worker -- the key that mints ANY token, including service_role. Asking
+ * GoTrue instead keeps the original promise that no secret exists on either
+ * side, and it is strictly stronger than checking a signature: a session that
+ * has been revoked, or a staff member who has been removed, fails from the
+ * next upload onward rather than when the token happens to expire.
+ *
+ * The cost is one request per upload, which is nothing against the image
+ * bytes that follow it.
+ *
+ * Confirmed against the live project: a real staff token returns 200 with
+ * app_metadata.staff_id; a malformed token and the public anon key both
+ * return 403.
+ */
 const b64u = (s) => {
   const t = String(s).replace(/-/g, '+').replace(/_/g, '/')
   const bin = atob(t + '='.repeat((4 - (t.length % 4)) % 4))
@@ -91,28 +104,27 @@ async function staffFromToken(token, env) {
   try {
     const parts = String(token || '').split('.')
     if (parts.length !== 3) return null
-    const header = JSON.parse(new TextDecoder().decode(b64u(parts[0])))
-    if (header.alg !== 'ES256') return null          // only the published alg
-    const keys = await jwks(env)
-    if (!keys) return null
-    const jwk = keys.find((k) => k.kid === header.kid) || keys[0]
-    if (!jwk || jwk.kty !== 'EC') return null
 
-    const key = await crypto.subtle.importKey(
-      'jwk', { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, ext: true },
-      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify'])
-
-    // JOSE ES256 signatures are raw r||s, which is what Web Crypto expects.
-    const sig = b64u(parts[2])
-    if (sig.length !== 64) return null
-    const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
-    if (!(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, sig, signed))) return null
-
+    // Cheap local checks first, so obvious junk never costs a round trip.
+    // These decide nothing on their own -- the claims are unverified here.
     const claims = JSON.parse(new TextDecoder().decode(b64u(parts[1])))
     if (!claims.exp || claims.exp * 1000 <= Date.now()) return null
-    const staffId = claims?.app_metadata?.staff_id
+
+    const base = (env.AUTH_BASE || env.ORIGIN_BASE || '').replace(/\/+$/, '')
+    if (!base) return null
+
+    // The authority. No apikey header is needed and none is sent, so the
+    // Worker holds nothing confidential.
+    const r = await fetch(`${base}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!r.ok) return null
+
+    // Trust ONLY what came back, never the payload decoded above.
+    const user = await r.json()
+    const staffId = user?.app_metadata?.staff_id
     if (!staffId) return null
-    return { id: String(staffId), name: claims?.app_metadata?.staff_name || '' }
+    return { id: String(staffId), name: user?.app_metadata?.staff_name || '' }
   } catch {
     return null
   }

@@ -32,6 +32,12 @@ ALLOWED_ORIGINS = "https://bedtimehome.com,https://www.bedtimehome.com,https://a
 # Only the public object path is reachable, and only when the response is one
 # of the four allowed image types, so this cannot become an open proxy.
 # Clear it to make a miss a hard 404 again.
+# Where a staff session is checked. Without this the Worker fell back to
+# ORIGIN_BASE -- the OLD Supabase project -- and asked the wrong server
+# whether the token was valid.
+AUTH_BASE = "https://api.bedtimehome.com"
+# Read-through origin for images not yet copied into R2. Still the old
+# project on purpose: that is where those bytes are.
 ORIGIN_BASE = "https://wqkgfvmvuljzexhevlnp.supabase.co"
 ORIGIN_BUCKET = "product-images"
 

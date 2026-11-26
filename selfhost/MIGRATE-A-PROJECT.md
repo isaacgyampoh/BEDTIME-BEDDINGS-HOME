@@ -135,6 +135,51 @@ curl -sD- -o/dev/null -X OPTIONS "$API/auth/v1/user" \
 
 No `access-control-allow-origin` in the reply is the fault.
 
+**Check every prefix, not just the one that broke.** Kong answered preflights
+for all of them; Caddy inherits the job for all of them. `/auth/v1` was fixed
+when sign-in failed and `/storage/v1` was missed, because nothing had uploaded
+a file yet. It surfaced weeks later as `Upload failed: Failed to fetch` when a
+staff member changed a product photo.
+
+```sh
+python3 -I selfhost/central-fixes/patch-caddy-storage-cors.py
+for p in /auth/v1/user /rest/v1/ /storage/v1/object/x /functions/v1/x; do
+  printf '%-26s ' "$p"
+  curl -sD- -o/dev/null -X OPTIONS "$API$p" -H 'Origin: https://admin.example.com' \
+    -H 'Access-Control-Request-Method: POST' \
+    -H 'Access-Control-Request-Headers: authorization,apikey' \
+    | grep -ci access-control-allow-origin
+done
+```
+
+A zero on any line is a prefix the browser cannot use.
+
+### The image Worker verifies sessions against the OLD project
+
+`r2/worker.js` checked the upload token's signature itself, against the JWKS
+the project publishes, and accepted only `alg: ES256`. Hosted Supabase signs
+that way. **A self-hosted project signs HS256**, whose key is a shared secret
+and is therefore never published — so after cutover every upload was refused
+401, silently, because the uploader falls back to Supabase Storage and the
+staff member only ever saw the fallback's error.
+
+Verifying HS256 in the Worker would mean giving it the JWT secret — the key
+that mints *any* token, `service_role` included. Hand the token back to the
+project instead:
+
+```js
+const r = await fetch(`${AUTH_BASE}/auth/v1/user`, {
+  headers: { Authorization: `Bearer ${token}` },   // no apikey needed
+})
+// trust only what comes back, never the decoded payload
+const staffId = (await r.json())?.app_metadata?.staff_id
+```
+
+No secret on either side, no coupling to the signing algorithm, and a revoked
+session fails from the next upload rather than when the token expires. Also
+set `AUTH_BASE` — without it the Worker falls back to `ORIGIN_BASE`, which is
+still the old project, and asks the wrong server whether the token is good.
+
 ## 3. Data
 
 ```sh
